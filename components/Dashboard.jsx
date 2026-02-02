@@ -350,6 +350,8 @@ const ICON_PATHS = {
   calendar: 'M19 3h-1V1h-2v2H8V1H6v2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM9 10H7v2h2v-2zm4 0h-2v2h2v-2zm4 0h-2v2h2v-2z',
   box: 'M20.5 5.2l-8-3.2c-.3-.1-.7-.1-1 0l-8 3.2C3.2 5.3 3 5.6 3 6v12c0 .4.2.7.5.9l8 3.2c.2.1.3.1.5.1s.3 0 .5-.1l8-3.2c.3-.1.5-.5.5-.9V6c0-.4-.2-.7-.5-.8zM12 4l6.5 2.6L12 9.2 5.5 6.6 12 4zM5 7.8l6 2.4v9.5l-6-2.4V7.8zm8 11.9V10.2l6-2.4v9.5l-6 2.4z',
   percent: 'M7.5 11C9.4 11 11 9.4 11 7.5S9.4 4 7.5 4 4 5.6 4 7.5 5.6 11 7.5 11zm0-5C8.3 6 9 6.7 9 7.5S8.3 9 7.5 9 6 8.3 6 7.5 6.7 6 7.5 6zM16.5 13c-1.9 0-3.5 1.6-3.5 3.5s1.6 3.5 3.5 3.5 3.5-1.6 3.5-3.5-1.6-3.5-3.5-3.5zm0 5c-.8 0-1.5-.7-1.5-1.5s.7-1.5 1.5-1.5 1.5.7 1.5 1.5-.7 1.5-1.5 1.5zM5.6 20L20 5.6 18.4 4 4 18.4 5.6 20z',
+  casino: 'M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM7.5 8C8.3 8 9 7.3 9 6.5S8.3 5 7.5 5 6 5.7 6 6.5 6.7 8 7.5 8zm0 11c-.8 0-1.5-.7-1.5-1.5S6.7 16 7.5 16s1.5.7 1.5 1.5S8.3 19 7.5 19zm4.5-5.5c-.8 0-1.5-.7-1.5-1.5s.7-1.5 1.5-1.5 1.5.7 1.5 1.5-.7 1.5-1.5 1.5zm4.5 5.5c-.8 0-1.5-.7-1.5-1.5s.7-1.5 1.5-1.5 1.5.7 1.5 1.5-.7 1.5-1.5 1.5zm0-11c-.8 0-1.5-.7-1.5-1.5S15.7 5 16.5 5s1.5.7 1.5 1.5S17.3 8 16.5 8z',
+  sport: 'M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm1 17.9V17h-2v2.9c-3.5-.4-6.4-3.2-6.9-6.7L7 13v-2l-2.9.2C4.5 7.6 7.4 4.7 11 4.1V7h2V4.1c3.6.5 6.5 3.4 7 7L17 11v2l2.9-.2c-.4 3.5-3.3 6.4-6.9 6.8v.3z',
 }
 
 const Icon = ({ name, size = 16, color }) => (
@@ -1098,6 +1100,37 @@ const Weekly = ({ data, prev, theme }) => {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// COMING SOON
+// ═══════════════════════════════════════════════════════════════════════════════
+const ComingSoon = ({ section, icon, theme }) => {
+  const C = theme
+  return (
+    <div style={{ padding: 'clamp(40px, 6vw, 80px)', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
+      <div style={{ textAlign: 'center', maxWidth: '480px' }}>
+        <div style={{ width: '80px', height: '80px', borderRadius: '20px', background: C.card, border: `2px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 32px' }}>
+          <Icon name={icon} size={36} color={C.text} />
+        </div>
+        <h2 style={{ color: C.text, fontSize: 'clamp(28px, 4vw, 40px)', fontWeight: 900, margin: '0 0 12px 0' }}>{section}</h2>
+        <div style={{ display: 'inline-block', background: C.primary, color: C.primaryText, padding: '6px 16px', borderRadius: '20px', fontSize: '12px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '24px' }}>Coming Soon</div>
+        <p style={{ color: C.textMuted, fontSize: 'clamp(14px, 1.6vw, 17px)', lineHeight: 1.7, margin: 0 }}>
+          {section === 'Casino' 
+            ? 'Dashboard dedicata al vertical Casino con analisi dettagliate su Slot, Live Casino, Table Games, performance per provider e metriche specifiche di prodotto.'
+            : 'Dashboard dedicata al vertical Sport con analisi su Scommesse Pre-Match, Live Betting, performance per disciplina sportiva e trend di mercato.'}
+        </p>
+        <div style={{ marginTop: '32px', display: 'flex', justifyContent: 'center', gap: '24px', flexWrap: 'wrap' }}>
+          {(section === 'Casino' 
+            ? ['Slot', 'Live Casino', 'Table Games', 'Provider Analysis']
+            : ['Pre-Match', 'Live Betting', 'Per Sport', 'Market Trends']
+          ).map(tag => (
+            <span key={tag} style={{ color: C.textMuted, fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', padding: '8px 14px', borderRadius: '6px', border: `1px solid ${C.border}`, background: C.card }}>{tag}</span>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // MAIN DASHBOARD
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function Dashboard() {
@@ -1180,7 +1213,7 @@ export default function Dashboard() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: mob ? '6px' : '12px', flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', gap: '4px' }}>
-              {[{ id: 'weekly', icon: 'chart', label: 'Weekly' }, { id: 'monthly', icon: 'calendar', label: 'Monthly' }].map(t => (
+              {[{ id: 'weekly', icon: 'chart', label: 'Weekly' }, { id: 'monthly', icon: 'calendar', label: 'Monthly' }, { id: 'casino', icon: 'casino', label: 'Casino' }, { id: 'sport', icon: 'sport', label: 'Sport' }].map(t => (
                 <button key={t.id} onClick={() => setTab(t.id)} style={{ background: tab === t.id ? C.primary : 'transparent', color: tab === t.id ? C.primaryText : C.textSec, border: `1px solid ${tab === t.id ? C.primary : C.border}`, borderRadius: '6px', padding: mob ? '8px 12px' : 'clamp(8px, 1vw, 10px) clamp(14px, 2vw, 20px)', fontSize: mob ? '12px' : 'clamp(11px, 1.2vw, 13px)', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '6px' }}><Icon name={t.icon} size={14} color={tab === t.id ? C.primaryText : C.textSec} />{!mob && t.label}</button>
               ))}
             </div>
@@ -1202,6 +1235,8 @@ export default function Dashboard() {
       <main>
         {tab === 'weekly' && <Weekly data={current} prev={prev} theme={C} />}
         {tab === 'monthly' && <Monthly weeksData={weeks} theme={C} />}
+        {tab === 'casino' && <ComingSoon section="Casino" icon="casino" theme={C} />}
+        {tab === 'sport' && <ComingSoon section="Sport" icon="sport" theme={C} />}
         {tab === 'upload' && <UploadPage weeksData={weeks} onUpload={handleUpload} onDelete={handleDelete} onLogout={handleLogout} theme={C} />}
       </main>
       {showTop && <button onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} style={{ position: 'fixed', bottom: '24px', right: '24px', width: '44px', height: '44px', borderRadius: '50%', background: C.primary, color: C.primaryText, border: 'none', fontSize: '20px', fontWeight: 800, cursor: 'pointer', boxShadow: '0 4px 12px rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999, transition: 'opacity 0.3s', opacity: 0.85 }} title="Torna su">↑</button>}
