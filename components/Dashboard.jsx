@@ -997,11 +997,18 @@ export default function Dashboard() {
   const [db, setDb] = useState({ connected: false })
   const [isDark, setIsDark] = useState(true)
   const [isAuth, setIsAuth] = useState(false)
+  const [showTop, setShowTop] = useState(false)
 
   const C = isDark ? THEMES.dark : THEMES.light
 
   useEffect(() => {
     if (localStorage.getItem('dazn_dashboard_auth') === 'true') setIsAuth(true)
+  }, [])
+
+  useEffect(() => {
+    const onScroll = () => setShowTop(window.scrollY > 400)
+    window.addEventListener('scroll', onScroll)
+    return () => window.removeEventListener('scroll', onScroll)
   }, [])
 
   useEffect(() => {
@@ -1070,6 +1077,7 @@ export default function Dashboard() {
         {tab === 'monthly' && <Monthly weeksData={weeks} theme={C} />}
         {tab === 'upload' && <UploadPage weeksData={weeks} onUpload={handleUpload} onDelete={handleDelete} onLogout={handleLogout} theme={C} />}
       </main>
+      {showTop && <button onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} style={{ position: 'fixed', bottom: '24px', right: '24px', width: '44px', height: '44px', borderRadius: '50%', background: C.primary, color: C.primaryText, border: 'none', fontSize: '20px', fontWeight: 800, cursor: 'pointer', boxShadow: '0 4px 12px rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999, transition: 'opacity 0.3s', opacity: 0.85 }} title="Torna su">↑</button>}
     </div>
   )
 }
