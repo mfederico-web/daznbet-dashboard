@@ -119,12 +119,13 @@ const formatDateLabel = (dateKey) => {
   catch { return dateKey }
 }
 
-// Estrae mese dalla data di FINE del dateRange (es. "26 Jan - 01 Feb 2026" → February 2026)
+// Estrae mese dalla data di INIZIO settimana (es. "26 Jan - 01 Feb 2026" → January 2026)
 const getMonthFromDateRange = (dateRange) => {
   if (!dateRange) return { name: '', key: '' }
   const months = { 'Jan': 'January', 'Feb': 'February', 'Mar': 'March', 'Apr': 'April', 'May': 'May', 'Jun': 'June', 'Jul': 'July', 'Aug': 'August', 'Sep': 'September', 'Oct': 'October', 'Nov': 'November', 'Dec': 'December' }
-  const match = dateRange.match(/(\w{3})\s+(\d{4})$/)
-  if (match) return { name: `${months[match[1]] || match[1]} ${match[2]}`, key: `${match[2]}-${match[1]}` }
+  const monthMatch = dateRange.match(/([A-Z][a-z]{2})/)
+  const yearMatch = dateRange.match(/(\d{4})/)
+  if (monthMatch && yearMatch && months[monthMatch[1]]) return { name: `${months[monthMatch[1]]} ${yearMatch[1]}`, key: `${yearMatch[1]}-${monthMatch[1]}` }
   return { name: dateRange, key: dateRange }
 }
 
