@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import * as XLSX from 'xlsx'
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, LineChart, Line, ComposedChart } from 'recharts'
 import { saveWeekData, loadAllWeeksData, deleteWeekData, checkConnection } from '../lib/supabase'
@@ -11,6 +11,7 @@ import { saveWeekData, loadAllWeeksData, deleteWeekData, checkConnection } from 
 const THEMES = {
   dark: {
     primary: '#f7ff1a',
+    primaryText: '#000000',
     bg: '#000000',
     card: '#0a0a0a',
     border: '#1a1a1a',
@@ -28,7 +29,8 @@ const THEMES = {
     chart: ['#f7ff1a', '#00D26A', '#3B82F6', '#8B5CF6', '#F59E0B', '#06B6D4', '#EC4899', '#F97316']
   },
   light: {
-    primary: '#000000',
+    primary: '#f7ff1a',
+    primaryText: '#000000',
     bg: '#FFFFFF',
     card: '#F8F8F8',
     border: '#E0E0E0',
@@ -43,12 +45,11 @@ const THEMES = {
     purple: '#7C3AED',
     orange: '#EA8600',
     cyan: '#0891B2',
-    chart: ['#000000', '#00A854', '#1A73E8', '#7C3AED', '#EA8600', '#0891B2', '#DB2777', '#EA580C']
+    chart: ['#f7ff1a', '#00A854', '#1A73E8', '#7C3AED', '#EA8600', '#0891B2', '#DB2777', '#EA580C']
   }
 }
 
-// Upload password (cambiarla in produzione)
-const UPLOAD_PASSWORD = 'dazn2026'
+const UPLOAD_PASSWORD = 'dazn2025'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // FILE REQUIREMENTS
@@ -74,11 +75,8 @@ const parseNum = v => {
   if (typeof v === 'number') return v
   if (typeof v === 'string') {
     let cleaned = v.replace(/\s/g, '')
-    if (cleaned.includes(',') && cleaned.includes('.')) {
-      cleaned = cleaned.replace(/\./g, '').replace(',', '.')
-    } else if (cleaned.includes(',')) {
-      cleaned = cleaned.replace(',', '.')
-    }
+    if (cleaned.includes(',') && cleaned.includes('.')) cleaned = cleaned.replace(/\./g, '').replace(',', '.')
+    else if (cleaned.includes(',')) cleaned = cleaned.replace(',', '.')
     return parseFloat(cleaned.replace(/[^\d.-]/g, '')) || 0
   }
   return 0
@@ -119,6 +117,7 @@ const formatDateLabel = (dateKey) => {
   catch { return dateKey }
 }
 
+// Estrae mese dalla data di FINE del dateRange (es. "26 Jan - 01 Feb 2026" → February 2026)
 const getMonthFromDateRange = (dateRange) => {
   if (!dateRange) return { name: '', key: '' }
   const months = { 'Jan': 'January', 'Feb': 'February', 'Mar': 'March', 'Apr': 'April', 'May': 'May', 'Jun': 'June', 'Jul': 'July', 'Aug': 'August', 'Sep': 'September', 'Oct': 'October', 'Nov': 'November', 'Dec': 'December' }
@@ -162,14 +161,12 @@ const processData = (files, weekNum, dateRange) => {
   const organicTotal = files.organicTotal || []
   const daznbet = files.daznbet || []
 
-  // REG & Daily Stats from Anagrafica2
   const reg = ana2.reduce((s, r) => s + (parseNum(r["Registrati AAMS"]) || 0) + (parseNum(r["Registrazioni non attive"]) || 0), 0)
   
   const daily = ana2.map(r => {
     const dateKey = normalizeDate(r["Data"])
     return {
-      date: formatDateLabel(dateKey),
-      dateKey,
+      date: formatDateLabel(dateKey), dateKey,
       registrations: (parseNum(r["Registrati AAMS"]) || 0) + (parseNum(r["Registrazioni non attive"]) || 0),
       ftds: parseNum(r["Primo deposito"]) || 0,
       deposits: parseNum(r["Importo depositi"]) || 0,
@@ -198,25 +195,38 @@ const processData = (files, weekNum, dateRange) => {
     return { name: prodName, actives: row ? parseNum(row["conti attivi"]) : 0 }
   })
 
-  // Quality Acquisition
+  // Quality Acquisition con calcolo TOTALI corretto
   const channelGroups = {}
   ana.forEach(r => {
     const ch = classifyChannel(r)
-    if (!channelGroups[ch]) channelGroups[ch] = { rows: [], ages: [], ftds: 0 }
+    if (!channelGroups[ch]) channelGroups[ch] = { rows: [], ages: [], ftds: 0, activated: 0 }
     channelGroups[ch].rows.push(r)
     if (r["Nato il"]) channelGroups[ch].ages.push(r["Nato il"])
     if (r["Primo deposito"]) channelGroups[ch].ftds++
+    if (String(r["Stato conto"] || "").toUpperCase().includes("ATTIVATO")) channelGroups[ch].activated++
   })
 
   const qualityAcq = Object.entries(channelGroups).map(([ch, d]) => {
-    const r = d.rows.length, f = d.ftds
-    const act = d.rows.filter(x => String(x["Stato conto"] || "").toUpperCase().includes("ATTIVATO")).length
+    const r = d.rows.length, f = d.ftds, act = d.activated
     const avgAge = d.ages.length ? Math.round(d.ages.map(x => (new Date() - new Date(x)) / (365.25 * 24 * 60 * 60 * 1000)).reduce((a, b) => a + b, 0) / d.ages.length) : 0
-    return { channel: ch, reg: r, ftds: f, conv: r > 0 ? parseFloat((f / r * 100).toFixed(1)) : 0, activated: r > 0 ? Math.round(act / r * 100) : 0, avgAge }
+    return { channel: ch, reg: r, ftds: f, conv: r > 0 ? parseFloat((f / r * 100).toFixed(1)) : 0, activated: r > 0 ? Math.round(act / r * 100) : 0, avgAge, _activatedCount: act, _ageSum: d.ages.map(x => (new Date() - new Date(x)) / (365.25 * 24 * 60 * 60 * 1000)).reduce((a, b) => a + b, 0), _ageCount: d.ages.length }
   }).filter(c => c.channel !== "OTHER").sort((a, b) => b.reg - a.reg)
 
-  const totalsRow = { channel: 'TOTALI', reg: qualityAcq.reduce((s, c) => s + c.reg, 0), ftds: qualityAcq.reduce((s, c) => s + c.ftds, 0), conv: 0, activated: 0, avgAge: 0, isTotal: true }
-  totalsRow.conv = totalsRow.reg > 0 ? parseFloat((totalsRow.ftds / totalsRow.reg * 100).toFixed(1)) : 0
+  // Calcolo TOTALI con medie corrette
+  const totalReg = qualityAcq.reduce((s, c) => s + c.reg, 0)
+  const totalFtds = qualityAcq.reduce((s, c) => s + c.ftds, 0)
+  const totalActivatedCount = qualityAcq.reduce((s, c) => s + c._activatedCount, 0)
+  const totalAgeSum = qualityAcq.reduce((s, c) => s + c._ageSum, 0)
+  const totalAgeCount = qualityAcq.reduce((s, c) => s + c._ageCount, 0)
+
+  const totalsRow = {
+    channel: 'TOTALI', isTotal: true,
+    reg: totalReg,
+    ftds: totalFtds,
+    conv: totalReg > 0 ? parseFloat((totalFtds / totalReg * 100).toFixed(1)) : 0,
+    activated: totalReg > 0 ? Math.round(totalActivatedCount / totalReg * 100) : 0,
+    avgAge: totalAgeCount > 0 ? Math.round(totalAgeSum / totalAgeCount) : 0
+  }
   qualityAcq.push(totalsRow)
 
   // Channel Performance
@@ -257,13 +267,11 @@ const processData = (files, weekNum, dateRange) => {
 
   chanPerf.forEach(c => { c.revShare = totGgr > 0 ? parseFloat((c.ggr / totGgr * 100).toFixed(1)) : 0 })
 
-  // Products
   const products = cat.map(r => ({
     product: r["Categoria"] || '', turnover: parseNum(r["Giocato"]), ggr: parseNum(r["rake"]) || parseNum(r["ggr"]),
     actives: parseNum(r["conti attivi"]), payout: parseNum(r["Giocato"]) > 0 ? parseFloat((parseNum(r["vinto"]) / parseNum(r["Giocato"]) * 100).toFixed(1)) : null
   })).filter(p => p.product && !String(p.product).includes('.'))
 
-  // Demographics
   const genderCount = { M: 0, F: 0 }
   ana.forEach(r => { const g = String(r["Sesso"] || "").toUpperCase(); if (g === "M" || g === "F") genderCount[g]++ })
   const totGender = genderCount.M + genderCount.F
@@ -292,7 +300,7 @@ const processData = (files, weekNum, dateRange) => {
     turnover, ggr, gwm: turnover > 0 ? parseFloat((ggr / turnover * 100).toFixed(1)) : 0, activeUsers: actives, top3Products, totalLogins, totalBonus,
     demographics: { male: totGender > 0 ? Math.round(genderCount.M / totGender * 100) : 0, female: totGender > 0 ? Math.round(genderCount.F / totGender * 100) : 0 },
     ageGroups: Object.entries(ageGroups).map(([range, count]) => ({ range, percent: totAges > 0 ? Math.round(count / totAges * 100) : 0 })),
-    provinces, topSources: sources, dailyStats: daily, qualityAcquisition: qualityAcq, channelPerformance: chanPerf, productPerformance: products,
+    provinces, topSources: sources, dailyStats: daily, qualityAcquisition: qualityAcq.map(({ _activatedCount, _ageSum, _ageCount, ...rest }) => rest), channelPerformance: chanPerf, productPerformance: products,
     financialHealth: {
       withdrawalRatio: totalDep > 0 ? parseFloat((totalWit / totalDep * 100).toFixed(1)) : 0,
       depositFrequency: totalUniqueDep > 0 ? parseFloat((totalDepCount / totalUniqueDep).toFixed(1)) : 0,
@@ -369,7 +377,7 @@ const Table = ({ cols, data, compact = false, theme }) => {
         <tbody>
           {data.map((r, ri) => (
             <tr key={ri} style={{ background: r.isTotal ? C.primary + '15' : ri % 2 === 0 ? C.card : C.bg }}>
-              {cols.map((c, ci) => { const v = c.accessor ? r[c.accessor] : ''; return <td key={ci} style={{ padding: compact ? '8px 12px' : 'clamp(10px, 1.3vw, 12px) clamp(12px, 1.5vw, 18px)', textAlign: c.align || 'left', color: r.isTotal ? C.primary : C.text, fontWeight: r.isTotal ? 800 : 400, borderBottom: `1px solid ${C.border}` }}>{c.format ? c.format(v, r) : v}</td> })}
+              {cols.map((c, ci) => { const v = c.accessor ? r[c.accessor] : ''; return <td key={ci} style={{ padding: compact ? '8px 12px' : 'clamp(10px, 1.3vw, 12px) clamp(12px, 1.5vw, 18px)', textAlign: c.align || 'left', color: r.isTotal ? C.primaryText : C.text, fontWeight: r.isTotal ? 800 : 400, borderBottom: `1px solid ${C.border}` }}>{c.format ? c.format(v, r) : v}</td> })}
             </tr>
           ))}
         </tbody>
@@ -378,16 +386,59 @@ const Table = ({ cols, data, compact = false, theme }) => {
   )
 }
 
-const Section = ({ title, children, theme }) => {
+const Section = ({ title, children, theme, id }) => {
   const C = theme
   return (
-    <section style={{ marginBottom: 'clamp(32px, 4vw, 56px)' }}>
+    <section id={id} style={{ marginBottom: 'clamp(32px, 4vw, 56px)' }}>
       <div style={{ marginBottom: 'clamp(16px, 2vw, 24px)', borderBottom: `1px solid ${C.border}`, paddingBottom: '12px' }}>
         <h2 style={{ color: C.text, fontSize: 'clamp(18px, 2.2vw, 24px)', fontWeight: 800, margin: 0 }}>{title}</h2>
       </div>
       {children}
     </section>
   )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PDF EXPORT
+// ═══════════════════════════════════════════════════════════════════════════════
+const exportToPDF = async (elementId, filename, theme) => {
+  const C = theme
+  try {
+    const html2canvas = (await import('html2canvas')).default
+    const { jsPDF } = await import('jspdf')
+    
+    const element = document.getElementById(elementId)
+    if (!element) { alert('Elemento non trovato'); return }
+    
+    const canvas = await html2canvas(element, { scale: 2, backgroundColor: C.bg, useCORS: true, logging: false })
+    const imgData = canvas.toDataURL('image/png')
+    
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+    const pdfWidth = pdf.internal.pageSize.getWidth()
+    const pdfHeight = pdf.internal.pageSize.getHeight()
+    const imgWidth = canvas.width
+    const imgHeight = canvas.height
+    const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight)
+    const imgX = (pdfWidth - imgWidth * ratio) / 2
+    
+    let heightLeft = imgHeight * ratio
+    let position = 0
+    
+    pdf.addImage(imgData, 'PNG', imgX, position, imgWidth * ratio, imgHeight * ratio)
+    heightLeft -= pdfHeight
+    
+    while (heightLeft > 0) {
+      position = heightLeft - imgHeight * ratio
+      pdf.addPage()
+      pdf.addImage(imgData, 'PNG', imgX, position, imgWidth * ratio, imgHeight * ratio)
+      heightLeft -= pdfHeight
+    }
+    
+    pdf.save(filename)
+  } catch (err) {
+    console.error('PDF Export error:', err)
+    alert('Errore durante l\'esportazione PDF. Assicurati che html2canvas e jspdf siano installati.')
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -399,34 +450,26 @@ const LoginGate = ({ onLogin, theme }) => {
   const [error, setError] = useState(false)
 
   const handleLogin = () => {
-    if (pwd === UPLOAD_PASSWORD) {
-      onLogin(true)
-      localStorage.setItem('dazn_upload_auth', 'true')
-    } else {
-      setError(true)
-      setTimeout(() => setError(false), 2000)
-    }
+    if (pwd === UPLOAD_PASSWORD) { onLogin(true); localStorage.setItem('dazn_upload_auth', 'true') }
+    else { setError(true); setTimeout(() => setError(false), 2000) }
   }
 
   return (
     <div style={{ padding: 'clamp(40px, 5vw, 80px)', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
       <div style={{ background: C.card, borderRadius: '16px', padding: '40px', border: `1px solid ${C.border}`, maxWidth: '400px', width: '100%', textAlign: 'center' }}>
-        <div style={{ width: '60px', height: '60px', background: C.primary + '20', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px' }}>
-          <span style={{ fontSize: '28px' }}>🔐</span>
-        </div>
+        <div style={{ width: '60px', height: '60px', background: C.primary + '20', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px' }}><span style={{ fontSize: '28px' }}>🔐</span></div>
         <h2 style={{ color: C.text, fontSize: '24px', fontWeight: 800, margin: '0 0 8px 0' }}>Admin Access</h2>
         <p style={{ color: C.textMuted, fontSize: '14px', margin: '0 0 32px 0' }}>Inserisci la password per accedere all'upload</p>
-        <input type="password" value={pwd} onChange={e => setPwd(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleLogin()}
-          placeholder="Password" style={{ width: '100%', background: C.bg, border: `2px solid ${error ? C.danger : C.border}`, borderRadius: '10px', padding: '14px 18px', color: C.text, fontSize: '16px', marginBottom: '16px', textAlign: 'center', letterSpacing: '4px' }} />
+        <input type="password" value={pwd} onChange={e => setPwd(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleLogin()} placeholder="Password" style={{ width: '100%', background: C.bg, border: `2px solid ${error ? C.danger : C.border}`, borderRadius: '10px', padding: '14px 18px', color: C.text, fontSize: '16px', marginBottom: '16px', textAlign: 'center', letterSpacing: '4px' }} />
         {error && <p style={{ color: C.danger, fontSize: '13px', margin: '0 0 16px 0', fontWeight: 700 }}>Password errata</p>}
-        <button onClick={handleLogin} style={{ width: '100%', background: C.primary, color: '#000', border: 'none', borderRadius: '10px', padding: '14px', fontSize: '16px', fontWeight: 800, cursor: 'pointer' }}>Accedi</button>
+        <button onClick={handleLogin} style={{ width: '100%', background: C.primary, color: C.primaryText, border: 'none', borderRadius: '10px', padding: '14px', fontSize: '16px', fontWeight: 800, cursor: 'pointer' }}>Accedi</button>
       </div>
     </div>
   )
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// UPLOAD PAGE
+// UPLOAD PAGE - CON UPLOAD MASSIVO
 // ═══════════════════════════════════════════════════════════════════════════════
 const UploadPage = ({ weeksData, onUpload, onDelete, theme }) => {
   const C = theme
@@ -437,11 +480,10 @@ const UploadPage = ({ weeksData, onUpload, onDelete, theme }) => {
   const [files, setFiles] = useState({})
   const [loading, setLoading] = useState(false)
   const [msg, setMsg] = useState(null)
+  const bulkInputRef = useRef(null)
   const exists = week && weeksData[parseInt(week)]
 
-  useEffect(() => {
-    if (localStorage.getItem('dazn_upload_auth') === 'true') setIsAuth(true)
-  }, [])
+  useEffect(() => { if (localStorage.getItem('dazn_upload_auth') === 'true') setIsAuth(true) }, [])
 
   if (!isAuth) return <LoginGate onLogin={setIsAuth} theme={C} />
 
@@ -464,6 +506,46 @@ const UploadPage = ({ weeksData, onUpload, onDelete, theme }) => {
   const handleFile = async (e, key) => {
     const f = e.target.files[0]
     if (f) { try { const d = await readFile(f); setFiles(p => ({ ...p, [key]: { name: f.name, data: d, rows: d.length } })); setMsg(null) } catch { setMsg({ t: 'error', m: 'Errore lettura file' }) } }
+  }
+
+  // UPLOAD MASSIVO - Match file names automaticamente
+  const handleBulkUpload = async (e) => {
+    const fileList = Array.from(e.target.files)
+    if (!fileList.length) return
+    
+    setLoading(true)
+    setMsg({ t: 'info', m: `Elaborazione ${fileList.length} file...` })
+    
+    const newFiles = { ...files }
+    let matched = 0
+    
+    for (const f of fileList) {
+      const fname = f.name.toLowerCase()
+      let key = null
+      
+      if (fname.includes('anagrafica2')) key = 'anagrafica2'
+      else if (fname.includes('anagrafica_total')) key = 'total'
+      else if (fname.includes('anagrafica_categoria')) key = 'categoria'
+      else if (fname.includes('anagrafica_daznbet')) key = 'daznbet'
+      else if (fname.includes('anagrafica_organic_total')) key = 'organicTotal'
+      else if (fname.includes('anagrafica_organic')) key = 'organic'
+      else if (fname.includes('anagrafica_skin_total')) key = 'skinTotal'
+      else if (fname.includes('anagrafica_skin')) key = 'skin'
+      else if (fname.includes('anagrafica_accademy') || fname.includes('anagrafica_academy')) key = 'academyTotal'
+      else if (fname.includes('anagrafica') && !fname.includes('_')) key = 'anagrafica'
+      
+      if (key) {
+        try {
+          const d = await readFile(f)
+          newFiles[key] = { name: f.name, data: d, rows: d.length }
+          matched++
+        } catch (err) { console.error(`Errore lettura ${f.name}:`, err) }
+      }
+    }
+    
+    setFiles(newFiles)
+    setLoading(false)
+    setMsg({ t: 'success', m: `${matched}/${fileList.length} file riconosciuti e caricati!` })
   }
 
   const handleUpload = async () => {
@@ -490,6 +572,17 @@ const UploadPage = ({ weeksData, onUpload, onDelete, theme }) => {
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
           <button onClick={handleLogout} style={{ background: 'transparent', color: C.danger, border: `1px solid ${C.danger}`, borderRadius: '6px', padding: '8px 16px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>🚪 Logout</button>
         </div>
+        
+        {/* UPLOAD MASSIVO */}
+        <div style={{ background: C.primary + '10', border: `2px dashed ${C.primary}`, borderRadius: '12px', padding: '24px', marginBottom: '24px', textAlign: 'center' }}>
+          <h3 style={{ color: C.primary, margin: '0 0 8px 0', fontSize: '16px', fontWeight: 800 }}>📦 Upload Massivo</h3>
+          <p style={{ color: C.textMuted, fontSize: '13px', margin: '0 0 16px 0' }}>Seleziona tutti i 10 file Excel insieme - verranno riconosciuti automaticamente</p>
+          <input ref={bulkInputRef} type="file" accept=".xlsx,.xls" multiple onChange={handleBulkUpload} style={{ display: 'none' }} />
+          <button onClick={() => bulkInputRef.current?.click()} disabled={loading} style={{ background: C.primary, color: C.primaryText, border: 'none', borderRadius: '8px', padding: '12px 32px', fontSize: '14px', fontWeight: 800, cursor: 'pointer' }}>
+            {loading ? 'Elaborazione...' : 'Seleziona Tutti i File'}
+          </button>
+        </div>
+
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '16px', marginBottom: '24px' }}>
           <div>
             <label style={{ color: C.textMuted, fontSize: '11px', display: 'block', marginBottom: '6px', textTransform: 'uppercase', fontWeight: 600 }}>Settimana</label>
@@ -507,26 +600,29 @@ const UploadPage = ({ weeksData, onUpload, onDelete, theme }) => {
           {dates && <div><label style={{ color: C.textMuted, fontSize: '11px', display: 'block', marginBottom: '6px', textTransform: 'uppercase', fontWeight: 600 }}>Preview</label><div style={{ background: C.card, border: `1px solid ${C.primary}`, borderRadius: '8px', padding: '12px', color: C.primary, fontSize: '14px', fontWeight: 700 }}>{dates}</div></div>}
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px', marginBottom: '24px' }}>
-          {FILES.map((f, i) => {
-            const up = files[f.key]
-            return (
-              <div key={f.key} style={{ background: C.card, borderRadius: '10px', padding: '14px', border: `1px solid ${up ? C.success : C.border}`, opacity: 0, animation: `fadeIn 0.3s ease ${i * 0.03}s forwards` }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                  <span style={{ color: up ? C.success : C.text, fontWeight: 700, fontSize: '13px' }}>{up ? '✓' : '○'} {f.name}</span>
-                  {up && <span style={{ color: C.success, fontSize: '10px', background: C.successDim, padding: '2px 6px', borderRadius: '4px', fontWeight: 700 }}>{up.rows}</span>}
+        <details style={{ marginBottom: '24px' }}>
+          <summary style={{ color: C.textSec, fontSize: '13px', cursor: 'pointer', fontWeight: 700, marginBottom: '12px' }}>📁 Upload Singolo (clicca per espandere)</summary>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px' }}>
+            {FILES.map((f, i) => {
+              const up = files[f.key]
+              return (
+                <div key={f.key} style={{ background: C.card, borderRadius: '10px', padding: '14px', border: `1px solid ${up ? C.success : C.border}` }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <span style={{ color: up ? C.success : C.text, fontWeight: 700, fontSize: '13px' }}>{up ? '✓' : '○'} {f.name}</span>
+                    {up && <span style={{ color: C.success, fontSize: '10px', background: C.successDim, padding: '2px 6px', borderRadius: '4px', fontWeight: 700 }}>{up.rows}</span>}
+                  </div>
+                  <p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 8px 0' }}>{f.path}</p>
+                  <input type="file" accept=".xlsx,.xls" onChange={e => handleFile(e, f.key)} style={{ width: '100%', background: C.bg, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '8px', color: C.text, fontSize: '11px', cursor: 'pointer' }} />
                 </div>
-                <p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 8px 0' }}>{f.path}</p>
-                <input type="file" accept=".xlsx,.xls" onChange={e => handleFile(e, f.key)} style={{ width: '100%', background: C.bg, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '8px', color: C.text, fontSize: '11px', cursor: 'pointer' }} />
-              </div>
-            )
-          })}
-        </div>
+              )
+            })}
+          </div>
+        </details>
 
-        {msg && <div style={{ background: msg.t === 'success' ? C.successDim : C.dangerDim, border: `1px solid ${msg.t === 'success' ? C.success : C.danger}`, borderRadius: '8px', padding: '12px', marginBottom: '16px' }}><p style={{ color: msg.t === 'success' ? C.success : C.danger, margin: 0, fontWeight: 700, fontSize: '13px' }}>{msg.m}</p></div>}
+        {msg && <div style={{ background: msg.t === 'success' ? C.successDim : msg.t === 'error' ? C.dangerDim : C.card, border: `1px solid ${msg.t === 'success' ? C.success : msg.t === 'error' ? C.danger : C.primary}`, borderRadius: '8px', padding: '12px', marginBottom: '16px' }}><p style={{ color: msg.t === 'success' ? C.success : msg.t === 'error' ? C.danger : C.primary, margin: 0, fontWeight: 700, fontSize: '13px' }}>{msg.m}</p></div>}
 
         <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginBottom: '40px' }}>
-          <button onClick={handleUpload} disabled={loading || uploadedCount < 10} style={{ background: uploadedCount >= 10 ? C.primary : C.border, color: '#000', border: 'none', borderRadius: '8px', padding: '14px 32px', fontSize: '14px', fontWeight: 800, cursor: uploadedCount >= 10 ? 'pointer' : 'not-allowed' }}>
+          <button onClick={handleUpload} disabled={loading || uploadedCount < 10} style={{ background: uploadedCount >= 10 ? C.primary : C.border, color: C.primaryText, border: 'none', borderRadius: '8px', padding: '14px 32px', fontSize: '14px', fontWeight: 800, cursor: uploadedCount >= 10 ? 'pointer' : 'not-allowed' }}>
             {loading ? 'Elaborazione...' : exists ? `Aggiorna Week ${week}` : `Carica Week ${week || '?'}`}
           </button>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -556,7 +652,6 @@ const UploadPage = ({ weeksData, onUpload, onDelete, theme }) => {
           </>
         )}
       </Section>
-      <style>{`@keyframes fadeIn { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }`}</style>
     </div>
   )
 }
@@ -575,7 +670,7 @@ const Monthly = ({ weeksData, theme }) => {
 
   if (!allWeeks.length) return <div style={{ padding: '60px', textAlign: 'center' }}><p style={{ color: C.textMuted, fontSize: '16px' }}>Nessun dato disponibile</p></div>
 
-  // Build months list
+  // Raggruppa settimane per mese (basato sulla data di FINE settimana)
   const monthsMap = {}
   allWeeks.forEach(w => {
     const m = getMonthFromDateRange(w.dateRange)
@@ -584,7 +679,6 @@ const Monthly = ({ weeksData, theme }) => {
   })
   const months = Object.entries(monthsMap).map(([key, val]) => ({ key, ...val }))
 
-  // Filter weeks
   let weeks = allWeeks
   let periodLabel = `All Weeks (${allWeeks.length})`
   
@@ -599,66 +693,39 @@ const Monthly = ({ weeksData, theme }) => {
 
   if (!weeks.length) return <div style={{ padding: '60px', textAlign: 'center' }}><p style={{ color: C.textMuted, fontSize: '16px' }}>Nessuna settimana nel periodo selezionato</p></div>
 
-  // Aggregations
-  const tot = {
-    reg: weeks.reduce((s, w) => s + (w.registrations || 0), 0),
-    ftds: weeks.reduce((s, w) => s + (w.ftds || 0), 0),
-    dep: weeks.reduce((s, w) => s + (w.totalDeposits || 0), 0),
-    wit: weeks.reduce((s, w) => s + (w.totalWithdrawals || 0), 0),
-    turn: weeks.reduce((s, w) => s + (w.turnover || 0), 0),
-    ggr: weeks.reduce((s, w) => s + (w.ggr || 0), 0),
-    bonus: weeks.reduce((s, w) => s + (w.totalBonus || 0), 0)
-  }
+  const tot = { reg: weeks.reduce((s, w) => s + (w.registrations || 0), 0), ftds: weeks.reduce((s, w) => s + (w.ftds || 0), 0), dep: weeks.reduce((s, w) => s + (w.totalDeposits || 0), 0), wit: weeks.reduce((s, w) => s + (w.totalWithdrawals || 0), 0), turn: weeks.reduce((s, w) => s + (w.turnover || 0), 0), ggr: weeks.reduce((s, w) => s + (w.ggr || 0), 0), bonus: weeks.reduce((s, w) => s + (w.totalBonus || 0), 0) }
   const avgAct = Math.round(weeks.reduce((s, w) => s + (w.activeUsers || 0), 0) / weeks.length)
 
   const trend = weeks.map(w => ({ week: `W${w.weekNumber}`, REG: w.registrations, FTDs: w.ftds, GGR: Math.round(w.ggr / 1000), Actives: w.activeUsers }))
   const cashFlowTrend = weeks.map(w => ({ week: `W${w.weekNumber}`, Deposits: w.totalDeposits || 0, Withdrawals: w.totalWithdrawals || 0, NetDeposit: (w.totalDeposits || 0) - (w.totalWithdrawals || 0) }))
   const bonusTrend = weeks.map(w => ({ week: `W${w.weekNumber}`, Bonus: w.totalBonus || 0 }))
 
-  // Quality Acquisition aggregated
   const qualityAgg = {}
-  weeks.forEach(w => (w.qualityAcquisition || []).forEach(ch => {
-    if (ch.isTotal) return
-    if (!qualityAgg[ch.channel]) qualityAgg[ch.channel] = { channel: ch.channel, reg: 0, ftds: 0 }
-    qualityAgg[ch.channel].reg += ch.reg || 0
-    qualityAgg[ch.channel].ftds += ch.ftds || 0
-  }))
+  weeks.forEach(w => (w.qualityAcquisition || []).forEach(ch => { if (ch.isTotal) return; if (!qualityAgg[ch.channel]) qualityAgg[ch.channel] = { channel: ch.channel, reg: 0, ftds: 0 }; qualityAgg[ch.channel].reg += ch.reg || 0; qualityAgg[ch.channel].ftds += ch.ftds || 0 }))
   const qualityData = Object.values(qualityAgg).map(ch => ({ ...ch, conv: ch.reg > 0 ? parseFloat((ch.ftds / ch.reg * 100).toFixed(1)) : 0 })).sort((a, b) => b.reg - a.reg)
   const qualityTotals = { channel: 'TOTALI', isTotal: true, reg: qualityData.reduce((s, c) => s + c.reg, 0), ftds: qualityData.reduce((s, c) => s + c.ftds, 0), conv: 0 }
   qualityTotals.conv = qualityTotals.reg > 0 ? parseFloat((qualityTotals.ftds / qualityTotals.reg * 100).toFixed(1)) : 0
   qualityData.push(qualityTotals)
 
-  // Channel Performance aggregated
   const channelAgg = {}
-  weeks.forEach(w => (w.channelPerformance || []).forEach(ch => {
-    if (!channelAgg[ch.channel]) channelAgg[ch.channel] = { channel: ch.channel, turnover: 0, ggr: 0, actives: 0 }
-    channelAgg[ch.channel].turnover += ch.turnover || 0
-    channelAgg[ch.channel].ggr += ch.ggr || 0
-    channelAgg[ch.channel].actives += ch.actives || 0
-  }))
+  weeks.forEach(w => (w.channelPerformance || []).forEach(ch => { if (!channelAgg[ch.channel]) channelAgg[ch.channel] = { channel: ch.channel, turnover: 0, ggr: 0, actives: 0 }; channelAgg[ch.channel].turnover += ch.turnover || 0; channelAgg[ch.channel].ggr += ch.ggr || 0; channelAgg[ch.channel].actives += ch.actives || 0 }))
   const channelData = Object.values(channelAgg).map(ch => ({ ...ch, gwm: ch.turnover > 0 ? parseFloat((ch.ggr / ch.turnover * 100).toFixed(1)) : 0, actives: Math.round(ch.actives / weeks.length) })).sort((a, b) => b.ggr - a.ggr)
   const totalChGgr = channelData.reduce((s, c) => s + c.ggr, 0)
   channelData.forEach(ch => { ch.revShare = totalChGgr > 0 ? parseFloat((ch.ggr / totalChGgr * 100).toFixed(1)) : 0 })
 
-  // Product Performance aggregated
   const productAgg = {}
-  weeks.forEach(w => (w.productPerformance || []).forEach(p => {
-    if (!productAgg[p.product]) productAgg[p.product] = { product: p.product, turnover: 0, ggr: 0, actives: 0 }
-    productAgg[p.product].turnover += p.turnover || 0
-    productAgg[p.product].ggr += p.ggr || 0
-    productAgg[p.product].actives += p.actives || 0
-  }))
+  weeks.forEach(w => (w.productPerformance || []).forEach(p => { if (!productAgg[p.product]) productAgg[p.product] = { product: p.product, turnover: 0, ggr: 0, actives: 0 }; productAgg[p.product].turnover += p.turnover || 0; productAgg[p.product].ggr += p.ggr || 0; productAgg[p.product].actives += p.actives || 0 }))
   const productData = Object.values(productAgg).map(p => ({ ...p, actives: Math.round(p.actives / weeks.length) })).sort((a, b) => b.ggr - a.ggr)
 
   const weekNums = allWeeks.map(w => w.weekNumber)
 
   return (
-    <div style={{ padding: 'clamp(20px, 3vw, 48px)' }}>
+    <div id="monthly-report" style={{ padding: 'clamp(20px, 3vw, 48px)' }}>
       {/* FILTER BAR */}
       <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}`, marginBottom: '32px', display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', gap: '8px' }}>
           {['all', 'month', 'custom'].map(mode => (
-            <button key={mode} onClick={() => setFilterMode(mode)} style={{ background: filterMode === mode ? C.primary : 'transparent', color: filterMode === mode ? '#000' : C.textSec, border: `1px solid ${filterMode === mode ? C.primary : C.border}`, borderRadius: '6px', padding: '8px 16px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', textTransform: 'capitalize' }}>{mode === 'all' ? 'Tutto' : mode === 'month' ? 'Mese' : 'Custom'}</button>
+            <button key={mode} onClick={() => setFilterMode(mode)} style={{ background: filterMode === mode ? C.primary : 'transparent', color: filterMode === mode ? C.primaryText : C.textSec, border: `1px solid ${filterMode === mode ? C.primary : C.border}`, borderRadius: '6px', padding: '8px 16px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>{mode === 'all' ? 'Tutto' : mode === 'month' ? 'Mese' : 'Custom'}</button>
           ))}
         </div>
         
@@ -672,22 +739,18 @@ const Monthly = ({ weeksData, theme }) => {
         {filterMode === 'custom' && (
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <span style={{ color: C.textMuted, fontSize: '12px' }}>Da Week</span>
-            <select value={customFrom} onChange={e => setCustomFrom(e.target.value)} style={{ background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '8px 12px', fontSize: '13px', fontWeight: 700 }}>
-              <option value="">--</option>
-              {weekNums.map(n => <option key={n} value={n}>{n}</option>)}
-            </select>
+            <select value={customFrom} onChange={e => setCustomFrom(e.target.value)} style={{ background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '8px 12px', fontSize: '13px', fontWeight: 700 }}><option value="">--</option>{weekNums.map(n => <option key={n} value={n}>{n}</option>)}</select>
             <span style={{ color: C.textMuted, fontSize: '12px' }}>a Week</span>
-            <select value={customTo} onChange={e => setCustomTo(e.target.value)} style={{ background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '8px 12px', fontSize: '13px', fontWeight: 700 }}>
-              <option value="">--</option>
-              {weekNums.map(n => <option key={n} value={n}>{n}</option>)}
-            </select>
+            <select value={customTo} onChange={e => setCustomTo(e.target.value)} style={{ background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '8px 12px', fontSize: '13px', fontWeight: 700 }}><option value="">--</option>{weekNums.map(n => <option key={n} value={n}>{n}</option>)}</select>
           </div>
         )}
 
-        <div style={{ marginLeft: 'auto', color: C.primary, fontSize: '14px', fontWeight: 800 }}>{periodLabel}</div>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <span style={{ color: C.primary, fontSize: '14px', fontWeight: 800 }}>{periodLabel}</span>
+          <button onClick={() => exportToPDF('monthly-report', `DAZN_Monthly_${periodLabel.replace(/\s/g, '_')}.pdf`, C)} style={{ background: C.danger, color: '#fff', border: 'none', borderRadius: '6px', padding: '8px 16px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>📄 PDF</button>
+        </div>
       </div>
 
-      {/* TRADING SUMMARY */}
       <Section title="Trading Summary" theme={C}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 'clamp(12px, 1.5vw, 16px)', marginBottom: 'clamp(24px, 3vw, 40px)' }}>
           <KPI label="Total REG" value={tot.reg} icon="👤" delay={0} theme={C} />
@@ -700,29 +763,10 @@ const Monthly = ({ weeksData, theme }) => {
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: 'clamp(16px, 2vw, 24px)', marginBottom: 'clamp(24px, 3vw, 40px)' }}>
           <ChartCard title="Registration & FTD Trend" theme={C}>
-            <AreaChart data={trend}>
-              <defs>
-                <linearGradient id="gR" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.primary} stopOpacity={0.3} /><stop offset="95%" stopColor={C.primary} stopOpacity={0} /></linearGradient>
-                <linearGradient id="gF" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.success} stopOpacity={0.3} /><stop offset="95%" stopColor={C.success} stopOpacity={0} /></linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
-              <XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} />
-              <YAxis tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} />
-              <Tooltip content={<Tip theme={C} />} />
-              <Legend />
-              <Area type="monotone" dataKey="REG" stroke={C.primary} fill="url(#gR)" strokeWidth={2} />
-              <Area type="monotone" dataKey="FTDs" stroke={C.success} fill="url(#gF)" strokeWidth={2} />
-            </AreaChart>
+            <AreaChart data={trend}><defs><linearGradient id="gR" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.primary} stopOpacity={0.3} /><stop offset="95%" stopColor={C.primary} stopOpacity={0} /></linearGradient><linearGradient id="gF" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.success} stopOpacity={0.3} /><stop offset="95%" stopColor={C.success} stopOpacity={0} /></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} /><YAxis tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} /><Tooltip content={<Tip theme={C} />} /><Legend /><Area type="monotone" dataKey="REG" stroke={C.primary} fill="url(#gR)" strokeWidth={2} /><Area type="monotone" dataKey="FTDs" stroke={C.success} fill="url(#gF)" strokeWidth={2} /></AreaChart>
           </ChartCard>
           <ChartCard title="GGR Trend (€K)" theme={C}>
-            <ComposedChart data={trend}>
-              <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
-              <XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} />
-              <YAxis tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} />
-              <Tooltip content={<Tip theme={C} />} />
-              <Bar dataKey="GGR" fill={C.primary} radius={[4, 4, 0, 0]} />
-              <Line type="monotone" dataKey="Actives" stroke={C.blue} strokeWidth={2} dot={{ fill: C.blue, r: 3 }} />
-            </ComposedChart>
+            <ComposedChart data={trend}><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} /><YAxis tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} /><Tooltip content={<Tip theme={C} />} /><Bar dataKey="GGR" fill={C.primary} radius={[4, 4, 0, 0]} /><Line type="monotone" dataKey="Actives" stroke={C.blue} strokeWidth={2} dot={{ fill: C.blue, r: 3 }} /></ComposedChart>
           </ChartCard>
         </div>
 
@@ -739,45 +783,21 @@ const Monthly = ({ weeksData, theme }) => {
         ]} data={weeks} theme={C} />
       </Section>
 
-      {/* WEEKLY CASH FLOW */}
       <Section title="Weekly Cash Flow" theme={C}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: 'clamp(16px, 2vw, 24px)' }}>
           <ChartCard title="Deposits vs Withdrawals" height={300} theme={C}>
-            <BarChart data={cashFlowTrend}>
-              <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
-              <XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} />
-              <YAxis tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} />
-              <Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} />
-              <Legend />
-              <Bar dataKey="Deposits" fill={C.success} radius={[4, 4, 0, 0]} />
-              <Bar dataKey="Withdrawals" fill={C.danger} radius={[4, 4, 0, 0]} />
-            </BarChart>
+            <BarChart data={cashFlowTrend}><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} /><YAxis tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} /><Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} /><Legend /><Bar dataKey="Deposits" fill={C.success} radius={[4, 4, 0, 0]} /><Bar dataKey="Withdrawals" fill={C.danger} radius={[4, 4, 0, 0]} /></BarChart>
           </ChartCard>
           <ChartCard title="Net Deposit Trend" height={300} theme={C}>
-            <AreaChart data={cashFlowTrend}>
-              <defs><linearGradient id="netG" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.blue} stopOpacity={0.4} /><stop offset="95%" stopColor={C.blue} stopOpacity={0} /></linearGradient></defs>
-              <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
-              <XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} />
-              <YAxis tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} />
-              <Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} />
-              <Area type="monotone" dataKey="NetDeposit" name="Net Deposit" stroke={C.blue} fill="url(#netG)" strokeWidth={2} />
-            </AreaChart>
+            <AreaChart data={cashFlowTrend}><defs><linearGradient id="netG" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.blue} stopOpacity={0.4} /><stop offset="95%" stopColor={C.blue} stopOpacity={0} /></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} /><YAxis tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} /><Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} /><Area type="monotone" dataKey="NetDeposit" name="Net Deposit" stroke={C.blue} fill="url(#netG)" strokeWidth={2} /></AreaChart>
           </ChartCard>
         </div>
       </Section>
 
-      {/* WEEKLY BONUS */}
       <Section title="Weekly Bonus" theme={C}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
           <ChartCard title="Bonus Trend" height={250} theme={C}>
-            <AreaChart data={bonusTrend}>
-              <defs><linearGradient id="bonusG" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.orange} stopOpacity={0.4} /><stop offset="95%" stopColor={C.orange} stopOpacity={0} /></linearGradient></defs>
-              <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
-              <XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} />
-              <YAxis tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} />
-              <Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} />
-              <Area type="monotone" dataKey="Bonus" stroke={C.orange} fill="url(#bonusG)" strokeWidth={2} />
-            </AreaChart>
+            <AreaChart data={bonusTrend}><defs><linearGradient id="bonusG" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.orange} stopOpacity={0.4} /><stop offset="95%" stopColor={C.orange} stopOpacity={0} /></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} /><YAxis tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} /><Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} /><Area type="monotone" dataKey="Bonus" stroke={C.orange} fill="url(#bonusG)" strokeWidth={2} /></AreaChart>
           </ChartCard>
           <div style={{ background: C.card, borderRadius: '12px', padding: '24px', border: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
             <h4 style={{ color: C.textMuted, margin: '0 0 16px 0', fontSize: '11px', textTransform: 'uppercase', fontWeight: 700 }}>Bonus Summary</h4>
@@ -791,7 +811,6 @@ const Monthly = ({ weeksData, theme }) => {
         </div>
       </Section>
 
-      {/* QUALITY ACQUISITION */}
       <Section title="Quality Acquisition" theme={C}>
         <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
           <Table cols={[
@@ -801,17 +820,11 @@ const Monthly = ({ weeksData, theme }) => {
             { header: 'Conv%', accessor: 'conv', align: 'center', format: (v, r) => <span style={{ color: r.isTotal ? C.primary : v >= 55 ? C.success : v >= 45 ? C.orange : C.danger, fontWeight: 800 }}>{v}%</span> }
           ]} data={qualityData} theme={C} />
           <ChartCard title="REG by Channel" height={220} theme={C}>
-            <BarChart data={qualityData.filter(c => !c.isTotal)} layout="vertical">
-              <XAxis type="number" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} />
-              <YAxis dataKey="channel" type="category" width={100} tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} />
-              <Tooltip content={<Tip theme={C} />} />
-              <Bar dataKey="reg" name="REG" fill={C.primary} radius={[0, 4, 4, 0]}>{qualityData.filter(c => !c.isTotal).map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}</Bar>
-            </BarChart>
+            <BarChart data={qualityData.filter(c => !c.isTotal)} layout="vertical"><XAxis type="number" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><YAxis dataKey="channel" type="category" width={100} tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><Tooltip content={<Tip theme={C} />} /><Bar dataKey="reg" name="REG" fill={C.primary} radius={[0, 4, 4, 0]}>{qualityData.filter(c => !c.isTotal).map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}</Bar></BarChart>
           </ChartCard>
         </div>
       </Section>
 
-      {/* CHANNEL PERFORMANCE */}
       <Section title="Channel Performance" theme={C}>
         <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
           <Table cols={[
@@ -822,16 +835,11 @@ const Monthly = ({ weeksData, theme }) => {
             { header: 'Rev Share', accessor: 'revShare', align: 'center', format: v => <span style={{ color: C.primary, fontWeight: 800 }}>{v}%</span> }
           ]} data={channelData} theme={C} />
           <ChartCard title="Revenue Share" height={220} theme={C}>
-            <PieChart>
-              <Pie data={channelData.filter(c => c.revShare > 0)} cx="50%" cy="50%" innerRadius={50} outerRadius={85} paddingAngle={2} dataKey="revShare" nameKey="channel">{channelData.map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}</Pie>
-              <Tooltip content={<Tip theme={C} />} />
-              <Legend />
-            </PieChart>
+            <PieChart><Pie data={channelData.filter(c => c.revShare > 0)} cx="50%" cy="50%" innerRadius={50} outerRadius={85} paddingAngle={2} dataKey="revShare" nameKey="channel">{channelData.map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}</Pie><Tooltip content={<Tip theme={C} />} /><Legend /></PieChart>
           </ChartCard>
         </div>
       </Section>
 
-      {/* PRODUCT PERFORMANCE */}
       <Section title="Product Performance" theme={C}>
         <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
           <Table cols={[
@@ -841,12 +849,7 @@ const Monthly = ({ weeksData, theme }) => {
             { header: 'Avg Actives', accessor: 'actives', align: 'right', format: v => <b>{fmtNum(v)}</b> }
           ]} data={productData} compact theme={C} />
           <ChartCard title="GGR by Product" height={220} theme={C}>
-            <BarChart data={productData.slice(0, 6)} layout="vertical">
-              <XAxis type="number" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} />
-              <YAxis dataKey="product" type="category" width={80} tick={{ fill: C.textMuted, fontSize: 9, fontWeight: 700 }} />
-              <Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} />
-              <Bar dataKey="ggr" fill={C.primary} radius={[0, 4, 4, 0]}>{productData.map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}</Bar>
-            </BarChart>
+            <BarChart data={productData.slice(0, 6)} layout="vertical"><XAxis type="number" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} /><YAxis dataKey="product" type="category" width={80} tick={{ fill: C.textMuted, fontSize: 9, fontWeight: 700 }} /><Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} /><Bar dataKey="ggr" fill={C.primary} radius={[0, 4, 4, 0]}>{productData.map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}</Bar></BarChart>
           </ChartCard>
         </div>
       </Section>
@@ -868,7 +871,12 @@ const Weekly = ({ data, prev, theme }) => {
   const actCh = prev ? calcChange(data.activeUsers, prev.activeUsers) : null
 
   return (
-    <div style={{ padding: 'clamp(20px, 3vw, 48px)' }}>
+    <div id="weekly-report" style={{ padding: 'clamp(20px, 3vw, 48px)' }}>
+      {/* PDF Export Button */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
+        <button onClick={() => exportToPDF('weekly-report', `DAZN_Week${data.weekNumber}_2026.pdf`, C)} style={{ background: C.danger, color: '#fff', border: 'none', borderRadius: '6px', padding: '10px 20px', fontSize: '13px', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>📄 Esporta PDF</button>
+      </div>
+
       <Section title="Trading Summary" theme={C}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 'clamp(12px, 1.5vw, 16px)', marginBottom: 'clamp(20px, 2.5vw, 28px)' }}>
           <KPI label="Registrations" value={data.registrations} change={regCh} icon="👤" delay={0} theme={C} />
@@ -898,27 +906,10 @@ const Weekly = ({ data, prev, theme }) => {
       <Section title="Acquisition" theme={C}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: 'clamp(16px, 2vw, 24px)', marginBottom: 'clamp(20px, 2.5vw, 28px)' }}>
           <ChartCard title="Daily REG & FTDs" theme={C}>
-            <AreaChart data={data.dailyStats || []}>
-              <defs>
-                <linearGradient id="dR" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.primary} stopOpacity={0.4} /><stop offset="95%" stopColor={C.primary} stopOpacity={0} /></linearGradient>
-                <linearGradient id="dF" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.success} stopOpacity={0.4} /><stop offset="95%" stopColor={C.success} stopOpacity={0} /></linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
-              <XAxis dataKey="date" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} />
-              <YAxis tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} />
-              <Tooltip content={<Tip theme={C} />} />
-              <Legend />
-              <Area type="monotone" dataKey="registrations" name="REG" stroke={C.primary} fill="url(#dR)" strokeWidth={2} />
-              <Area type="monotone" dataKey="ftds" name="FTDs" stroke={C.success} fill="url(#dF)" strokeWidth={2} />
-            </AreaChart>
+            <AreaChart data={data.dailyStats || []}><defs><linearGradient id="dR" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.primary} stopOpacity={0.4} /><stop offset="95%" stopColor={C.primary} stopOpacity={0} /></linearGradient><linearGradient id="dF" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.success} stopOpacity={0.4} /><stop offset="95%" stopColor={C.success} stopOpacity={0} /></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="date" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><YAxis tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><Tooltip content={<Tip theme={C} />} /><Legend /><Area type="monotone" dataKey="registrations" name="REG" stroke={C.primary} fill="url(#dR)" strokeWidth={2} /><Area type="monotone" dataKey="ftds" name="FTDs" stroke={C.success} fill="url(#dF)" strokeWidth={2} /></AreaChart>
           </ChartCard>
           <ChartCard title="Top Sources (Cod Punto)" theme={C}>
-            <BarChart data={data.topSources || []} layout="vertical">
-              <XAxis type="number" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} />
-              <YAxis dataKey="name" type="category" width={100} tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} />
-              <Tooltip content={<Tip theme={C} />} />
-              <Bar dataKey="count" fill={C.success} radius={[0, 4, 4, 0]} />
-            </BarChart>
+            <BarChart data={data.topSources || []} layout="vertical"><XAxis type="number" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><YAxis dataKey="name" type="category" width={100} tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><Tooltip content={<Tip theme={C} />} /><Bar dataKey="count" fill={C.success} radius={[0, 4, 4, 0]} /></BarChart>
           </ChartCard>
         </div>
 
@@ -931,20 +922,10 @@ const Weekly = ({ data, prev, theme }) => {
             </div>
           </div>
           <ChartCard title="Age Distribution" height={140} theme={C}>
-            <BarChart data={data.ageGroups || []}>
-              <XAxis dataKey="range" tick={{ fill: C.textMuted, fontSize: 9, fontWeight: 700 }} />
-              <YAxis hide />
-              <Tooltip content={<Tip theme={C} />} />
-              <Bar dataKey="percent" fill={C.primary} radius={[4, 4, 0, 0]}>{(data.ageGroups || []).map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}</Bar>
-            </BarChart>
+            <BarChart data={data.ageGroups || []}><XAxis dataKey="range" tick={{ fill: C.textMuted, fontSize: 9, fontWeight: 700 }} /><YAxis hide /><Tooltip content={<Tip theme={C} />} /><Bar dataKey="percent" fill={C.primary} radius={[4, 4, 0, 0]}>{(data.ageGroups || []).map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}</Bar></BarChart>
           </ChartCard>
           <ChartCard title="Top Provinces" height={140} theme={C}>
-            <BarChart data={(data.provinces || []).slice(0, 5)} layout="vertical">
-              <XAxis type="number" hide />
-              <YAxis dataKey="name" type="category" width={45} tick={{ fill: C.textMuted, fontSize: 9, fontWeight: 700 }} />
-              <Tooltip content={<Tip theme={C} />} />
-              <Bar dataKey="count" fill={C.cyan} radius={[0, 4, 4, 0]} />
-            </BarChart>
+            <BarChart data={(data.provinces || []).slice(0, 5)} layout="vertical"><XAxis type="number" hide /><YAxis dataKey="name" type="category" width={45} tick={{ fill: C.textMuted, fontSize: 9, fontWeight: 700 }} /><Tooltip content={<Tip theme={C} />} /><Bar dataKey="count" fill={C.cyan} radius={[0, 4, 4, 0]} /></BarChart>
           </ChartCard>
         </div>
       </Section>
@@ -960,12 +941,7 @@ const Weekly = ({ data, prev, theme }) => {
             { header: 'Avg Age', accessor: 'avgAge', align: 'center', format: v => <b>{v}</b> }
           ]} data={data.qualityAcquisition || []} theme={C} />
           <ChartCard title="Conversion by Channel" height={220} theme={C}>
-            <BarChart data={(data.qualityAcquisition || []).filter(c => !c.isTotal)} layout="vertical">
-              <XAxis type="number" domain={[0, 80]} tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} />
-              <YAxis dataKey="channel" type="category" width={100} tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} />
-              <Tooltip content={<Tip theme={C} />} />
-              <Bar dataKey="conv" name="Conv%" fill={C.primary} radius={[0, 4, 4, 0]}>{(data.qualityAcquisition || []).filter(c => !c.isTotal).map((e, i) => <Cell key={i} fill={e.conv >= 55 ? C.success : e.conv >= 45 ? C.orange : C.danger} />)}</Bar>
-            </BarChart>
+            <BarChart data={(data.qualityAcquisition || []).filter(c => !c.isTotal)} layout="vertical"><XAxis type="number" domain={[0, 80]} tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><YAxis dataKey="channel" type="category" width={100} tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><Tooltip content={<Tip theme={C} />} /><Bar dataKey="conv" name="Conv%" fill={C.primary} radius={[0, 4, 4, 0]}>{(data.qualityAcquisition || []).filter(c => !c.isTotal).map((e, i) => <Cell key={i} fill={e.conv >= 55 ? C.success : e.conv >= 45 ? C.orange : C.danger} />)}</Bar></BarChart>
           </ChartCard>
         </div>
       </Section>
@@ -981,11 +957,7 @@ const Weekly = ({ data, prev, theme }) => {
             { header: 'Rev Share', accessor: 'revShare', align: 'center', format: v => <span style={{ color: C.primary, fontWeight: 800 }}>{v}%</span> }
           ]} data={data.channelPerformance || []} theme={C} />
           <ChartCard title="Revenue Share" height={220} theme={C}>
-            <PieChart>
-              <Pie data={(data.channelPerformance || []).filter(c => c.revShare > 0)} cx="50%" cy="50%" innerRadius={50} outerRadius={85} paddingAngle={2} dataKey="revShare" nameKey="channel">{(data.channelPerformance || []).map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}</Pie>
-              <Tooltip content={<Tip theme={C} />} />
-              <Legend />
-            </PieChart>
+            <PieChart><Pie data={(data.channelPerformance || []).filter(c => c.revShare > 0)} cx="50%" cy="50%" innerRadius={50} outerRadius={85} paddingAngle={2} dataKey="revShare" nameKey="channel">{(data.channelPerformance || []).map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}</Pie><Tooltip content={<Tip theme={C} />} /><Legend /></PieChart>
           </ChartCard>
         </div>
       </Section>
@@ -1000,61 +972,25 @@ const Weekly = ({ data, prev, theme }) => {
             { header: 'Actives', accessor: 'actives', align: 'right', format: v => <b>{fmtNum(v)}</b> }
           ]} data={data.productPerformance || []} compact theme={C} />
           <ChartCard title="GGR by Product" height={220} theme={C}>
-            <BarChart data={(data.productPerformance || []).slice(0, 6)} layout="vertical">
-              <XAxis type="number" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} />
-              <YAxis dataKey="product" type="category" width={80} tick={{ fill: C.textMuted, fontSize: 9, fontWeight: 700 }} />
-              <Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} />
-              <Bar dataKey="ggr" fill={C.primary} radius={[0, 4, 4, 0]}>{(data.productPerformance || []).map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}</Bar>
-            </BarChart>
+            <BarChart data={(data.productPerformance || []).slice(0, 6)} layout="vertical"><XAxis type="number" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} /><YAxis dataKey="product" type="category" width={80} tick={{ fill: C.textMuted, fontSize: 9, fontWeight: 700 }} /><Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} /><Bar dataKey="ggr" fill={C.primary} radius={[0, 4, 4, 0]}>{(data.productPerformance || []).map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}</Bar></BarChart>
           </ChartCard>
         </div>
       </Section>
 
       <Section title="Financial Health" theme={C}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'clamp(12px, 1.5vw, 16px)', marginBottom: 'clamp(20px, 2.5vw, 28px)' }}>
-          <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}` }}>
-            <p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', margin: '0 0 8px 0' }}>Withdrawal Ratio</p>
-            <p style={{ color: C.text, fontSize: '28px', fontWeight: 900, margin: '0 0 8px 0' }}>{data.financialHealth?.withdrawalRatio || 0}%</p>
-            <p style={{ color: C.textMuted, fontSize: '10px', margin: 0 }}>{fmtCurrency(data.totalWithdrawals)} / {fmtCurrency(data.totalDeposits)}</p>
-          </div>
-          <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}` }}>
-            <p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', margin: '0 0 8px 0' }}>Bonus ROI</p>
-            <p style={{ color: C.text, fontSize: '28px', fontWeight: 900, margin: '0 0 8px 0' }}>{data.financialHealth?.bonusROI || 0}x</p>
-            <p style={{ color: C.textMuted, fontSize: '10px', margin: 0 }}>{fmtCurrency(data.financialHealth?._ggr)} / {fmtCurrency(data.financialHealth?._bonus)}</p>
-          </div>
-          <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}` }}>
-            <p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', margin: '0 0 8px 0' }}>Customer Value</p>
-            <p style={{ color: C.text, fontSize: '28px', fontWeight: 900, margin: '0 0 8px 0' }}>{fmtCurrency(data.financialHealth?.customerValue || 0)}</p>
-            <p style={{ color: C.textMuted, fontSize: '10px', margin: 0 }}>GGR / Actives</p>
-          </div>
-          <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}` }}>
-            <p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', margin: '0 0 8px 0' }}>Login / User</p>
-            <p style={{ color: C.text, fontSize: '28px', fontWeight: 900, margin: '0 0 8px 0' }}>{data.financialHealth?.loginPerUser || 0}</p>
-            <p style={{ color: C.textMuted, fontSize: '10px', margin: 0 }}>{fmtNum(data.financialHealth?._logins)} / {fmtNum(data.financialHealth?._actives)}</p>
-          </div>
+          <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}` }}><p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', margin: '0 0 8px 0' }}>Withdrawal Ratio</p><p style={{ color: C.text, fontSize: '28px', fontWeight: 900, margin: '0 0 8px 0' }}>{data.financialHealth?.withdrawalRatio || 0}%</p><p style={{ color: C.textMuted, fontSize: '10px', margin: 0 }}>{fmtCurrency(data.totalWithdrawals)} / {fmtCurrency(data.totalDeposits)}</p></div>
+          <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}` }}><p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', margin: '0 0 8px 0' }}>Bonus ROI</p><p style={{ color: C.text, fontSize: '28px', fontWeight: 900, margin: '0 0 8px 0' }}>{data.financialHealth?.bonusROI || 0}x</p><p style={{ color: C.textMuted, fontSize: '10px', margin: 0 }}>{fmtCurrency(data.financialHealth?._ggr)} / {fmtCurrency(data.financialHealth?._bonus)}</p></div>
+          <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}` }}><p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', margin: '0 0 8px 0' }}>Customer Value</p><p style={{ color: C.text, fontSize: '28px', fontWeight: 900, margin: '0 0 8px 0' }}>{fmtCurrency(data.financialHealth?.customerValue || 0)}</p><p style={{ color: C.textMuted, fontSize: '10px', margin: 0 }}>GGR / Actives</p></div>
+          <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}` }}><p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', margin: '0 0 8px 0' }}>Login / User</p><p style={{ color: C.text, fontSize: '28px', fontWeight: 900, margin: '0 0 8px 0' }}>{data.financialHealth?.loginPerUser || 0}</p><p style={{ color: C.textMuted, fontSize: '10px', margin: 0 }}>{fmtNum(data.financialHealth?._logins)} / {fmtNum(data.financialHealth?._actives)}</p></div>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: 'clamp(16px, 2vw, 24px)' }}>
           <ChartCard title="Daily Cash Flow" theme={C}>
-            <BarChart data={data.dailyStats || []}>
-              <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
-              <XAxis dataKey="date" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} />
-              <YAxis tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} />
-              <Tooltip content={<Tip theme={C} />} />
-              <Legend />
-              <Bar dataKey="deposits" name="Deposits" fill={C.success} radius={[3, 3, 0, 0]} />
-              <Bar dataKey="withdrawals" name="Withdrawals" fill={C.danger} radius={[3, 3, 0, 0]} />
-            </BarChart>
+            <BarChart data={data.dailyStats || []}><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="date" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><YAxis tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} /><Tooltip content={<Tip theme={C} />} /><Legend /><Bar dataKey="deposits" name="Deposits" fill={C.success} radius={[3, 3, 0, 0]} /><Bar dataKey="withdrawals" name="Withdrawals" fill={C.danger} radius={[3, 3, 0, 0]} /></BarChart>
           </ChartCard>
           <ChartCard title="Daily Bonus" theme={C}>
-            <AreaChart data={data.dailyStats || []}>
-              <defs><linearGradient id="bG" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.orange} stopOpacity={0.4} /><stop offset="95%" stopColor={C.orange} stopOpacity={0} /></linearGradient></defs>
-              <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
-              <XAxis dataKey="date" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} />
-              <YAxis tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} />
-              <Tooltip content={<Tip theme={C} />} />
-              <Area type="monotone" dataKey="bonus" name="Bonus" stroke={C.orange} fill="url(#bG)" strokeWidth={2} />
-            </AreaChart>
+            <AreaChart data={data.dailyStats || []}><defs><linearGradient id="bG" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.orange} stopOpacity={0.4} /><stop offset="95%" stopColor={C.orange} stopOpacity={0} /></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="date" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><YAxis tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} /><Tooltip content={<Tip theme={C} />} /><Area type="monotone" dataKey="bonus" name="Bonus" stroke={C.orange} fill="url(#bG)" strokeWidth={2} /></AreaChart>
           </ChartCard>
         </div>
       </Section>
@@ -1062,7 +998,7 @@ const Weekly = ({ data, prev, theme }) => {
       <div style={{ background: `linear-gradient(135deg, ${C.card} 0%, ${C.bg} 100%)`, borderRadius: '16px', padding: 'clamp(40px, 5vw, 80px)', textAlign: 'center', border: `1px solid ${C.border}`, marginTop: '40px' }}>
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '24px' }}><img src="/logo.png" alt="DAZN Bet" style={{ height: '60px' }} /></div>
         <h2 style={{ color: C.primary, fontSize: 'clamp(28px, 4vw, 40px)', fontWeight: 900, margin: '0 0 8px 0' }}>Thank You</h2>
-        <p style={{ color: C.text, fontSize: 'clamp(14px, 1.8vw, 18px)', margin: '0 0 4px 0', fontWeight: 600 }}>Weekly Trading Report • Week {data.weekNumber} 2025</p>
+        <p style={{ color: C.text, fontSize: 'clamp(14px, 1.8vw, 18px)', margin: '0 0 4px 0', fontWeight: 600 }}>Weekly Trading Report • Week {data.weekNumber} 2026</p>
         <p style={{ color: C.textMuted, fontSize: 'clamp(12px, 1.4vw, 16px)', margin: 0 }}>DAZN Bet Italy</p>
       </div>
     </div>
@@ -1084,11 +1020,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     (async () => {
-      try {
-        const c = await checkConnection(); setDb(c)
-        const r = await loadAllWeeksData()
-        if (r.data && Object.keys(r.data).length) { setWeeks(r.data); setSelected(Math.max(...Object.keys(r.data).map(Number))) }
-      } catch (e) { console.error(e) }
+      try { const c = await checkConnection(); setDb(c); const r = await loadAllWeeksData(); if (r.data && Object.keys(r.data).length) { setWeeks(r.data); setSelected(Math.max(...Object.keys(r.data).map(Number))) } } catch (e) { console.error(e) }
       setLoading(false)
     })()
   }, [])
@@ -1102,10 +1034,7 @@ export default function Dashboard() {
 
   if (loading) return (
     <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ textAlign: 'center' }}>
-        <div style={{ width: '40px', height: '40px', border: `3px solid ${C.border}`, borderTopColor: C.primary, borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 16px' }} />
-        <p style={{ color: C.primary, fontSize: '14px', fontWeight: 700 }}>Loading...</p>
-      </div>
+      <div style={{ textAlign: 'center' }}><div style={{ width: '40px', height: '40px', border: `3px solid ${C.border}`, borderTopColor: C.primary, borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 16px' }} /><p style={{ color: C.primary, fontSize: '14px', fontWeight: 700 }}>Loading...</p></div>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   )
@@ -1118,14 +1047,14 @@ export default function Dashboard() {
             <img src="/logo.png" alt="DAZN Bet" style={{ height: '40px' }} />
             <div>
               <h1 style={{ color: C.text, fontSize: 'clamp(14px, 1.6vw, 18px)', fontWeight: 800, margin: 0 }}>Weekly Trading Report</h1>
-              <p style={{ color: C.textMuted, fontSize: 'clamp(10px, 1vw, 12px)', margin: 0 }}>Italy <span style={{ marginLeft: '8px', fontSize: '10px', padding: '2px 6px', borderRadius: '4px', background: db.connected ? C.successDim : C.border, color: db.connected ? C.success : C.textMuted, fontWeight: 700 }}>{db.connected ? '● Cloud' : '● Local'}</span></p>
+              <p style={{ color: C.textMuted, fontSize: 'clamp(10px, 1vw, 12px)', margin: 0 }}>Italy 2026 <span style={{ marginLeft: '8px', fontSize: '10px', padding: '2px 6px', borderRadius: '4px', background: db.connected ? C.successDim : C.border, color: db.connected ? C.success : C.textMuted, fontWeight: 700 }}>{db.connected ? '● Cloud' : '● Local'}</span></p>
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <button onClick={() => setIsDark(!isDark)} style={{ background: C.card, color: C.text, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '8px 12px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>{isDark ? '☀️' : '🌙'} {isDark ? 'Light' : 'Dark'}</button>
             <div style={{ display: 'flex', gap: '6px' }}>
               {[{ id: 'weekly', label: 'Weekly' }, { id: 'monthly', label: 'Monthly' }, { id: 'upload', label: 'Upload' }].map(t => (
-                <button key={t.id} onClick={() => setTab(t.id)} style={{ background: tab === t.id ? C.primary : 'transparent', color: tab === t.id ? '#000' : C.textSec, border: `1px solid ${tab === t.id ? C.primary : C.border}`, borderRadius: '6px', padding: 'clamp(8px, 1vw, 10px) clamp(14px, 2vw, 20px)', fontSize: 'clamp(11px, 1.2vw, 13px)', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s' }}>{t.label}</button>
+                <button key={t.id} onClick={() => setTab(t.id)} style={{ background: tab === t.id ? C.primary : 'transparent', color: tab === t.id ? C.primaryText : C.textSec, border: `1px solid ${tab === t.id ? C.primary : C.border}`, borderRadius: '6px', padding: 'clamp(8px, 1vw, 10px) clamp(14px, 2vw, 20px)', fontSize: 'clamp(11px, 1.2vw, 13px)', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s' }}>{t.label}</button>
               ))}
             </div>
           </div>
