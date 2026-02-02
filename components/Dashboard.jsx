@@ -753,27 +753,150 @@ const UploadPage = ({ weeksData, onUpload, onDelete, theme }) => {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// MONTHLY SUMMARY
+// MONTHLY SUMMARY - Con aggregazioni e grafici comparativi
 // ═══════════════════════════════════════════════════════════════════════════════
 const Monthly = ({ weeksData, theme }) => {
   const C = theme
   const weeks = Object.values(weeksData).sort((a, b) => a.weekNumber - b.weekNumber)
   if (!weeks.length) return <div style={{ padding: '60px', textAlign: 'center' }}><p style={{ color: C.textMuted, fontSize: '16px' }}>Nessun dato disponibile</p></div>
 
+  // Determina il mese dal dateRange (es. "26 Jan - 01 Feb 2025" → "January 2025")
+  const getMonthFromDateRange = (dateRange) => {
+    if (!dateRange) return ''
+    const months = { 'Jan': 'January', 'Feb': 'February', 'Mar': 'March', 'Apr': 'April', 'May': 'May', 'Jun': 'June', 'Jul': 'July', 'Aug': 'August', 'Sep': 'September', 'Oct': 'October', 'Nov': 'November', 'Dec': 'December' }
+    const match = dateRange.match(/(\w{3})\s+(\d{4})/)
+    if (match) return `${months[match[1]] || match[1]} ${match[2]}`
+    return dateRange
+  }
+  
+  const monthName = getMonthFromDateRange(weeks[weeks.length - 1]?.dateRange)
+
+  // Totali Trading Summary
   const tot = {
     reg: weeks.reduce((s, w) => s + (w.registrations || 0), 0),
     ftds: weeks.reduce((s, w) => s + (w.ftds || 0), 0),
     dep: weeks.reduce((s, w) => s + (w.totalDeposits || 0), 0),
     wit: weeks.reduce((s, w) => s + (w.totalWithdrawals || 0), 0),
     turn: weeks.reduce((s, w) => s + (w.turnover || 0), 0),
-    ggr: weeks.reduce((s, w) => s + (w.ggr || 0), 0)
+    ggr: weeks.reduce((s, w) => s + (w.ggr || 0), 0),
+    bonus: weeks.reduce((s, w) => s + (w.totalBonus || 0), 0),
+    logins: weeks.reduce((s, w) => s + (w.totalLogins || 0), 0)
   }
   const avgAct = Math.round(weeks.reduce((s, w) => s + (w.activeUsers || 0), 0) / weeks.length)
-  const trend = weeks.map(w => ({ week: `W${w.weekNumber}`, REG: w.registrations, FTDs: w.ftds, GGR: Math.round(w.ggr / 1000), Actives: w.activeUsers }))
+
+  // Trend per grafici
+  const trend = weeks.map(w => ({ 
+    week: `W${w.weekNumber}`, 
+    REG: w.registrations, 
+    FTDs: w.ftds, 
+    GGR: Math.round(w.ggr / 1000), 
+    Actives: w.activeUsers 
+  }))
+
+  // Weekly Cash Flow (Deposits vs Withdrawals per settimana)
+  const cashFlowTrend = weeks.map(w => ({
+    week: `W${w.weekNumber}`,
+    Deposits: w.totalDeposits || 0,
+    Withdrawals: w.totalWithdrawals || 0,
+    NetDeposit: (w.totalDeposits || 0) - (w.totalWithdrawals || 0)
+  }))
+
+  // Weekly Bonus
+  const bonusTrend = weeks.map(w => ({
+    week: `W${w.weekNumber}`,
+    Bonus: w.totalBonus || 0
+  }))
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // AGGREGAZIONE QUALITY ACQUISITION per canale
+  // ═══════════════════════════════════════════════════════════════════════════
+  const qualityAggregated = {}
+  weeks.forEach(w => {
+    (w.qualityAcquisition || []).forEach(ch => {
+      if (ch.isTotal) return // Skip totali
+      if (!qualityAggregated[ch.channel]) {
+        qualityAggregated[ch.channel] = { channel: ch.channel, reg: 0, ftds: 0, activatedSum: 0, ageSum: 0 }
+      }
+      qualityAggregated[ch.channel].reg += ch.reg || 0
+      qualityAggregated[ch.channel].ftds += ch.ftds || 0
+      qualityAggregated[ch.channel].activatedSum += (ch.activated || 0) * (ch.reg || 0)
+      qualityAggregated[ch.channel].ageSum += (ch.avgAge || 0) * (ch.reg || 0)
+    })
+  })
+  const qualityData = Object.values(qualityAggregated).map(ch => ({
+    channel: ch.channel,
+    reg: ch.reg,
+    ftds: ch.ftds,
+    conv: ch.reg > 0 ? parseFloat((ch.ftds / ch.reg * 100).toFixed(1)) : 0,
+    activated: ch.reg > 0 ? Math.round(ch.activatedSum / ch.reg) : 0,
+    avgAge: ch.reg > 0 ? Math.round(ch.ageSum / ch.reg) : 0
+  })).sort((a, b) => b.reg - a.reg)
+  
+  // Riga totali Quality
+  const qualityTotals = {
+    channel: 'TOTALI', isTotal: true,
+    reg: qualityData.reduce((s, c) => s + c.reg, 0),
+    ftds: qualityData.reduce((s, c) => s + c.ftds, 0),
+    conv: 0, activated: 0, avgAge: 0
+  }
+  qualityTotals.conv = qualityTotals.reg > 0 ? parseFloat((qualityTotals.ftds / qualityTotals.reg * 100).toFixed(1)) : 0
+  qualityData.push(qualityTotals)
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // AGGREGAZIONE CHANNEL PERFORMANCE
+  // ═══════════════════════════════════════════════════════════════════════════
+  const channelAggregated = {}
+  weeks.forEach(w => {
+    (w.channelPerformance || []).forEach(ch => {
+      if (!channelAggregated[ch.channel]) {
+        channelAggregated[ch.channel] = { channel: ch.channel, turnover: 0, ggr: 0, actives: 0 }
+      }
+      channelAggregated[ch.channel].turnover += ch.turnover || 0
+      channelAggregated[ch.channel].ggr += ch.ggr || 0
+      channelAggregated[ch.channel].actives += ch.actives || 0
+    })
+  })
+  const channelData = Object.values(channelAggregated).map(ch => ({
+    channel: ch.channel,
+    turnover: ch.turnover,
+    ggr: ch.ggr,
+    gwm: ch.turnover > 0 ? parseFloat((ch.ggr / ch.turnover * 100).toFixed(1)) : 0,
+    actives: Math.round(ch.actives / weeks.length) // Media settimanale
+  })).sort((a, b) => b.ggr - a.ggr)
+  
+  const totalChannelGgr = channelData.reduce((s, c) => s + c.ggr, 0)
+  channelData.forEach(ch => { ch.revShare = totalChannelGgr > 0 ? parseFloat((ch.ggr / totalChannelGgr * 100).toFixed(1)) : 0 })
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // AGGREGAZIONE PRODUCT PERFORMANCE
+  // ═══════════════════════════════════════════════════════════════════════════
+  const productAggregated = {}
+  weeks.forEach(w => {
+    (w.productPerformance || []).forEach(p => {
+      if (!productAggregated[p.product]) {
+        productAggregated[p.product] = { product: p.product, turnover: 0, ggr: 0, actives: 0, payoutSum: 0, payoutCount: 0 }
+      }
+      productAggregated[p.product].turnover += p.turnover || 0
+      productAggregated[p.product].ggr += p.ggr || 0
+      productAggregated[p.product].actives += p.actives || 0
+      if (p.payout) {
+        productAggregated[p.product].payoutSum += p.payout
+        productAggregated[p.product].payoutCount++
+      }
+    })
+  })
+  const productData = Object.values(productAggregated).map(p => ({
+    product: p.product,
+    turnover: p.turnover,
+    ggr: p.ggr,
+    actives: Math.round(p.actives / weeks.length),
+    payout: p.payoutCount > 0 ? parseFloat((p.payoutSum / p.payoutCount).toFixed(1)) : null
+  })).sort((a, b) => b.ggr - a.ggr)
 
   return (
     <div style={{ padding: 'clamp(20px, 3vw, 48px)' }}>
-      <Section title="Monthly Summary" sub={`Week ${weeks[0].weekNumber} - ${weeks[weeks.length - 1].weekNumber} • ${weeks.length} settimane`} theme={C}>
+      {/* TRADING SUMMARY */}
+      <Section title="Monthly Summary" sub={`${monthName} • Week ${weeks[0].weekNumber} - ${weeks[weeks.length - 1].weekNumber} • ${weeks.length} settimane`} theme={C}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 'clamp(12px, 1.5vw, 16px)', marginBottom: 'clamp(24px, 3vw, 40px)' }}>
           <KPI label="Total REG" value={tot.reg} icon="👤" delay={0} theme={C} />
           <KPI label="Total FTDs" value={tot.ftds} sub={`Conv: ${(tot.ftds / tot.reg * 100).toFixed(1)}%`} icon="💳" delay={50} theme={C} />
@@ -823,6 +946,143 @@ const Monthly = ({ weeksData, theme }) => {
           { header: 'GWM', accessor: 'gwm', align: 'center', format: v => <b>{v}%</b> },
           { header: 'Actives', accessor: 'activeUsers', align: 'right', format: v => <b>{fmtNum(v)}</b> }
         ]} data={weeks} theme={C} />
+      </Section>
+
+      {/* WEEKLY CASH FLOW */}
+      <Section title="Weekly Cash Flow" sub="Deposits vs Withdrawals per settimana" theme={C}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: 'clamp(16px, 2vw, 24px)' }}>
+          <ChartCard title="Deposits vs Withdrawals" height={300} theme={C}>
+            <BarChart data={cashFlowTrend}>
+              <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
+              <XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} />
+              <YAxis tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} />
+              <Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} />
+              <Legend />
+              <Bar dataKey="Deposits" fill={C.success} radius={[4, 4, 0, 0]} animationDuration={800} />
+              <Bar dataKey="Withdrawals" fill={C.danger} radius={[4, 4, 0, 0]} animationDuration={800} />
+            </BarChart>
+          </ChartCard>
+
+          <ChartCard title="Net Deposit Trend" height={300} theme={C}>
+            <AreaChart data={cashFlowTrend}>
+              <defs>
+                <linearGradient id="netG" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.blue} stopOpacity={0.4} /><stop offset="95%" stopColor={C.blue} stopOpacity={0} /></linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
+              <XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} />
+              <YAxis tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} />
+              <Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} />
+              <Area type="monotone" dataKey="NetDeposit" name="Net Deposit" stroke={C.blue} fill="url(#netG)" strokeWidth={2} animationDuration={1000} />
+            </AreaChart>
+          </ChartCard>
+        </div>
+      </Section>
+
+      {/* WEEKLY BONUS */}
+      <Section title="Weekly Bonus" sub="Bonus erogati per settimana" theme={C}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
+          <ChartCard title="Bonus Trend" height={250} theme={C}>
+            <AreaChart data={bonusTrend}>
+              <defs>
+                <linearGradient id="bonusG" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.orange} stopOpacity={0.4} /><stop offset="95%" stopColor={C.orange} stopOpacity={0} /></linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
+              <XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} />
+              <YAxis tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} />
+              <Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} />
+              <Area type="monotone" dataKey="Bonus" stroke={C.orange} fill="url(#bonusG)" strokeWidth={2} animationDuration={1000} />
+            </AreaChart>
+          </ChartCard>
+
+          <div style={{ background: C.card, borderRadius: '12px', padding: '24px', border: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+            <h4 style={{ color: C.textMuted, margin: '0 0 16px 0', fontSize: '11px', textTransform: 'uppercase', fontWeight: 700 }}>Bonus Summary</h4>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+              <div>
+                <p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', textTransform: 'uppercase' }}>Total Bonus</p>
+                <p style={{ color: C.orange, fontSize: '28px', fontWeight: 900, margin: 0 }}>{fmtCurrency(tot.bonus)}</p>
+              </div>
+              <div>
+                <p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', textTransform: 'uppercase' }}>Avg Weekly</p>
+                <p style={{ color: C.text, fontSize: '28px', fontWeight: 900, margin: 0 }}>{fmtCurrency(tot.bonus / weeks.length)}</p>
+              </div>
+              <div>
+                <p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', textTransform: 'uppercase' }}>Bonus ROI</p>
+                <p style={{ color: C.success, fontSize: '28px', fontWeight: 900, margin: 0 }}>{tot.bonus > 0 ? (tot.ggr / tot.bonus).toFixed(1) : 0}x</p>
+              </div>
+              <div>
+                <p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', textTransform: 'uppercase' }}>% of GGR</p>
+                <p style={{ color: C.text, fontSize: '28px', fontWeight: 900, margin: 0 }}>{tot.ggr > 0 ? (tot.bonus / tot.ggr * 100).toFixed(1) : 0}%</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Section>
+
+      {/* QUALITY ACQUISITION AGGREGATA */}
+      <Section title="Quality Acquisition" sub="Aggregato per canale (tutte le settimane)" theme={C}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
+          <Table cols={[
+            { header: 'Channel', accessor: 'channel', format: (v, r) => <span style={{ fontWeight: r.isTotal ? 900 : 700, color: r.isTotal ? C.primary : C.text }}>{v}</span> },
+            { header: 'REG', accessor: 'reg', align: 'right', format: v => <b>{fmtNum(v)}</b> },
+            { header: 'FTDs', accessor: 'ftds', align: 'right', format: v => <b>{fmtNum(v)}</b> },
+            { header: 'Conv%', accessor: 'conv', align: 'center', format: (v, r) => <span style={{ color: r.isTotal ? C.primary : v >= 55 ? C.success : v >= 45 ? C.orange : C.danger, fontWeight: 800 }}>{v}%</span> }
+          ]} data={qualityData} theme={C} />
+          <ChartCard title="REG by Channel" height={220} theme={C}>
+            <BarChart data={qualityData.filter(c => !c.isTotal)} layout="vertical">
+              <XAxis type="number" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} />
+              <YAxis dataKey="channel" type="category" width={100} tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} />
+              <Tooltip content={<Tip theme={C} />} />
+              <Bar dataKey="reg" name="REG" fill={C.primary} radius={[0, 4, 4, 0]} animationDuration={1000}>
+                {qualityData.filter(c => !c.isTotal).map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}
+              </Bar>
+            </BarChart>
+          </ChartCard>
+        </div>
+      </Section>
+
+      {/* CHANNEL PERFORMANCE AGGREGATA */}
+      <Section title="Channel Performance" sub="Aggregato per canale (tutte le settimane)" theme={C}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
+          <Table cols={[
+            { header: 'Channel', accessor: 'channel', format: v => <span style={{ fontWeight: 700 }}>{v}</span> },
+            { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
+            { header: 'GGR', accessor: 'ggr', align: 'right', format: v => <span style={{ color: C.success, fontWeight: 800 }}>{fmtCurrency(v)}</span> },
+            { header: 'GWM', accessor: 'gwm', align: 'center', format: v => <b>{v}%</b> },
+            { header: 'Rev Share', accessor: 'revShare', align: 'center', format: v => <span style={{ color: C.primary, fontWeight: 800 }}>{v}%</span> }
+          ]} data={channelData} theme={C} />
+          <ChartCard title="Revenue Share" height={220} theme={C}>
+            <PieChart>
+              <Pie data={channelData.filter(c => c.revShare > 0)} cx="50%" cy="50%" innerRadius={50} outerRadius={85} paddingAngle={2} dataKey="revShare" nameKey="channel" animationDuration={1000}>
+                {channelData.map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}
+              </Pie>
+              <Tooltip content={<Tip theme={C} />} />
+              <Legend />
+            </PieChart>
+          </ChartCard>
+        </div>
+      </Section>
+
+      {/* PRODUCT PERFORMANCE AGGREGATA */}
+      <Section title="Product Performance" sub="Aggregato per prodotto (tutte le settimane)" theme={C}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
+          <Table cols={[
+            { header: 'Product', accessor: 'product', format: v => <span style={{ fontWeight: 700 }}>{v}</span> },
+            { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
+            { header: 'GGR', accessor: 'ggr', align: 'right', format: v => <span style={{ color: C.success, fontWeight: 800 }}>{fmtCurrency(v)}</span> },
+            { header: 'Payout%', accessor: 'payout', align: 'center', format: v => v ? <b>{v}%</b> : '-' },
+            { header: 'Avg Actives', accessor: 'actives', align: 'right', format: v => <b>{fmtNum(v)}</b> }
+          ]} data={productData} compact theme={C} />
+          <ChartCard title="GGR by Product" height={220} theme={C}>
+            <BarChart data={productData.slice(0, 6)} layout="vertical">
+              <XAxis type="number" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} />
+              <YAxis dataKey="product" type="category" width={80} tick={{ fill: C.textMuted, fontSize: 9, fontWeight: 700 }} />
+              <Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} />
+              <Bar dataKey="ggr" fill={C.primary} radius={[0, 4, 4, 0]} animationDuration={1000}>
+                {productData.map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}
+              </Bar>
+            </BarChart>
+          </ChartCard>
+        </div>
       </Section>
     </div>
   )
