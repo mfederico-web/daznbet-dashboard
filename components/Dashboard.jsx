@@ -27,18 +27,20 @@ const THEMES = {
     purple: '#8B5CF6',
     orange: '#F59E0B',
     cyan: '#06B6D4',
+    hover: '#1a1a1a',         // Hover righe tabella (grigio scuro)
     chart: ['#f7ff1a', '#00D26A', '#3B82F6', '#8B5CF6', '#F59E0B', '#06B6D4', '#EC4899', '#F97316']
   },
   light: {
-    primary: '#f7ff1a',       // Sfondo bottoni (giallo)
-    primaryText: '#000000',   // Testo SU sfondo giallo
-    accent: '#6d7000',        // Testo accento (verde oliva scuro = leggibile su bianco)
+    primary: '#1a1a1a',       // Sfondo bottoni (nero DAZN)
+    primaryText: '#FFFFFF',   // Testo SU sfondo nero
+    accent: '#1a1a1a',        // Testo accento (nero = leggibile su bianco)
     bg: '#FFFFFF',
     card: '#F8F8F8',
     border: '#E0E0E0',
     text: '#000000',
     textSec: '#444444',
     textMuted: '#888888',
+    hover: '#EFEFEF',         // Hover righe tabella (grigio chiaro)
     success: '#00A854',
     successDim: 'rgba(0,168,84,0.1)',
     danger: '#D93025',
@@ -47,7 +49,7 @@ const THEMES = {
     purple: '#7C3AED',
     orange: '#EA8600',
     cyan: '#0891B2',
-    chart: ['#6d7000', '#00A854', '#1A73E8', '#7C3AED', '#EA8600', '#0891B2', '#DB2777', '#EA580C']
+    chart: ['#1a1a1a', '#00A854', '#1A73E8', '#7C3AED', '#EA8600', '#0891B2', '#DB2777', '#EA580C']
   }
 }
 
@@ -369,6 +371,7 @@ const ChartCard = ({ title, children, height = 280, theme }) => {
 
 const Table = ({ cols, data, compact = false, theme }) => {
   const C = theme
+  const [hovered, setHovered] = useState(null)
   return (
     <div style={{ overflowX: 'auto', borderRadius: '10px', border: `1px solid ${C.border}` }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: compact ? '12px' : 'clamp(12px, 1.2vw, 14px)' }}>
@@ -378,11 +381,15 @@ const Table = ({ cols, data, compact = false, theme }) => {
           </tr>
         </thead>
         <tbody>
-          {data.map((r, ri) => (
-            <tr key={ri} style={{ background: r.isTotal ? C.primary + '15' : ri % 2 === 0 ? C.card : C.bg }}>
-              {cols.map((c, ci) => { const v = c.accessor ? r[c.accessor] : ''; return <td key={ci} style={{ padding: compact ? '8px 12px' : 'clamp(10px, 1.3vw, 12px) clamp(12px, 1.5vw, 18px)', textAlign: c.align || 'left', color: r.isTotal ? C.accent : C.text, fontWeight: r.isTotal ? 800 : 400, borderBottom: `1px solid ${C.border}` }}>{c.format ? c.format(v, r) : v}</td> })}
-            </tr>
-          ))}
+          {data.map((r, ri) => {
+            const isHov = hovered === ri && !r.isTotal
+            const baseBg = r.isTotal ? C.accent + '12' : ri % 2 === 0 ? C.card : C.bg
+            return (
+              <tr key={ri} onMouseEnter={() => setHovered(ri)} onMouseLeave={() => setHovered(null)} style={{ background: isHov ? C.hover : baseBg, transition: 'background 0.15s', cursor: 'default' }}>
+                {cols.map((c, ci) => { const v = c.accessor ? r[c.accessor] : ''; return <td key={ci} style={{ padding: compact ? '8px 12px' : 'clamp(10px, 1.3vw, 12px) clamp(12px, 1.5vw, 18px)', textAlign: c.align || 'left', color: r.isTotal ? C.accent : C.text, fontWeight: r.isTotal ? 800 : 400, borderBottom: `1px solid ${C.border}` }}>{c.format ? c.format(v, r) : v}</td> })}
+              </tr>
+            )
+          })}
         </tbody>
       </table>
     </div>
