@@ -409,7 +409,7 @@ const Section = ({ title, children, theme, id }) => {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// LOGIN COMPONENT
+// LOGIN COMPONENT (protezione intera dashboard)
 // ═══════════════════════════════════════════════════════════════════════════════
 const LoginGate = ({ onLogin, theme }) => {
   const C = theme
@@ -417,19 +417,19 @@ const LoginGate = ({ onLogin, theme }) => {
   const [error, setError] = useState(false)
 
   const handleLogin = () => {
-    if (pwd === UPLOAD_PASSWORD) { onLogin(true); localStorage.setItem('dazn_upload_auth', 'true') }
+    if (pwd === UPLOAD_PASSWORD) { onLogin(true); localStorage.setItem('dazn_dashboard_auth', 'true') }
     else { setError(true); setTimeout(() => setError(false), 2000) }
   }
 
   return (
-    <div style={{ padding: 'clamp(40px, 5vw, 80px)', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
-      <div style={{ background: C.card, borderRadius: '16px', padding: '40px', border: `1px solid ${C.border}`, maxWidth: '400px', width: '100%', textAlign: 'center' }}>
-        <div style={{ width: '60px', height: '60px', background: C.primary + '20', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px' }}><span style={{ fontSize: '28px' }}>🔐</span></div>
-        <h2 style={{ color: C.text, fontSize: '24px', fontWeight: 800, margin: '0 0 8px 0' }}>Admin Access</h2>
-        <p style={{ color: C.textMuted, fontSize: '14px', margin: '0 0 32px 0' }}>Inserisci la password per accedere all'upload</p>
-        <input type="password" value={pwd} onChange={e => setPwd(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleLogin()} placeholder="Password" style={{ width: '100%', background: C.bg, border: `2px solid ${error ? C.danger : C.border}`, borderRadius: '10px', padding: '14px 18px', color: C.text, fontSize: '16px', marginBottom: '16px', textAlign: 'center', letterSpacing: '4px' }} />
-        {error && <p style={{ color: C.danger, fontSize: '13px', margin: '0 0 16px 0', fontWeight: 700 }}>Password errata</p>}
-        <button onClick={handleLogin} style={{ width: '100%', background: C.primary, color: C.primaryText, border: 'none', borderRadius: '10px', padding: '14px', fontSize: '16px', fontWeight: 800, cursor: 'pointer' }}>Accedi</button>
+    <div style={{ minHeight: '100vh', background: '#000', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+      <div style={{ maxWidth: '400px', width: '100%', textAlign: 'center', padding: '40px' }}>
+        <img src="https://www.daznbet.it/external_css/DAZNBET/logo.png" alt="DAZN Bet" style={{ height: '60px', marginBottom: '40px' }} />
+        <h2 style={{ color: '#FFFFFF', fontSize: '24px', fontWeight: 800, margin: '0 0 8px 0' }}>Weekly Trading Report</h2>
+        <p style={{ color: '#888', fontSize: '14px', margin: '0 0 32px 0' }}>Inserisci la password per accedere</p>
+        <input type="password" value={pwd} onChange={e => setPwd(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleLogin()} placeholder="Password" style={{ width: '100%', background: '#111', border: `2px solid ${error ? '#FF4757' : '#333'}`, borderRadius: '10px', padding: '14px 18px', color: '#FFF', fontSize: '16px', marginBottom: '16px', textAlign: 'center', letterSpacing: '4px', outline: 'none' }} />
+        {error && <p style={{ color: '#FF4757', fontSize: '13px', margin: '0 0 16px 0', fontWeight: 700 }}>Password errata</p>}
+        <button onClick={handleLogin} style={{ width: '100%', background: '#f7ff1a', color: '#000', border: 'none', borderRadius: '10px', padding: '14px', fontSize: '16px', fontWeight: 800, cursor: 'pointer' }}>Accedi</button>
       </div>
     </div>
   )
@@ -438,9 +438,8 @@ const LoginGate = ({ onLogin, theme }) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // UPLOAD PAGE - CON UPLOAD MASSIVO
 // ═══════════════════════════════════════════════════════════════════════════════
-const UploadPage = ({ weeksData, onUpload, onDelete, theme }) => {
+const UploadPage = ({ weeksData, onUpload, onDelete, onLogout, theme }) => {
   const C = theme
-  const [isAuth, setIsAuth] = useState(false)
   const [week, setWeek] = useState('')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
@@ -449,10 +448,6 @@ const UploadPage = ({ weeksData, onUpload, onDelete, theme }) => {
   const [msg, setMsg] = useState(null)
   const bulkInputRef = useRef(null)
   const exists = week && weeksData[parseInt(week)]
-
-  useEffect(() => { if (localStorage.getItem('dazn_upload_auth') === 'true') setIsAuth(true) }, [])
-
-  if (!isAuth) return <LoginGate onLogin={setIsAuth} theme={C} />
 
   const formatDateRange = () => {
     if (!dateFrom || !dateTo) return ''
@@ -530,7 +525,7 @@ const UploadPage = ({ weeksData, onUpload, onDelete, theme }) => {
     setLoading(false)
   }
 
-  const handleLogout = () => { localStorage.removeItem('dazn_upload_auth'); setIsAuth(false) }
+  const handleLogout = () => { onLogout() }
   const uploadedCount = Object.keys(files).length
 
   return (
@@ -976,16 +971,24 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [db, setDb] = useState({ connected: false })
   const [isDark, setIsDark] = useState(true)
+  const [isAuth, setIsAuth] = useState(false)
 
   const C = isDark ? THEMES.dark : THEMES.light
 
   useEffect(() => {
+    if (localStorage.getItem('dazn_dashboard_auth') === 'true') setIsAuth(true)
+  }, [])
+
+  useEffect(() => {
+    if (!isAuth) { setLoading(false); return }
+    setLoading(true);
     (async () => {
       try { const c = await checkConnection(); setDb(c); const r = await loadAllWeeksData(); if (r.data && Object.keys(r.data).length) { setWeeks(r.data); setSelected(Math.max(...Object.keys(r.data).map(Number))) } } catch (e) { console.error(e) }
       setLoading(false)
     })()
-  }, [])
+  }, [isAuth])
 
+  const handleLogout = () => { localStorage.removeItem('dazn_dashboard_auth'); setIsAuth(false) }
   const handleUpload = async d => { const u = { ...weeks, [d.weekNumber]: d }; setWeeks(u); setSelected(d.weekNumber); await saveWeekData(d); setTab('weekly') }
   const handleDelete = async n => { if (!confirm(`Eliminare Week ${n}?`)) return; const { [n]: _, ...rest } = weeks; setWeeks(rest); await deleteWeekData(n); setSelected(Object.keys(rest).length ? Math.max(...Object.keys(rest).map(Number)) : null) }
 
@@ -993,10 +996,17 @@ export default function Dashboard() {
   const current = selected ? weeks[selected] : null
   const prev = selected && weeks[selected - 1] ? weeks[selected - 1] : null
 
+  // LOGIN SCREEN
+  if (!isAuth) return <LoginGate onLogin={setIsAuth} theme={C} />
+
+  // LOADING con logo DAZN Bet
   if (loading) return (
-    <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ textAlign: 'center' }}><div style={{ width: '40px', height: '40px', border: `3px solid ${C.border}`, borderTopColor: C.primary, borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 16px' }} /><p style={{ color: C.accent, fontSize: '14px', fontWeight: 700 }}>Loading...</p></div>
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    <div style={{ minHeight: '100vh', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ textAlign: 'center' }}>
+        <img src="https://www.daznbet.it/external_css/DAZNBET/logo.png" alt="DAZN Bet" style={{ height: '50px', marginBottom: '24px', animation: 'pulse 1.5s ease-in-out infinite' }} />
+        <p style={{ color: '#888', fontSize: '14px', fontWeight: 600 }}>Caricamento dati...</p>
+      </div>
+      <style>{`@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }`}</style>
     </div>
   )
 
@@ -1013,6 +1023,7 @@ export default function Dashboard() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <button onClick={() => setIsDark(!isDark)} style={{ background: C.card, color: C.text, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '8px 12px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>{isDark ? '☀️' : '🌙'} {isDark ? 'Light' : 'Dark'}</button>
+            <button onClick={handleLogout} style={{ background: 'transparent', color: C.danger, border: `1px solid ${C.danger}`, borderRadius: '6px', padding: '8px 12px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', opacity: 0.7 }} title="Logout">🚪</button>
             <div style={{ display: 'flex', gap: '6px' }}>
               {[{ id: 'weekly', label: 'Weekly' }, { id: 'monthly', label: 'Monthly' }, { id: 'upload', label: 'Upload' }].map(t => (
                 <button key={t.id} onClick={() => setTab(t.id)} style={{ background: tab === t.id ? C.primary : 'transparent', color: tab === t.id ? C.primaryText : C.textSec, border: `1px solid ${tab === t.id ? C.primary : C.border}`, borderRadius: '6px', padding: 'clamp(8px, 1vw, 10px) clamp(14px, 2vw, 20px)', fontSize: 'clamp(11px, 1.2vw, 13px)', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s' }}>{t.label}</button>
@@ -1032,7 +1043,7 @@ export default function Dashboard() {
       <main>
         {tab === 'weekly' && <Weekly data={current} prev={prev} theme={C} />}
         {tab === 'monthly' && <Monthly weeksData={weeks} theme={C} />}
-        {tab === 'upload' && <UploadPage weeksData={weeks} onUpload={handleUpload} onDelete={handleDelete} theme={C} />}
+        {tab === 'upload' && <UploadPage weeksData={weeks} onUpload={handleUpload} onDelete={handleDelete} onLogout={handleLogout} theme={C} />}
       </main>
     </div>
   )
