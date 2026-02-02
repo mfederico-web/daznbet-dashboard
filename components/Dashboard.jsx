@@ -534,11 +534,32 @@ const Section = ({ title, sub, children, theme }) => {
 const UploadPage = ({ weeksData, onUpload, onDelete, theme }) => {
   const C = theme
   const [week, setWeek] = useState('')
-  const [dates, setDates] = useState('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
   const [files, setFiles] = useState({})
   const [loading, setLoading] = useState(false)
   const [msg, setMsg] = useState(null)
   const exists = week && weeksData[parseInt(week)]
+  
+  // Format date range from calendar inputs
+  const formatDateRange = () => {
+    if (!dateFrom || !dateTo) return ''
+    const from = new Date(dateFrom)
+    const to = new Date(dateTo)
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    const fromDay = from.getDate().toString().padStart(2, '0')
+    const toDay = to.getDate().toString().padStart(2, '0')
+    const toMonth = months[to.getMonth()]
+    const toYear = to.getFullYear()
+    // Same month: "03 - 09 Feb 2025", different months: "28 Jan - 03 Feb 2025"
+    if (from.getMonth() === to.getMonth() && from.getFullYear() === to.getFullYear()) {
+      return `${fromDay} - ${toDay} ${toMonth} ${toYear}`
+    }
+    const fromMonth = months[from.getMonth()]
+    return `${fromDay} ${fromMonth} - ${toDay} ${toMonth} ${toYear}`
+  }
+  
+  const dates = formatDateRange()
 
   const readFile = async f => new Promise((res, rej) => {
     const r = new FileReader()
@@ -556,7 +577,7 @@ const UploadPage = ({ weeksData, onUpload, onDelete, theme }) => {
   }
 
   const handleUpload = async () => {
-    if (!week || !dates) { setMsg({ t: 'error', m: 'Inserisci settimana e date range' }); return }
+    if (!week || !dateFrom || !dateTo) { setMsg({ t: 'error', m: 'Inserisci settimana e seleziona date' }); return }
     const missing = FILES.filter(f => !files[f.key])
     if (missing.length) { setMsg({ t: 'error', m: `Mancano ${missing.length} file` }); return }
     setLoading(true)
@@ -565,7 +586,7 @@ const UploadPage = ({ weeksData, onUpload, onDelete, theme }) => {
       const proc = processData(fd, parseInt(week), dates)
       await onUpload(proc)
       setMsg({ t: 'success', m: exists ? `Week ${week} aggiornata!` : `Week ${week} caricata!` })
-      setWeek(''); setDates(''); setFiles({})
+      setWeek(''); setDateFrom(''); setDateTo(''); setFiles({})
     } catch (err) { console.error(err); setMsg({ t: 'error', m: 'Errore elaborazione' }) }
     setLoading(false)
   }
@@ -575,16 +596,26 @@ const UploadPage = ({ weeksData, onUpload, onDelete, theme }) => {
   return (
     <div style={{ padding: 'clamp(20px, 3vw, 48px)' }}>
       <Section title="Upload Week Data" sub="Carica i 10 file Excel per processare una nuova settimana" theme={C}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '16px', marginBottom: '24px' }}>
           <div>
             <label style={{ color: C.textMuted, fontSize: '11px', display: 'block', marginBottom: '6px', textTransform: 'uppercase', fontWeight: 600 }}>Settimana</label>
             <input type="number" value={week} onChange={e => setWeek(e.target.value)} placeholder="es. 6" style={{ width: '100%', background: C.bg, border: `1px solid ${exists ? C.orange : C.border}`, borderRadius: '8px', padding: '12px', color: C.text, fontSize: '16px', fontWeight: 700 }} />
             {exists && <p style={{ color: C.orange, fontSize: '11px', marginTop: '6px' }}>⚠ Sovrascriverà i dati esistenti</p>}
           </div>
           <div>
-            <label style={{ color: C.textMuted, fontSize: '11px', display: 'block', marginBottom: '6px', textTransform: 'uppercase', fontWeight: 600 }}>Date Range</label>
-            <input type="text" value={dates} onChange={e => setDates(e.target.value)} placeholder="03 - 09 Feb 2025" style={{ width: '100%', background: C.bg, border: `1px solid ${C.border}`, borderRadius: '8px', padding: '12px', color: C.text, fontSize: '16px' }} />
+            <label style={{ color: C.textMuted, fontSize: '11px', display: 'block', marginBottom: '6px', textTransform: 'uppercase', fontWeight: 600 }}>Da</label>
+            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={{ width: '100%', background: C.bg, border: `1px solid ${C.border}`, borderRadius: '8px', padding: '12px', color: C.text, fontSize: '14px', fontWeight: 600, cursor: 'pointer' }} />
           </div>
+          <div>
+            <label style={{ color: C.textMuted, fontSize: '11px', display: 'block', marginBottom: '6px', textTransform: 'uppercase', fontWeight: 600 }}>A</label>
+            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ width: '100%', background: C.bg, border: `1px solid ${C.border}`, borderRadius: '8px', padding: '12px', color: C.text, fontSize: '14px', fontWeight: 600, cursor: 'pointer' }} />
+          </div>
+          {dates && (
+            <div>
+              <label style={{ color: C.textMuted, fontSize: '11px', display: 'block', marginBottom: '6px', textTransform: 'uppercase', fontWeight: 600 }}>Preview</label>
+              <div style={{ background: C.card, border: `1px solid ${C.primary}`, borderRadius: '8px', padding: '12px', color: C.primary, fontSize: '14px', fontWeight: 700 }}>{dates}</div>
+            </div>
+          )}
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px', marginBottom: '24px' }}>
