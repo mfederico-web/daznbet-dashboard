@@ -6,28 +6,45 @@ import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Toolti
 import { saveWeekData, loadAllWeeksData, deleteWeekData, checkConnection } from '../lib/supabase'
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// DAZN BET - MINIMAL B&W THEME
+// DAZN BET - DUAL THEME (B&W Toggle)
 // ═══════════════════════════════════════════════════════════════════════════════
-const C = {
-  primary: '#CCFF00',
-  primaryDark: '#a8d600',
-  bg: '#000000',
-  card: '#0a0a0a',
-  cardHover: '#111111',
-  border: '#1a1a1a',
-  borderLight: '#333333',
-  text: '#FFFFFF',
-  textSec: '#999999',
-  textMuted: '#666666',
-  success: '#00D26A',
-  successDim: 'rgba(0,210,106,0.1)',
-  danger: '#FF4757',
-  dangerDim: 'rgba(255,71,87,0.1)',
-  blue: '#3B82F6',
-  purple: '#8B5CF6',
-  orange: '#F59E0B',
-  cyan: '#06B6D4',
-  chart: ['#CCFF00', '#00D26A', '#3B82F6', '#8B5CF6', '#F59E0B', '#06B6D4', '#EC4899', '#F97316']
+const THEMES = {
+  dark: {
+    primary: '#CCFF00',
+    bg: '#000000',
+    card: '#0a0a0a',
+    border: '#1a1a1a',
+    text: '#FFFFFF',
+    textSec: '#999999',
+    textMuted: '#666666',
+    success: '#00D26A',
+    successDim: 'rgba(0,210,106,0.15)',
+    danger: '#FF4757',
+    dangerDim: 'rgba(255,71,87,0.15)',
+    blue: '#3B82F6',
+    purple: '#8B5CF6',
+    orange: '#F59E0B',
+    cyan: '#06B6D4',
+    chart: ['#CCFF00', '#00D26A', '#3B82F6', '#8B5CF6', '#F59E0B', '#06B6D4', '#EC4899', '#F97316']
+  },
+  light: {
+    primary: '#000000',
+    bg: '#FFFFFF',
+    card: '#F8F8F8',
+    border: '#E0E0E0',
+    text: '#000000',
+    textSec: '#444444',
+    textMuted: '#888888',
+    success: '#00A854',
+    successDim: 'rgba(0,168,84,0.1)',
+    danger: '#D93025',
+    dangerDim: 'rgba(217,48,37,0.1)',
+    blue: '#1A73E8',
+    purple: '#7C3AED',
+    orange: '#EA8600',
+    cyan: '#0891B2',
+    chart: ['#000000', '#00A854', '#1A73E8', '#7C3AED', '#EA8600', '#0891B2', '#DB2777', '#EA580C']
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -106,6 +123,18 @@ const processData = (files, weekNum, dateRange) => {
   // REGISTRATIONS: count rows from Anagrafica (Data Creazione)
   const reg = ana.length
   
+  // ═══ DAILY REG from Anagrafica - Group by date ═══
+  const dailyRegMap = {}
+  ana.forEach(r => {
+    if (r["Data Creazione"]) {
+      const dateObj = new Date(r["Data Creazione"])
+      const dateKey = dateObj.toISOString().split('T')[0] // YYYY-MM-DD
+      const dateLabel = dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+      if (!dailyRegMap[dateKey]) dailyRegMap[dateKey] = { date: dateLabel, dateKey, registrations: 0 }
+      dailyRegMap[dateKey].registrations++
+    }
+  })
+  
   // Channel classification
   const channelGroups = {}
   ana.forEach(r => {
@@ -117,7 +146,7 @@ const processData = (files, weekNum, dateRange) => {
     if (r["Primo deposito"]) channelGroups[ch].ftds++
   })
   
-  // Quality Acquisition per channel
+  // Quality Acquisition per channel + TOTALI row
   const qualityAcq = Object.entries(channelGroups).map(([ch, d]) => {
     const r = d.rows.length
     const f = d.ftds
@@ -136,12 +165,33 @@ const processData = (files, weekNum, dateRange) => {
     }
   }).filter(c => c.channel !== "OTHER").sort((a, b) => b.reg - a.reg)
 
+  // Add TOTALI row
+  const totalsRow = {
+    channel: 'TOTALI',
+    reg: qualityAcq.reduce((s, c) => s + c.reg, 0),
+    ftds: qualityAcq.reduce((s, c) => s + c.ftds, 0),
+    conv: 0,
+    activated: 0,
+    avgAge: 0,
+    isTotal: true
+  }
+  totalsRow.conv = totalsRow.reg > 0 ? parseFloat((totalsRow.ftds / totalsRow.reg * 100).toFixed(1)) : 0
+  const totalActivated = qualityAcq.reduce((s, c) => s + Math.round(c.activated * c.reg / 100), 0)
+  totalsRow.activated = totalsRow.reg > 0 ? Math.round(totalActivated / totalsRow.reg * 100) : 0
+  const totalAgeSum = qualityAcq.reduce((s, c) => s + (c.avgAge * c.reg), 0)
+  totalsRow.avgAge = totalsRow.reg > 0 ? Math.round(totalAgeSum / totalsRow.reg) : 0
+  qualityAcq.push(totalsRow)
+
   // Daily stats from Anagrafica2
   const daily = ana2.map(r => {
     const d = r["Data"]
+    const dateObj = d ? new Date(d) : null
+    const dateKey = dateObj ? dateObj.toISOString().split('T')[0] : ''
+    const dateLabel = dateObj ? dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : ''
     return {
-      date: d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '',
-      registrations: parseNum(r["Registrati AAMS"]) || 0,
+      date: dateLabel,
+      dateKey,
+      registrations: dailyRegMap[dateKey]?.registrations || 0, // From Anagrafica!
       ftds: parseNum(r["Primo deposito"]) || 0,
       deposits: parseNum(r["Importo depositi"]) || 0,
       withdrawals: parseNum(r["Importo prelievi processati"]) || 0,
@@ -152,7 +202,7 @@ const processData = (files, weekNum, dateRange) => {
     }
   })
   
-  // Aggregated stats
+  // Aggregated stats from Anagrafica2
   const ftds = daily.reduce((s, d) => s + d.ftds, 0)
   const totalDep = daily.reduce((s, d) => s + d.deposits, 0)
   const totalWit = daily.reduce((s, d) => s + d.withdrawals, 0)
@@ -162,11 +212,20 @@ const processData = (files, weekNum, dateRange) => {
   const totalUniqueDep = daily.reduce((s, d) => s + d.uniqueDepositors, 0)
   const avgFirstDep = ana2.reduce((s, r) => s + parseNum(r["Importo primo deposito"]), 0)
   
-  // TOTALS from Anagrafica_TOTAL (prima riga)
+  // ═══ TOTALS from Anagrafica_TOTAL (PRIMA RIGA) ═══
   const totRow = total[0] || {}
   const turnover = parseNum(totRow["Giocato"]) || 0
   const ggr = parseNum(totRow["rake"]) || parseNum(totRow["ggr"]) || 0
   const actives = parseNum(totRow["conti attivi"]) || 0
+
+  // ═══ TOP 3 PRODUCTS from Anagrafica_CATEGORIA ═══
+  const top3Products = ['Scommesse', 'Casino', 'Casino Live'].map(prodName => {
+    const row = cat.find(r => String(r["Categoria"] || "").toLowerCase().includes(prodName.toLowerCase()))
+    return {
+      name: prodName,
+      actives: row ? parseNum(row["conti attivi"]) : 0
+    }
+  })
 
   // Products from Anagrafica_CATEGORIA (colonna rake per GGR)
   const products = cat.map(r => ({
@@ -207,7 +266,6 @@ const processData = (files, weekNum, dateRange) => {
     const aG = acadRow ? (parseNum(acadRow["rake"]) || parseNum(acadRow["ggr"])) : 0
     const aA = acadRow ? parseNum(acadRow["conti attivi"]) : 0
     
-    // VIVABET/GLAD = VIVABET totale - Academy
     const gladT = vT - aT, gladG = vG - aG, gladA = vA - aA
     if (gladT > 0 || gladA > 0) {
       chanPerf.push({ channel: 'VIVABET/GLAD', turnover: gladT, ggr: gladG, gwm: gladT > 0 ? parseFloat((gladG / gladT * 100).toFixed(1)) : 0, actives: gladA })
@@ -261,19 +319,6 @@ const processData = (files, weekNum, dateRange) => {
   ana.forEach(r => { const s = r["Cod Punto"]; if (s) srcCount[s] = (srcCount[s] || 0) + 1 })
   const sources = Object.entries(srcCount).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, count]) => ({ name: name.substring(0, 20), count }))
 
-  // Daily REG from Anagrafica (group by Data Creazione date)
-  const dailyRegMap = {}
-  ana.forEach(r => {
-    if (r["Data Creazione"]) {
-      const d = new Date(r["Data Creazione"]).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
-      dailyRegMap[d] = (dailyRegMap[d] || 0) + 1
-    }
-  })
-  // Merge with daily stats
-  daily.forEach(d => {
-    if (dailyRegMap[d.date]) d.registrations = dailyRegMap[d.date]
-  })
-
   return {
     weekNumber: weekNum,
     dateRange,
@@ -288,6 +333,7 @@ const processData = (files, weekNum, dateRange) => {
     ggr,
     gwm: turnover > 0 ? parseFloat((ggr / turnover * 100).toFixed(1)) : 0,
     activeUsers: actives,
+    top3Products,
     totalLogins,
     totalBonus,
     demographics: {
@@ -304,37 +350,24 @@ const processData = (files, weekNum, dateRange) => {
     financialHealth: {
       withdrawalRatio: totalDep > 0 ? parseFloat((totalWit / totalDep * 100).toFixed(1)) : 0,
       depositFrequency: totalUniqueDep > 0 ? parseFloat((totalDepCount / totalUniqueDep).toFixed(1)) : 0,
-      bonusROI: totalBonus > 0 ? Math.round(ggr / totalBonus) : 0,
+      bonusROI: totalBonus > 0 ? parseFloat((ggr / totalBonus).toFixed(1)) : 0,
       customerValue: actives > 0 ? Math.round(ggr / actives) : 0,
       loginPerUser: actives > 0 ? parseFloat((totalLogins / actives).toFixed(1)) : 0,
-      newPlayersRatio: actives > 0 ? parseFloat((ftds / actives * 100).toFixed(1)) : 0
+      newPlayersRatio: actives > 0 ? parseFloat((ftds / actives * 100).toFixed(1)) : 0,
+      // Raw values for explanations
+      _ggr: ggr,
+      _bonus: totalBonus,
+      _logins: totalLogins,
+      _actives: actives
     }
   }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// LOGO COMPONENT (Official)
-// ═══════════════════════════════════════════════════════════════════════════════
-const Logo = ({ size = 'md' }) => {
-  const sizes = { sm: { dazn: 12, bet: 16 }, md: { dazn: 14, bet: 20 }, lg: { dazn: 20, bet: 28 } }
-  const s = sizes[size] || sizes.md
-  return (
-    <div style={{ display: 'flex', alignItems: 'center' }}>
-      <div style={{ background: '#000', border: '2.5px solid #fff', borderRadius: '6px', padding: '5px 8px', display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 0.85 }}>
-        <span style={{ color: '#fff', fontSize: s.dazn, fontWeight: 900, fontFamily: 'system-ui' }}>DA</span>
-        <span style={{ color: '#fff', fontSize: s.dazn, fontWeight: 900, fontFamily: 'system-ui' }}>ZN</span>
-      </div>
-      <div style={{ background: C.primary, borderRadius: '6px', padding: '5px 10px', marginLeft: '-2px' }}>
-        <span style={{ color: '#000', fontSize: s.bet, fontWeight: 900, fontStyle: 'italic', fontFamily: 'system-ui' }}>BET</span>
-      </div>
-    </div>
-  )
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
 // ANIMATED KPI CARD
 // ═══════════════════════════════════════════════════════════════════════════════
-const KPI = ({ label, value, sub, change, delay = 0, cur = false, pct = false, icon }) => {
+const KPI = ({ label, value, sub, change, delay = 0, cur = false, pct = false, icon, theme }) => {
+  const C = theme
   const [vis, setVis] = useState(false)
   const [anim, setAnim] = useState(0)
   const numVal = typeof value === 'number' ? value : parseFloat(String(value).replace(/[^0-9.-]/g, '')) || 0
@@ -367,10 +400,10 @@ const KPI = ({ label, value, sub, change, delay = 0, cur = false, pct = false, i
         <span style={{ color: C.textMuted, fontSize: 'clamp(10px, 1.1vw, 12px)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{label}</span>
         {icon && <span style={{ fontSize: '16px', opacity: 0.5 }}>{icon}</span>}
       </div>
-      <p style={{ color: C.text, fontSize: 'clamp(24px, 3vw, 36px)', fontWeight: 700, margin: '0 0 4px 0', fontFamily: 'system-ui' }}>{display}</p>
+      <p style={{ color: C.text, fontSize: 'clamp(24px, 3vw, 36px)', fontWeight: 800, margin: '0 0 4px 0', fontFamily: 'system-ui' }}>{display}</p>
       {sub && <p style={{ color: C.textMuted, fontSize: 'clamp(10px, 1vw, 12px)', margin: 0 }}>{sub}</p>}
       {change && (
-        <p style={{ color: parseFloat(change) >= 0 ? C.success : C.danger, fontSize: 'clamp(11px, 1.1vw, 13px)', fontWeight: 600, margin: '6px 0 0 0' }}>
+        <p style={{ color: parseFloat(change) >= 0 ? C.success : C.danger, fontSize: 'clamp(11px, 1.1vw, 13px)', fontWeight: 700, margin: '6px 0 0 0' }}>
           {parseFloat(change) > 0 ? '▲' : '▼'} {Math.abs(parseFloat(change))}% vs prev
         </p>
       )}
@@ -379,66 +412,79 @@ const KPI = ({ label, value, sub, change, delay = 0, cur = false, pct = false, i
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// CHART COMPONENTS
+// CHART COMPONENTS with BOLD numbers
 // ═══════════════════════════════════════════════════════════════════════════════
-const Tip = ({ active, payload, label }) => active && payload?.length ? (
-  <div style={{ background: '#111', border: `1px solid ${C.border}`, borderRadius: '8px', padding: '10px 14px' }}>
-    <p style={{ color: C.text, margin: '0 0 6px 0', fontWeight: 600, fontSize: '13px' }}>{label}</p>
-    {payload.map((e, i) => <p key={i} style={{ color: e.color, margin: '2px 0', fontSize: '12px' }}>{e.name}: <b>{typeof e.value === 'number' && e.value > 1000 ? fmtNum(e.value) : e.value}</b></p>)}
-  </div>
-) : null
+const Tip = ({ active, payload, label, theme }) => {
+  const C = theme || THEMES.dark
+  return active && payload?.length ? (
+    <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '8px', padding: '10px 14px' }}>
+      <p style={{ color: C.text, margin: '0 0 6px 0', fontWeight: 700, fontSize: '13px' }}>{label}</p>
+      {payload.map((e, i) => <p key={i} style={{ color: e.color, margin: '2px 0', fontSize: '12px' }}>{e.name}: <b style={{ fontWeight: 800 }}>{typeof e.value === 'number' && e.value > 1000 ? fmtNum(e.value) : e.value}</b></p>)}
+    </div>
+  ) : null
+}
 
-const ChartCard = ({ title, children, height = 280 }) => (
-  <div style={{ background: C.card, borderRadius: '12px', padding: 'clamp(16px, 2vw, 24px)', border: `1px solid ${C.border}` }}>
-    {title && <h4 style={{ color: C.textSec, margin: '0 0 16px 0', fontSize: 'clamp(11px, 1.2vw, 13px)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{title}</h4>}
-    <ResponsiveContainer width="100%" height={height}>{children}</ResponsiveContainer>
-  </div>
-)
+const ChartCard = ({ title, children, height = 280, theme }) => {
+  const C = theme
+  return (
+    <div style={{ background: C.card, borderRadius: '12px', padding: 'clamp(16px, 2vw, 24px)', border: `1px solid ${C.border}` }}>
+      {title && <h4 style={{ color: C.textSec, margin: '0 0 16px 0', fontSize: 'clamp(11px, 1.2vw, 13px)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{title}</h4>}
+      <ResponsiveContainer width="100%" height={height}>{children}</ResponsiveContainer>
+    </div>
+  )
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TABLE COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
-const Table = ({ cols, data, compact = false }) => (
-  <div style={{ overflowX: 'auto', borderRadius: '10px', border: `1px solid ${C.border}` }}>
-    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: compact ? '12px' : 'clamp(12px, 1.2vw, 14px)' }}>
-      <thead>
-        <tr style={{ background: '#0a0a0a' }}>
-          {cols.map((c, i) => (
-            <th key={i} style={{ padding: compact ? '10px 12px' : 'clamp(10px, 1.4vw, 14px) clamp(12px, 1.5vw, 18px)', textAlign: c.align || 'left', color: C.primary, fontWeight: 600, fontSize: compact ? '10px' : 'clamp(10px, 1vw, 12px)', textTransform: 'uppercase', letterSpacing: '0.3px', borderBottom: `1px solid ${C.primary}` }}>{c.header}</th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {data.map((r, ri) => (
-          <tr key={ri} style={{ background: ri % 2 === 0 ? C.card : '#050505' }}>
-            {cols.map((c, ci) => {
-              const v = c.accessor ? r[c.accessor] : ''
-              return <td key={ci} style={{ padding: compact ? '8px 12px' : 'clamp(10px, 1.3vw, 12px) clamp(12px, 1.5vw, 18px)', textAlign: c.align || 'left', color: C.text, borderBottom: `1px solid ${C.border}` }}>{c.format ? c.format(v, r) : v}</td>
-            })}
+const Table = ({ cols, data, compact = false, theme }) => {
+  const C = theme
+  return (
+    <div style={{ overflowX: 'auto', borderRadius: '10px', border: `1px solid ${C.border}` }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: compact ? '12px' : 'clamp(12px, 1.2vw, 14px)' }}>
+        <thead>
+          <tr style={{ background: C.bg }}>
+            {cols.map((c, i) => (
+              <th key={i} style={{ padding: compact ? '10px 12px' : 'clamp(10px, 1.4vw, 14px) clamp(12px, 1.5vw, 18px)', textAlign: c.align || 'left', color: C.primary, fontWeight: 700, fontSize: compact ? '10px' : 'clamp(10px, 1vw, 12px)', textTransform: 'uppercase', letterSpacing: '0.3px', borderBottom: `2px solid ${C.primary}` }}>{c.header}</th>
+            ))}
           </tr>
-        ))}
-      </tbody>
-    </table>
-  </div>
-)
+        </thead>
+        <tbody>
+          {data.map((r, ri) => (
+            <tr key={ri} style={{ background: r.isTotal ? C.primary + '15' : ri % 2 === 0 ? C.card : C.bg }}>
+              {cols.map((c, ci) => {
+                const v = c.accessor ? r[c.accessor] : ''
+                return <td key={ci} style={{ padding: compact ? '8px 12px' : 'clamp(10px, 1.3vw, 12px) clamp(12px, 1.5vw, 18px)', textAlign: c.align || 'left', color: r.isTotal ? C.primary : C.text, fontWeight: r.isTotal ? 800 : 400, borderBottom: `1px solid ${C.border}` }}>{c.format ? c.format(v, r) : v}</td>
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SECTION HEADER
 // ═══════════════════════════════════════════════════════════════════════════════
-const Section = ({ title, sub, children }) => (
-  <section style={{ marginBottom: 'clamp(32px, 4vw, 56px)' }}>
-    <div style={{ marginBottom: 'clamp(16px, 2vw, 24px)', borderBottom: `1px solid ${C.border}`, paddingBottom: '12px' }}>
-      <h2 style={{ color: C.text, fontSize: 'clamp(18px, 2.2vw, 24px)', fontWeight: 700, margin: 0 }}>{title}</h2>
-      {sub && <p style={{ color: C.textMuted, fontSize: 'clamp(11px, 1.2vw, 14px)', margin: '4px 0 0 0' }}>{sub}</p>}
-    </div>
-    {children}
-  </section>
-)
+const Section = ({ title, sub, children, theme }) => {
+  const C = theme
+  return (
+    <section style={{ marginBottom: 'clamp(32px, 4vw, 56px)' }}>
+      <div style={{ marginBottom: 'clamp(16px, 2vw, 24px)', borderBottom: `1px solid ${C.border}`, paddingBottom: '12px' }}>
+        <h2 style={{ color: C.text, fontSize: 'clamp(18px, 2.2vw, 24px)', fontWeight: 800, margin: 0 }}>{title}</h2>
+        {sub && <p style={{ color: C.textMuted, fontSize: 'clamp(11px, 1.2vw, 14px)', margin: '4px 0 0 0' }}>{sub}</p>}
+      </div>
+      {children}
+    </section>
+  )
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // UPLOAD PAGE
 // ═══════════════════════════════════════════════════════════════════════════════
-const UploadPage = ({ weeksData, onUpload, onDelete }) => {
+const UploadPage = ({ weeksData, onUpload, onDelete, theme }) => {
+  const C = theme
   const [week, setWeek] = useState('')
   const [dates, setDates] = useState('')
   const [files, setFiles] = useState({})
@@ -480,16 +526,16 @@ const UploadPage = ({ weeksData, onUpload, onDelete }) => {
 
   return (
     <div style={{ padding: 'clamp(20px, 3vw, 48px)' }}>
-      <Section title="Upload Week Data" sub="Carica i 10 file Excel per processare una nuova settimana">
+      <Section title="Upload Week Data" sub="Carica i 10 file Excel per processare una nuova settimana" theme={C}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
           <div>
-            <label style={{ color: C.textMuted, fontSize: '11px', display: 'block', marginBottom: '6px', textTransform: 'uppercase' }}>Settimana</label>
-            <input type="number" value={week} onChange={e => setWeek(e.target.value)} placeholder="es. 6" style={{ width: '100%', background: '#000', border: `1px solid ${exists ? C.orange : C.border}`, borderRadius: '8px', padding: '12px', color: C.text, fontSize: '16px', fontWeight: 600 }} />
+            <label style={{ color: C.textMuted, fontSize: '11px', display: 'block', marginBottom: '6px', textTransform: 'uppercase', fontWeight: 600 }}>Settimana</label>
+            <input type="number" value={week} onChange={e => setWeek(e.target.value)} placeholder="es. 6" style={{ width: '100%', background: C.bg, border: `1px solid ${exists ? C.orange : C.border}`, borderRadius: '8px', padding: '12px', color: C.text, fontSize: '16px', fontWeight: 700 }} />
             {exists && <p style={{ color: C.orange, fontSize: '11px', marginTop: '6px' }}>⚠ Sovrascriverà i dati esistenti</p>}
           </div>
           <div>
-            <label style={{ color: C.textMuted, fontSize: '11px', display: 'block', marginBottom: '6px', textTransform: 'uppercase' }}>Date Range</label>
-            <input type="text" value={dates} onChange={e => setDates(e.target.value)} placeholder="03 - 09 Feb 2025" style={{ width: '100%', background: '#000', border: `1px solid ${C.border}`, borderRadius: '8px', padding: '12px', color: C.text, fontSize: '16px' }} />
+            <label style={{ color: C.textMuted, fontSize: '11px', display: 'block', marginBottom: '6px', textTransform: 'uppercase', fontWeight: 600 }}>Date Range</label>
+            <input type="text" value={dates} onChange={e => setDates(e.target.value)} placeholder="03 - 09 Feb 2025" style={{ width: '100%', background: C.bg, border: `1px solid ${C.border}`, borderRadius: '8px', padding: '12px', color: C.text, fontSize: '16px' }} />
           </div>
         </div>
 
@@ -497,46 +543,46 @@ const UploadPage = ({ weeksData, onUpload, onDelete }) => {
           {FILES.map((f, i) => {
             const up = files[f.key]
             return (
-              <div key={f.key} style={{ background: '#050505', borderRadius: '10px', padding: '14px', border: `1px solid ${up ? C.success : C.border}`, opacity: 0, animation: `fadeIn 0.3s ease ${i * 0.03}s forwards` }}>
+              <div key={f.key} style={{ background: C.card, borderRadius: '10px', padding: '14px', border: `1px solid ${up ? C.success : C.border}`, opacity: 0, animation: `fadeIn 0.3s ease ${i * 0.03}s forwards` }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                  <span style={{ color: up ? C.success : C.text, fontWeight: 600, fontSize: '13px' }}>{up ? '✓' : '○'} {f.name}</span>
-                  {up && <span style={{ color: C.success, fontSize: '10px', background: C.successDim, padding: '2px 6px', borderRadius: '4px' }}>{up.rows}</span>}
+                  <span style={{ color: up ? C.success : C.text, fontWeight: 700, fontSize: '13px' }}>{up ? '✓' : '○'} {f.name}</span>
+                  {up && <span style={{ color: C.success, fontSize: '10px', background: C.successDim, padding: '2px 6px', borderRadius: '4px', fontWeight: 700 }}>{up.rows}</span>}
                 </div>
                 <p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 8px 0' }}>{f.path}</p>
-                <input type="file" accept=".xlsx,.xls" onChange={e => handleFile(e, f.key)} style={{ width: '100%', background: '#000', border: `1px solid ${C.border}`, borderRadius: '6px', padding: '8px', color: C.text, fontSize: '11px', cursor: 'pointer' }} />
+                <input type="file" accept=".xlsx,.xls" onChange={e => handleFile(e, f.key)} style={{ width: '100%', background: C.bg, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '8px', color: C.text, fontSize: '11px', cursor: 'pointer' }} />
               </div>
             )
           })}
         </div>
 
-        {msg && <div style={{ background: msg.t === 'success' ? C.successDim : C.dangerDim, border: `1px solid ${msg.t === 'success' ? C.success : C.danger}`, borderRadius: '8px', padding: '12px', marginBottom: '16px' }}><p style={{ color: msg.t === 'success' ? C.success : C.danger, margin: 0, fontWeight: 600, fontSize: '13px' }}>{msg.m}</p></div>}
+        {msg && <div style={{ background: msg.t === 'success' ? C.successDim : C.dangerDim, border: `1px solid ${msg.t === 'success' ? C.success : C.danger}`, borderRadius: '8px', padding: '12px', marginBottom: '16px' }}><p style={{ color: msg.t === 'success' ? C.success : C.danger, margin: 0, fontWeight: 700, fontSize: '13px' }}>{msg.m}</p></div>}
 
         <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginBottom: '40px' }}>
-          <button onClick={handleUpload} disabled={loading || uploadedCount < 10} style={{ background: uploadedCount >= 10 ? C.primary : C.border, color: '#000', border: 'none', borderRadius: '8px', padding: '14px 32px', fontSize: '14px', fontWeight: 700, cursor: uploadedCount >= 10 ? 'pointer' : 'not-allowed' }}>
+          <button onClick={handleUpload} disabled={loading || uploadedCount < 10} style={{ background: uploadedCount >= 10 ? C.primary : C.border, color: C.bg, border: 'none', borderRadius: '8px', padding: '14px 32px', fontSize: '14px', fontWeight: 800, cursor: uploadedCount >= 10 ? 'pointer' : 'not-allowed' }}>
             {loading ? 'Elaborazione...' : exists ? `Aggiorna Week ${week}` : `Carica Week ${week || '?'}`}
           </button>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <div style={{ width: '120px', height: '6px', background: C.border, borderRadius: '3px', overflow: 'hidden' }}>
               <div style={{ width: `${(uploadedCount / 10) * 100}%`, height: '100%', background: C.primary, transition: 'width 0.3s' }} />
             </div>
-            <span style={{ color: uploadedCount >= 10 ? C.success : C.textMuted, fontSize: '13px', fontWeight: 600 }}>{uploadedCount}/10</span>
+            <span style={{ color: uploadedCount >= 10 ? C.success : C.textMuted, fontSize: '13px', fontWeight: 700 }}>{uploadedCount}/10</span>
           </div>
         </div>
 
         {Object.keys(weeksData).length > 0 && (
           <>
-            <h3 style={{ color: C.text, fontSize: '16px', margin: '0 0 16px 0', fontWeight: 600 }}>Settimane Caricate</h3>
+            <h3 style={{ color: C.text, fontSize: '16px', margin: '0 0 16px 0', fontWeight: 700 }}>Settimane Caricate</h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
               {Object.values(weeksData).sort((a, b) => b.weekNumber - a.weekNumber).map(w => (
-                <div key={w.weekNumber} style={{ background: '#050505', borderRadius: '10px', padding: '16px', border: `1px solid ${C.border}`, position: 'relative' }}>
+                <div key={w.weekNumber} style={{ background: C.card, borderRadius: '10px', padding: '16px', border: `1px solid ${C.border}`, position: 'relative' }}>
                   <button onClick={() => onDelete(w.weekNumber)} style={{ position: 'absolute', top: '10px', right: '10px', background: 'transparent', color: C.danger, border: 'none', fontSize: '14px', cursor: 'pointer', opacity: 0.6 }}>✕</button>
-                  <h4 style={{ color: C.primary, margin: '0 0 4px 0', fontSize: '20px', fontWeight: 700 }}>W{w.weekNumber}</h4>
+                  <h4 style={{ color: C.primary, margin: '0 0 4px 0', fontSize: '20px', fontWeight: 800 }}>W{w.weekNumber}</h4>
                   <p style={{ color: C.textMuted, margin: '0 0 12px 0', fontSize: '12px' }}>{w.dateRange}</p>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '12px' }}>
-                    <div><span style={{ color: C.textMuted }}>REG</span><p style={{ color: C.text, margin: 0, fontWeight: 600 }}>{fmtNum(w.registrations)}</p></div>
-                    <div><span style={{ color: C.textMuted }}>FTDs</span><p style={{ color: C.text, margin: 0, fontWeight: 600 }}>{fmtNum(w.ftds)}</p></div>
-                    <div><span style={{ color: C.textMuted }}>GGR</span><p style={{ color: C.success, margin: 0, fontWeight: 600 }}>{fmtCurrency(w.ggr)}</p></div>
-                    <div><span style={{ color: C.textMuted }}>Actives</span><p style={{ color: C.text, margin: 0, fontWeight: 600 }}>{fmtNum(w.activeUsers)}</p></div>
+                    <div><span style={{ color: C.textMuted }}>REG</span><p style={{ color: C.text, margin: 0, fontWeight: 700 }}>{fmtNum(w.registrations)}</p></div>
+                    <div><span style={{ color: C.textMuted }}>FTDs</span><p style={{ color: C.text, margin: 0, fontWeight: 700 }}>{fmtNum(w.ftds)}</p></div>
+                    <div><span style={{ color: C.textMuted }}>GGR</span><p style={{ color: C.success, margin: 0, fontWeight: 700 }}>{fmtCurrency(w.ggr)}</p></div>
+                    <div><span style={{ color: C.textMuted }}>Actives</span><p style={{ color: C.text, margin: 0, fontWeight: 700 }}>{fmtNum(w.activeUsers)}</p></div>
                   </div>
                 </div>
               ))}
@@ -552,7 +598,8 @@ const UploadPage = ({ weeksData, onUpload, onDelete }) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // MONTHLY SUMMARY
 // ═══════════════════════════════════════════════════════════════════════════════
-const Monthly = ({ weeksData }) => {
+const Monthly = ({ weeksData, theme }) => {
+  const C = theme
   const weeks = Object.values(weeksData).sort((a, b) => a.weekNumber - b.weekNumber)
   if (!weeks.length) return <div style={{ padding: '60px', textAlign: 'center' }}><p style={{ color: C.textMuted, fontSize: '16px' }}>Nessun dato disponibile</p></div>
 
@@ -569,39 +616,39 @@ const Monthly = ({ weeksData }) => {
 
   return (
     <div style={{ padding: 'clamp(20px, 3vw, 48px)' }}>
-      <Section title="Monthly Summary" sub={`Week ${weeks[0].weekNumber} - ${weeks[weeks.length - 1].weekNumber} • ${weeks.length} settimane`}>
+      <Section title="Monthly Summary" sub={`Week ${weeks[0].weekNumber} - ${weeks[weeks.length - 1].weekNumber} • ${weeks.length} settimane`} theme={C}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 'clamp(12px, 1.5vw, 16px)', marginBottom: 'clamp(24px, 3vw, 40px)' }}>
-          <KPI label="Total REG" value={tot.reg} icon="👤" delay={0} />
-          <KPI label="Total FTDs" value={tot.ftds} sub={`Conv: ${(tot.ftds / tot.reg * 100).toFixed(1)}%`} icon="💳" delay={50} />
-          <KPI label="Net Deposit" value={tot.dep - tot.wit} cur icon="💰" delay={100} />
-          <KPI label="Turnover" value={tot.turn} cur icon="🎰" delay={150} />
-          <KPI label="GGR" value={tot.ggr} sub={`GWM: ${(tot.ggr / tot.turn * 100).toFixed(1)}%`} cur icon="📈" delay={200} />
-          <KPI label="Avg Actives" value={avgAct} icon="👥" delay={250} />
+          <KPI label="Total REG" value={tot.reg} icon="👤" delay={0} theme={C} />
+          <KPI label="Total FTDs" value={tot.ftds} sub={`Conv: ${(tot.ftds / tot.reg * 100).toFixed(1)}%`} icon="💳" delay={50} theme={C} />
+          <KPI label="Net Deposit" value={tot.dep - tot.wit} cur icon="💰" delay={100} theme={C} />
+          <KPI label="Turnover" value={tot.turn} cur icon="🎰" delay={150} theme={C} />
+          <KPI label="GGR" value={tot.ggr} sub={`GWM: ${(tot.ggr / tot.turn * 100).toFixed(1)}%`} cur icon="📈" delay={200} theme={C} />
+          <KPI label="Avg Actives" value={avgAct} icon="👥" delay={250} theme={C} />
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: 'clamp(16px, 2vw, 24px)', marginBottom: 'clamp(24px, 3vw, 40px)' }}>
-          <ChartCard title="Registration & FTD Trend">
+          <ChartCard title="Registration & FTD Trend" theme={C}>
             <AreaChart data={trend}>
               <defs>
                 <linearGradient id="gR" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.primary} stopOpacity={0.3} /><stop offset="95%" stopColor={C.primary} stopOpacity={0} /></linearGradient>
                 <linearGradient id="gF" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.success} stopOpacity={0.3} /><stop offset="95%" stopColor={C.success} stopOpacity={0} /></linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
-              <XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 11 }} />
-              <YAxis tick={{ fill: C.textMuted, fontSize: 11 }} />
-              <Tooltip content={<Tip />} />
+              <XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} />
+              <YAxis tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} />
+              <Tooltip content={<Tip theme={C} />} />
               <Legend />
               <Area type="monotone" dataKey="REG" stroke={C.primary} fill="url(#gR)" strokeWidth={2} animationDuration={1200} />
               <Area type="monotone" dataKey="FTDs" stroke={C.success} fill="url(#gF)" strokeWidth={2} animationDuration={1200} animationBegin={200} />
             </AreaChart>
           </ChartCard>
 
-          <ChartCard title="GGR Trend (€K)">
+          <ChartCard title="GGR Trend (€K)" theme={C}>
             <ComposedChart data={trend}>
               <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
-              <XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 11 }} />
-              <YAxis tick={{ fill: C.textMuted, fontSize: 11 }} />
-              <Tooltip content={<Tip />} />
+              <XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} />
+              <YAxis tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} />
+              <Tooltip content={<Tip theme={C} />} />
               <Bar dataKey="GGR" fill={C.primary} radius={[4, 4, 0, 0]} animationDuration={1000} />
               <Line type="monotone" dataKey="Actives" stroke={C.blue} strokeWidth={2} dot={{ fill: C.blue, r: 3 }} animationDuration={1000} animationBegin={300} />
             </ComposedChart>
@@ -609,16 +656,16 @@ const Monthly = ({ weeksData }) => {
         </div>
 
         <Table cols={[
-          { header: 'Week', accessor: 'weekNumber', format: v => <span style={{ color: C.primary, fontWeight: 700 }}>W{v}</span> },
+          { header: 'Week', accessor: 'weekNumber', format: v => <span style={{ color: C.primary, fontWeight: 800 }}>W{v}</span> },
           { header: 'Date', accessor: 'dateRange' },
-          { header: 'REG', accessor: 'registrations', align: 'right', format: fmtNum },
-          { header: 'FTDs', accessor: 'ftds', align: 'right', format: fmtNum },
-          { header: 'Conv%', accessor: 'conversionRate', align: 'center', format: v => `${v}%` },
-          { header: 'Turnover', accessor: 'turnover', align: 'right', format: fmtCurrency },
-          { header: 'GGR', accessor: 'ggr', align: 'right', format: v => <span style={{ color: C.success, fontWeight: 600 }}>{fmtCurrency(v)}</span> },
-          { header: 'GWM', accessor: 'gwm', align: 'center', format: v => `${v}%` },
-          { header: 'Actives', accessor: 'activeUsers', align: 'right', format: fmtNum }
-        ]} data={weeks} />
+          { header: 'REG', accessor: 'registrations', align: 'right', format: v => <b>{fmtNum(v)}</b> },
+          { header: 'FTDs', accessor: 'ftds', align: 'right', format: v => <b>{fmtNum(v)}</b> },
+          { header: 'Conv%', accessor: 'conversionRate', align: 'center', format: v => <b>{v}%</b> },
+          { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
+          { header: 'GGR', accessor: 'ggr', align: 'right', format: v => <span style={{ color: C.success, fontWeight: 800 }}>{fmtCurrency(v)}</span> },
+          { header: 'GWM', accessor: 'gwm', align: 'center', format: v => <b>{v}%</b> },
+          { header: 'Actives', accessor: 'activeUsers', align: 'right', format: v => <b>{fmtNum(v)}</b> }
+        ]} data={weeks} theme={C} />
       </Section>
     </div>
   )
@@ -627,7 +674,8 @@ const Monthly = ({ weeksData }) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // WEEKLY REPORT - MAIN VIEW
 // ═══════════════════════════════════════════════════════════════════════════════
-const Weekly = ({ data, prev, allData }) => {
+const Weekly = ({ data, prev, allData, theme }) => {
+  const C = theme
   if (!data) return <div style={{ padding: '60px', textAlign: 'center' }}><p style={{ color: C.textMuted, fontSize: '16px' }}>Seleziona o carica una settimana</p></div>
 
   const regCh = prev ? calcChange(data.registrations, prev.registrations) : null
@@ -639,60 +687,71 @@ const Weekly = ({ data, prev, allData }) => {
   return (
     <div style={{ padding: 'clamp(20px, 3vw, 48px)' }}>
       {/* TRADING SUMMARY */}
-      <Section title="Trading Summary" sub={`Week ${data.weekNumber} • ${data.dateRange}`}>
+      <Section title="Trading Summary" sub={`Week ${data.weekNumber} • ${data.dateRange}`} theme={C}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 'clamp(12px, 1.5vw, 16px)', marginBottom: 'clamp(20px, 2.5vw, 28px)' }}>
-          <KPI label="Registrations" value={data.registrations} change={regCh} icon="👤" delay={0} />
-          <KPI label="FTDs" value={data.ftds} sub={`Conv: ${data.conversionRate}% • Avg: €${data.avgFirstDeposit}`} change={ftdCh} icon="💳" delay={50} />
-          <KPI label="Net Deposit" value={data.netDeposit} sub={`Dep ${fmtCurrency(data.totalDeposits)} - Wit ${fmtCurrency(data.totalWithdrawals)}`} cur icon="💰" delay={100} />
-          <KPI label="Turnover" value={data.turnover} change={turnCh} cur icon="🎰" delay={150} />
-          <KPI label="GGR" value={data.ggr} change={ggrCh} cur icon="📈" delay={200} />
-          <KPI label="GWM" value={data.gwm} sub={prev ? `${(data.gwm - prev.gwm) >= 0 ? '+' : ''}${(data.gwm - prev.gwm).toFixed(1)}pp` : null} pct icon="📊" delay={250} />
+          <KPI label="Registrations" value={data.registrations} change={regCh} icon="👤" delay={0} theme={C} />
+          <KPI label="FTDs" value={data.ftds} sub={`Conv: ${data.conversionRate}% • Avg: €${data.avgFirstDeposit}`} change={ftdCh} icon="💳" delay={50} theme={C} />
+          <KPI label="Net Deposit" value={data.netDeposit} sub={`Dep ${fmtCurrency(data.totalDeposits)} - Wit ${fmtCurrency(data.totalWithdrawals)}`} cur icon="💰" delay={100} theme={C} />
+          <KPI label="Turnover" value={data.turnover} change={turnCh} cur icon="🎰" delay={150} theme={C} />
+          <KPI label="GGR" value={data.ggr} change={ggrCh} cur icon="📈" delay={200} theme={C} />
+          <KPI label="GWM" value={data.gwm} sub={prev ? `${(data.gwm - prev.gwm) >= 0 ? '+' : ''}${(data.gwm - prev.gwm).toFixed(1)}pp` : null} pct icon="📊" delay={250} theme={C} />
         </div>
 
-        {/* Weekly Actives Highlight */}
-        <div style={{ background: 'linear-gradient(135deg, #0a0a0a 0%, #000 100%)', borderRadius: '12px', padding: 'clamp(20px, 3vw, 32px)', border: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+        {/* Weekly Actives Highlight + Top 3 Products */}
+        <div style={{ background: `linear-gradient(135deg, ${C.card} 0%, ${C.bg} 100%)`, borderRadius: '12px', padding: 'clamp(20px, 3vw, 32px)', border: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '24px' }}>
           <div>
-            <p style={{ color: C.textMuted, fontSize: 'clamp(11px, 1.2vw, 14px)', fontWeight: 600, textTransform: 'uppercase', margin: '0 0 6px 0' }}>Weekly Active Users</p>
-            <p style={{ color: C.primary, fontSize: 'clamp(36px, 5vw, 56px)', fontWeight: 800, margin: 0, fontFamily: 'system-ui' }}>{fmtNum(data.activeUsers)}</p>
-            {actCh && <p style={{ color: parseFloat(actCh) >= 0 ? C.success : C.danger, fontSize: '14px', margin: '8px 0 0 0' }}>{parseFloat(actCh) > 0 ? '▲' : '▼'} {Math.abs(parseFloat(actCh))}% vs prev week</p>}
+            <p style={{ color: C.textMuted, fontSize: 'clamp(11px, 1.2vw, 14px)', fontWeight: 700, textTransform: 'uppercase', margin: '0 0 6px 0' }}>Weekly Active Users</p>
+            <p style={{ color: C.primary, fontSize: 'clamp(36px, 5vw, 56px)', fontWeight: 900, margin: 0, fontFamily: 'system-ui' }}>{fmtNum(data.activeUsers)}</p>
+            {actCh && <p style={{ color: parseFloat(actCh) >= 0 ? C.success : C.danger, fontSize: '14px', fontWeight: 700, margin: '8px 0 0 0' }}>{parseFloat(actCh) > 0 ? '▲' : '▼'} {Math.abs(parseFloat(actCh))}% vs prev week</p>}
           </div>
-          <div style={{ display: 'flex', gap: '16px' }}>
+          
+          {/* Top 3 Products Actives */}
+          <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+            {(data.top3Products || []).map((prod, i) => (
+              <div key={i} style={{ textAlign: 'center', minWidth: '80px' }}>
+                <p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', textTransform: 'uppercase', fontWeight: 600 }}>{prod.name}</p>
+                <p style={{ color: C.chart[i], fontSize: '24px', fontWeight: 800, margin: 0 }}>{fmtNum(prod.actives)}</p>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ display: 'flex', gap: '20px' }}>
             <div style={{ textAlign: 'center' }}>
-              <p style={{ color: C.textMuted, fontSize: '11px', margin: '0 0 4px 0' }}>Logins</p>
-              <p style={{ color: C.text, fontSize: '20px', fontWeight: 700, margin: 0 }}>{fmtNum(data.totalLogins)}</p>
+              <p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', textTransform: 'uppercase' }}>Logins</p>
+              <p style={{ color: C.text, fontSize: '20px', fontWeight: 800, margin: 0 }}>{fmtNum(data.totalLogins)}</p>
             </div>
             <div style={{ textAlign: 'center' }}>
-              <p style={{ color: C.textMuted, fontSize: '11px', margin: '0 0 4px 0' }}>Bonus</p>
-              <p style={{ color: C.orange, fontSize: '20px', fontWeight: 700, margin: 0 }}>{fmtCurrency(data.totalBonus)}</p>
+              <p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', textTransform: 'uppercase' }}>Bonus</p>
+              <p style={{ color: C.orange, fontSize: '20px', fontWeight: 800, margin: 0 }}>{fmtCurrency(data.totalBonus)}</p>
             </div>
           </div>
         </div>
       </Section>
 
       {/* ACQUISITION */}
-      <Section title="Acquisition" sub="Daily trend e demographics">
+      <Section title="Acquisition" sub="Daily trend e demographics" theme={C}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: 'clamp(16px, 2vw, 24px)', marginBottom: 'clamp(20px, 2.5vw, 28px)' }}>
-          <ChartCard title="Daily Registrations & FTDs">
+          <ChartCard title="Daily REG & FTDs" theme={C}>
             <AreaChart data={data.dailyStats || []}>
               <defs>
                 <linearGradient id="dR" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.primary} stopOpacity={0.4} /><stop offset="95%" stopColor={C.primary} stopOpacity={0} /></linearGradient>
                 <linearGradient id="dF" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.success} stopOpacity={0.4} /><stop offset="95%" stopColor={C.success} stopOpacity={0} /></linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
-              <XAxis dataKey="date" tick={{ fill: C.textMuted, fontSize: 10 }} />
-              <YAxis tick={{ fill: C.textMuted, fontSize: 10 }} />
-              <Tooltip content={<Tip />} />
+              <XAxis dataKey="date" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} />
+              <YAxis tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} />
+              <Tooltip content={<Tip theme={C} />} />
               <Legend />
               <Area type="monotone" dataKey="registrations" name="REG" stroke={C.primary} fill="url(#dR)" strokeWidth={2} animationDuration={1200} />
               <Area type="monotone" dataKey="ftds" name="FTDs" stroke={C.success} fill="url(#dF)" strokeWidth={2} animationDuration={1200} />
             </AreaChart>
           </ChartCard>
 
-          <ChartCard title="Top Sources (Cod Punto)">
+          <ChartCard title="Top Sources (Cod Punto)" theme={C}>
             <BarChart data={data.topSources || []} layout="vertical">
-              <XAxis type="number" tick={{ fill: C.textMuted, fontSize: 10 }} />
-              <YAxis dataKey="name" type="category" width={100} tick={{ fill: C.textMuted, fontSize: 10 }} />
-              <Tooltip content={<Tip />} />
+              <XAxis type="number" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} />
+              <YAxis dataKey="name" type="category" width={100} tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} />
+              <Tooltip content={<Tip theme={C} />} />
               <Bar dataKey="count" fill={C.success} radius={[0, 4, 4, 0]} animationDuration={1000} />
             </BarChart>
           </ChartCard>
@@ -702,25 +761,25 @@ const Weekly = ({ data, prev, allData }) => {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 'clamp(16px, 2vw, 24px)' }}>
           {/* Gender */}
           <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}`, textAlign: 'center' }}>
-            <h4 style={{ color: C.textMuted, margin: '0 0 16px 0', fontSize: '11px', textTransform: 'uppercase' }}>Gender Split</h4>
+            <h4 style={{ color: C.textMuted, margin: '0 0 16px 0', fontSize: '11px', textTransform: 'uppercase', fontWeight: 700 }}>Gender Split</h4>
             <div style={{ display: 'flex', justifyContent: 'center', gap: '32px' }}>
               <div>
-                <p style={{ color: C.blue, fontSize: '36px', fontWeight: 700, margin: 0 }}>{data.demographics?.male || 0}%</p>
-                <p style={{ color: C.textMuted, fontSize: '12px' }}>Male</p>
+                <p style={{ color: C.blue, fontSize: '36px', fontWeight: 900, margin: 0 }}>{data.demographics?.male || 0}%</p>
+                <p style={{ color: C.textMuted, fontSize: '12px', fontWeight: 600 }}>Male</p>
               </div>
               <div>
-                <p style={{ color: C.purple, fontSize: '36px', fontWeight: 700, margin: 0 }}>{data.demographics?.female || 0}%</p>
-                <p style={{ color: C.textMuted, fontSize: '12px' }}>Female</p>
+                <p style={{ color: C.purple, fontSize: '36px', fontWeight: 900, margin: 0 }}>{data.demographics?.female || 0}%</p>
+                <p style={{ color: C.textMuted, fontSize: '12px', fontWeight: 600 }}>Female</p>
               </div>
             </div>
           </div>
 
           {/* Age */}
-          <ChartCard title="Age Distribution" height={140}>
+          <ChartCard title="Age Distribution" height={140} theme={C}>
             <BarChart data={data.ageGroups || []}>
-              <XAxis dataKey="range" tick={{ fill: C.textMuted, fontSize: 9 }} />
+              <XAxis dataKey="range" tick={{ fill: C.textMuted, fontSize: 9, fontWeight: 700 }} />
               <YAxis hide />
-              <Tooltip content={<Tip />} />
+              <Tooltip content={<Tip theme={C} />} />
               <Bar dataKey="percent" fill={C.primary} radius={[4, 4, 0, 0]} animationDuration={800}>
                 {(data.ageGroups || []).map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}
               </Bar>
@@ -728,11 +787,11 @@ const Weekly = ({ data, prev, allData }) => {
           </ChartCard>
 
           {/* Provinces */}
-          <ChartCard title="Top Provinces" height={140}>
+          <ChartCard title="Top Provinces" height={140} theme={C}>
             <BarChart data={(data.provinces || []).slice(0, 5)} layout="vertical">
               <XAxis type="number" hide />
-              <YAxis dataKey="name" type="category" width={45} tick={{ fill: C.textMuted, fontSize: 9 }} />
-              <Tooltip content={<Tip />} />
+              <YAxis dataKey="name" type="category" width={45} tick={{ fill: C.textMuted, fontSize: 9, fontWeight: 700 }} />
+              <Tooltip content={<Tip theme={C} />} />
               <Bar dataKey="count" fill={C.cyan} radius={[0, 4, 4, 0]} animationDuration={800} />
             </BarChart>
           </ChartCard>
@@ -740,24 +799,24 @@ const Weekly = ({ data, prev, allData }) => {
       </Section>
 
       {/* QUALITY ACQUISITION */}
-      <Section title="Quality Acquisition" sub="Performance per canale di acquisizione">
+      <Section title="Quality Acquisition" sub="Performance per canale di acquisizione (con riga TOTALI)" theme={C}>
         <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
           <Table cols={[
-            { header: 'Channel', accessor: 'channel', format: v => <span style={{ fontWeight: 600 }}>{v}</span> },
-            { header: 'REG', accessor: 'reg', align: 'right', format: fmtNum },
-            { header: 'FTDs', accessor: 'ftds', align: 'right', format: fmtNum },
-            { header: 'Conv%', accessor: 'conv', align: 'center', format: v => <span style={{ color: v >= 55 ? C.success : v >= 45 ? C.orange : C.danger, fontWeight: 600 }}>{v}%</span> },
-            { header: 'Activated', accessor: 'activated', align: 'center', format: v => `${v}%` },
-            { header: 'Avg Age', accessor: 'avgAge', align: 'center', format: v => `${v}` }
-          ]} data={data.qualityAcquisition || []} />
+            { header: 'Channel', accessor: 'channel', format: (v, r) => <span style={{ fontWeight: r.isTotal ? 900 : 700, color: r.isTotal ? C.primary : C.text }}>{v}</span> },
+            { header: 'REG', accessor: 'reg', align: 'right', format: v => <b>{fmtNum(v)}</b> },
+            { header: 'FTDs', accessor: 'ftds', align: 'right', format: v => <b>{fmtNum(v)}</b> },
+            { header: 'Conv%', accessor: 'conv', align: 'center', format: (v, r) => <span style={{ color: r.isTotal ? C.primary : v >= 55 ? C.success : v >= 45 ? C.orange : C.danger, fontWeight: 800 }}>{v}%</span> },
+            { header: 'Activated', accessor: 'activated', align: 'center', format: v => <b>{v}%</b> },
+            { header: 'Avg Age', accessor: 'avgAge', align: 'center', format: v => <b>{v}</b> }
+          ]} data={data.qualityAcquisition || []} theme={C} />
 
-          <ChartCard title="Conversion Rate by Channel" height={220}>
-            <BarChart data={data.qualityAcquisition || []} layout="vertical">
-              <XAxis type="number" domain={[0, 80]} tick={{ fill: C.textMuted, fontSize: 10 }} />
-              <YAxis dataKey="channel" type="category" width={100} tick={{ fill: C.textMuted, fontSize: 10 }} />
-              <Tooltip content={<Tip />} />
+          <ChartCard title="Conversion Rate by Channel" height={220} theme={C}>
+            <BarChart data={(data.qualityAcquisition || []).filter(c => !c.isTotal)} layout="vertical">
+              <XAxis type="number" domain={[0, 80]} tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} />
+              <YAxis dataKey="channel" type="category" width={100} tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} />
+              <Tooltip content={<Tip theme={C} />} />
               <Bar dataKey="conv" name="Conv%" fill={C.primary} radius={[0, 4, 4, 0]} animationDuration={1000}>
-                {(data.qualityAcquisition || []).map((e, i) => <Cell key={i} fill={e.conv >= 55 ? C.success : e.conv >= 45 ? C.orange : C.danger} />)}
+                {(data.qualityAcquisition || []).filter(c => !c.isTotal).map((e, i) => <Cell key={i} fill={e.conv >= 55 ? C.success : e.conv >= 45 ? C.orange : C.danger} />)}
               </Bar>
             </BarChart>
           </ChartCard>
@@ -765,23 +824,23 @@ const Weekly = ({ data, prev, allData }) => {
       </Section>
 
       {/* CHANNEL PERFORMANCE */}
-      <Section title="Channel Performance" sub="Turnover, GGR e Revenue Share per canale">
+      <Section title="Channel Performance" sub="Turnover, GGR e Revenue Share per canale" theme={C}>
         <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
           <Table cols={[
-            { header: 'Channel', accessor: 'channel', format: v => <span style={{ fontWeight: 600 }}>{v}</span> },
-            { header: 'Turnover', accessor: 'turnover', align: 'right', format: fmtCurrency },
-            { header: 'GGR', accessor: 'ggr', align: 'right', format: v => <span style={{ color: C.success, fontWeight: 600 }}>{fmtCurrency(v)}</span> },
-            { header: 'GWM', accessor: 'gwm', align: 'center', format: v => `${v}%` },
-            { header: 'Actives', accessor: 'actives', align: 'right', format: fmtNum },
-            { header: 'Rev Share', accessor: 'revShare', align: 'center', format: v => <span style={{ color: C.primary, fontWeight: 600 }}>{v}%</span> }
-          ]} data={data.channelPerformance || []} />
+            { header: 'Channel', accessor: 'channel', format: v => <span style={{ fontWeight: 700 }}>{v}</span> },
+            { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
+            { header: 'GGR', accessor: 'ggr', align: 'right', format: v => <span style={{ color: C.success, fontWeight: 800 }}>{fmtCurrency(v)}</span> },
+            { header: 'GWM', accessor: 'gwm', align: 'center', format: v => <b>{v}%</b> },
+            { header: 'Actives', accessor: 'actives', align: 'right', format: v => <b>{fmtNum(v)}</b> },
+            { header: 'Rev Share', accessor: 'revShare', align: 'center', format: v => <span style={{ color: C.primary, fontWeight: 800 }}>{v}%</span> }
+          ]} data={data.channelPerformance || []} theme={C} />
 
-          <ChartCard title="Revenue Share" height={220}>
+          <ChartCard title="Revenue Share" height={220} theme={C}>
             <PieChart>
               <Pie data={(data.channelPerformance || []).filter(c => c.revShare > 0)} cx="50%" cy="50%" innerRadius={50} outerRadius={85} paddingAngle={2} dataKey="revShare" nameKey="channel" animationDuration={1000}>
                 {(data.channelPerformance || []).map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}
               </Pie>
-              <Tooltip content={<Tip />} />
+              <Tooltip content={<Tip theme={C} />} />
               <Legend />
             </PieChart>
           </ChartCard>
@@ -789,21 +848,21 @@ const Weekly = ({ data, prev, allData }) => {
       </Section>
 
       {/* PRODUCT PERFORMANCE */}
-      <Section title="Product Performance" sub="Performance per categoria di gioco">
+      <Section title="Product Performance" sub="Performance per categoria di gioco" theme={C}>
         <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
           <Table cols={[
-            { header: 'Product', accessor: 'product', format: v => <span style={{ fontWeight: 600 }}>{v}</span> },
-            { header: 'Turnover', accessor: 'turnover', align: 'right', format: fmtCurrency },
-            { header: 'GGR', accessor: 'ggr', align: 'right', format: v => <span style={{ color: C.success, fontWeight: 600 }}>{fmtCurrency(v)}</span> },
-            { header: 'Payout%', accessor: 'payout', align: 'center', format: v => v ? `${v}%` : '-' },
-            { header: 'Actives', accessor: 'actives', align: 'right', format: fmtNum }
-          ]} data={data.productPerformance || []} compact />
+            { header: 'Product', accessor: 'product', format: v => <span style={{ fontWeight: 700 }}>{v}</span> },
+            { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
+            { header: 'GGR', accessor: 'ggr', align: 'right', format: v => <span style={{ color: C.success, fontWeight: 800 }}>{fmtCurrency(v)}</span> },
+            { header: 'Payout%', accessor: 'payout', align: 'center', format: v => v ? <b>{v}%</b> : '-' },
+            { header: 'Actives', accessor: 'actives', align: 'right', format: v => <b>{fmtNum(v)}</b> }
+          ]} data={data.productPerformance || []} compact theme={C} />
 
-          <ChartCard title="GGR by Product" height={220}>
+          <ChartCard title="GGR by Product" height={220} theme={C}>
             <BarChart data={(data.productPerformance || []).slice(0, 6)} layout="vertical">
-              <XAxis type="number" tick={{ fill: C.textMuted, fontSize: 10 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} />
-              <YAxis dataKey="product" type="category" width={80} tick={{ fill: C.textMuted, fontSize: 9 }} />
-              <Tooltip content={<Tip />} formatter={v => fmtCurrency(v)} />
+              <XAxis type="number" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} />
+              <YAxis dataKey="product" type="category" width={80} tick={{ fill: C.textMuted, fontSize: 9, fontWeight: 700 }} />
+              <Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} />
               <Bar dataKey="ggr" fill={C.primary} radius={[0, 4, 4, 0]} animationDuration={1000}>
                 {(data.productPerformance || []).map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}
               </Bar>
@@ -812,38 +871,62 @@ const Weekly = ({ data, prev, allData }) => {
         </div>
       </Section>
 
-      {/* FINANCIAL HEALTH */}
-      <Section title="Financial Health" sub="Indicatori finanziari e cash flow">
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 'clamp(12px, 1.5vw, 16px)', marginBottom: 'clamp(20px, 2.5vw, 28px)' }}>
-          <KPI label="Withdrawal Ratio" value={data.financialHealth?.withdrawalRatio || 0} pct delay={0} />
-          <KPI label="Deposit Freq" value={data.financialHealth?.depositFrequency || 0} sub="dep/user" delay={50} />
-          <KPI label="Bonus ROI" value={data.financialHealth?.bonusROI || 0} sub="x return" delay={100} />
-          <KPI label="Customer Value" value={data.financialHealth?.customerValue || 0} cur delay={150} />
-          <KPI label="Login/User" value={data.financialHealth?.loginPerUser || 0} delay={200} />
+      {/* FINANCIAL HEALTH with Explanations */}
+      <Section title="Financial Health" sub="Indicatori finanziari e cash flow" theme={C}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'clamp(12px, 1.5vw, 16px)', marginBottom: 'clamp(20px, 2.5vw, 28px)' }}>
+          <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}` }}>
+            <p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', margin: '0 0 8px 0' }}>Withdrawal Ratio</p>
+            <p style={{ color: C.text, fontSize: '28px', fontWeight: 900, margin: '0 0 8px 0' }}>{data.financialHealth?.withdrawalRatio || 0}%</p>
+            <p style={{ color: C.textMuted, fontSize: '10px', margin: 0, lineHeight: 1.4 }}>Prelievi / Depositi × 100<br/><span style={{ color: C.textSec }}>{fmtCurrency(data.totalWithdrawals)} / {fmtCurrency(data.totalDeposits)}</span></p>
+          </div>
+          
+          <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}` }}>
+            <p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', margin: '0 0 8px 0' }}>Bonus ROI</p>
+            <p style={{ color: C.text, fontSize: '28px', fontWeight: 900, margin: '0 0 8px 0' }}>{data.financialHealth?.bonusROI || 0}x</p>
+            <p style={{ color: C.textMuted, fontSize: '10px', margin: 0, lineHeight: 1.4 }}>GGR / Bonus erogati<br/><span style={{ color: C.textSec }}>{fmtCurrency(data.financialHealth?._ggr)} / {fmtCurrency(data.financialHealth?._bonus)}</span></p>
+          </div>
+          
+          <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}` }}>
+            <p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', margin: '0 0 8px 0' }}>Customer Value</p>
+            <p style={{ color: C.text, fontSize: '28px', fontWeight: 900, margin: '0 0 8px 0' }}>{fmtCurrency(data.financialHealth?.customerValue || 0)}</p>
+            <p style={{ color: C.textMuted, fontSize: '10px', margin: 0, lineHeight: 1.4 }}>GGR / Utenti attivi<br/><span style={{ color: C.textSec }}>{fmtCurrency(data.financialHealth?._ggr)} / {fmtNum(data.financialHealth?._actives)}</span></p>
+          </div>
+          
+          <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}` }}>
+            <p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', margin: '0 0 8px 0' }}>Login / User</p>
+            <p style={{ color: C.text, fontSize: '28px', fontWeight: 900, margin: '0 0 8px 0' }}>{data.financialHealth?.loginPerUser || 0}</p>
+            <p style={{ color: C.textMuted, fontSize: '10px', margin: 0, lineHeight: 1.4 }}>Login totali / Utenti attivi<br/><span style={{ color: C.textSec }}>{fmtNum(data.financialHealth?._logins)} / {fmtNum(data.financialHealth?._actives)}</span></p>
+          </div>
+          
+          <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}` }}>
+            <p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', margin: '0 0 8px 0' }}>Deposit Frequency</p>
+            <p style={{ color: C.text, fontSize: '28px', fontWeight: 900, margin: '0 0 8px 0' }}>{data.financialHealth?.depositFrequency || 0}</p>
+            <p style={{ color: C.textMuted, fontSize: '10px', margin: 0, lineHeight: 1.4 }}>Depositi / Depositanti unici<br/><span style={{ color: C.textSec }}>Media depositi per utente</span></p>
+          </div>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: 'clamp(16px, 2vw, 24px)' }}>
-          <ChartCard title="Daily Cash Flow">
+          <ChartCard title="Daily Cash Flow" theme={C}>
             <BarChart data={data.dailyStats || []}>
               <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
-              <XAxis dataKey="date" tick={{ fill: C.textMuted, fontSize: 10 }} />
-              <YAxis tick={{ fill: C.textMuted, fontSize: 10 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} />
-              <Tooltip content={<Tip />} />
+              <XAxis dataKey="date" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} />
+              <YAxis tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} />
+              <Tooltip content={<Tip theme={C} />} />
               <Legend />
               <Bar dataKey="deposits" name="Deposits" fill={C.success} radius={[3, 3, 0, 0]} animationDuration={800} />
               <Bar dataKey="withdrawals" name="Withdrawals" fill={C.danger} radius={[3, 3, 0, 0]} animationDuration={800} />
             </BarChart>
           </ChartCard>
 
-          <ChartCard title="Daily Bonus Distribution">
+          <ChartCard title="Daily Bonus Distribution" theme={C}>
             <AreaChart data={data.dailyStats || []}>
               <defs>
                 <linearGradient id="bG" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.orange} stopOpacity={0.4} /><stop offset="95%" stopColor={C.orange} stopOpacity={0} /></linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
-              <XAxis dataKey="date" tick={{ fill: C.textMuted, fontSize: 10 }} />
-              <YAxis tick={{ fill: C.textMuted, fontSize: 10 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} />
-              <Tooltip content={<Tip />} />
+              <XAxis dataKey="date" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} />
+              <YAxis tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} />
+              <Tooltip content={<Tip theme={C} />} />
               <Area type="monotone" dataKey="bonus" name="Bonus" stroke={C.orange} fill="url(#bG)" strokeWidth={2} animationDuration={1000} />
             </AreaChart>
           </ChartCard>
@@ -851,12 +934,12 @@ const Weekly = ({ data, prev, allData }) => {
       </Section>
 
       {/* FOOTER */}
-      <div style={{ background: 'linear-gradient(135deg, #0a0a0a 0%, #000 100%)', borderRadius: '16px', padding: 'clamp(40px, 5vw, 80px)', textAlign: 'center', border: `1px solid ${C.border}`, marginTop: '40px' }}>
+      <div style={{ background: `linear-gradient(135deg, ${C.card} 0%, ${C.bg} 100%)`, borderRadius: '16px', padding: 'clamp(40px, 5vw, 80px)', textAlign: 'center', border: `1px solid ${C.border}`, marginTop: '40px' }}>
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '24px' }}>
-          <Logo size="lg" />
+          <img src="/logo.png" alt="DAZN Bet" style={{ height: '60px' }} />
         </div>
-        <h2 style={{ color: C.primary, fontSize: 'clamp(28px, 4vw, 40px)', fontWeight: 700, margin: '0 0 8px 0' }}>Thank You</h2>
-        <p style={{ color: C.text, fontSize: 'clamp(14px, 1.8vw, 18px)', margin: '0 0 4px 0' }}>Weekly Trading Report • Week {data.weekNumber} 2025</p>
+        <h2 style={{ color: C.primary, fontSize: 'clamp(28px, 4vw, 40px)', fontWeight: 900, margin: '0 0 8px 0' }}>Thank You</h2>
+        <p style={{ color: C.text, fontSize: 'clamp(14px, 1.8vw, 18px)', margin: '0 0 4px 0', fontWeight: 600 }}>Weekly Trading Report • Week {data.weekNumber} 2025</p>
         <p style={{ color: C.textMuted, fontSize: 'clamp(12px, 1.4vw, 16px)', margin: 0 }}>DAZN Bet Italy</p>
       </div>
     </div>
@@ -872,6 +955,9 @@ export default function Dashboard() {
   const [selected, setSelected] = useState(null)
   const [loading, setLoading] = useState(true)
   const [db, setDb] = useState({ connected: false })
+  const [isDark, setIsDark] = useState(true) // B&W Toggle
+
+  const C = isDark ? THEMES.dark : THEMES.light
 
   useEffect(() => {
     (async () => {
@@ -905,70 +991,90 @@ export default function Dashboard() {
   const prev = selected && weeks[selected - 1] ? weeks[selected - 1] : null
 
   if (loading) return (
-    <div style={{ minHeight: '100vh', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ textAlign: 'center' }}>
-        <div style={{ width: '40px', height: '40px', border: '3px solid #222', borderTopColor: C.primary, borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 16px' }} />
-        <p style={{ color: C.primary, fontSize: '14px' }}>Loading...</p>
+        <div style={{ width: '40px', height: '40px', border: `3px solid ${C.border}`, borderTopColor: C.primary, borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 16px' }} />
+        <p style={{ color: C.primary, fontSize: '14px', fontWeight: 700 }}>Loading...</p>
       </div>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   )
 
   return (
-    <div style={{ minHeight: '100vh', background: '#000', fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", color: C.text }}>
+    <div style={{ minHeight: '100vh', background: C.bg, fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", color: C.text, transition: 'background 0.3s, color 0.3s' }}>
       {/* HEADER */}
-      <header style={{ background: '#000', padding: 'clamp(12px, 1.5vw, 16px) clamp(20px, 3vw, 48px)', position: 'sticky', top: 0, zIndex: 100, borderBottom: `1px solid ${C.border}` }}>
+      <header style={{ background: C.bg, padding: 'clamp(12px, 1.5vw, 16px) clamp(20px, 3vw, 48px)', position: 'sticky', top: 0, zIndex: 100, borderBottom: `1px solid ${C.border}` }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
           {/* Logo & Title */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 'clamp(12px, 2vw, 20px)' }}>
-            <Logo size="sm" />
+            <img src="/logo.png" alt="DAZN Bet" style={{ height: '40px' }} />
             <div>
-              <h1 style={{ color: C.text, fontSize: 'clamp(14px, 1.6vw, 18px)', fontWeight: 700, margin: 0 }}>Weekly Trading Report</h1>
+              <h1 style={{ color: C.text, fontSize: 'clamp(14px, 1.6vw, 18px)', fontWeight: 800, margin: 0 }}>Weekly Trading Report</h1>
               <p style={{ color: C.textMuted, fontSize: 'clamp(10px, 1vw, 12px)', margin: 0 }}>
                 Italy
-                <span style={{ marginLeft: '8px', fontSize: '10px', padding: '2px 6px', borderRadius: '4px', background: db.connected ? C.successDim : '#1a1a00', color: db.connected ? C.success : C.primary }}>
+                <span style={{ marginLeft: '8px', fontSize: '10px', padding: '2px 6px', borderRadius: '4px', background: db.connected ? C.successDim : C.border, color: db.connected ? C.success : C.textMuted, fontWeight: 700 }}>
                   {db.connected ? '● Cloud' : '● Local'}
                 </span>
               </p>
             </div>
           </div>
 
-          {/* Navigation */}
-          <div style={{ display: 'flex', gap: '6px' }}>
-            {[{ id: 'weekly', label: 'Weekly' }, { id: 'monthly', label: 'Monthly' }, { id: 'upload', label: 'Upload' }].map(t => (
-              <button key={t.id} onClick={() => setTab(t.id)} style={{
-                background: tab === t.id ? C.primary : 'transparent',
-                color: tab === t.id ? '#000' : C.textSec,
-                border: `1px solid ${tab === t.id ? C.primary : C.border}`,
-                borderRadius: '6px',
-                padding: 'clamp(8px, 1vw, 10px) clamp(14px, 2vw, 20px)',
-                fontSize: 'clamp(11px, 1.2vw, 13px)',
-                fontWeight: 600,
-                cursor: 'pointer',
-                transition: 'all 0.2s'
-              }}>
-                {t.label}
-              </button>
-            ))}
+          {/* Navigation + Theme Toggle */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {/* B&W Toggle */}
+            <button onClick={() => setIsDark(!isDark)} style={{
+              background: C.card,
+              color: C.text,
+              border: `1px solid ${C.border}`,
+              borderRadius: '6px',
+              padding: '8px 12px',
+              fontSize: '12px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}>
+              {isDark ? '☀️' : '🌙'} {isDark ? 'Light' : 'Dark'}
+            </button>
+
+            {/* Tabs */}
+            <div style={{ display: 'flex', gap: '6px' }}>
+              {[{ id: 'weekly', label: 'Weekly' }, { id: 'monthly', label: 'Monthly' }, { id: 'upload', label: 'Upload' }].map(t => (
+                <button key={t.id} onClick={() => setTab(t.id)} style={{
+                  background: tab === t.id ? C.primary : 'transparent',
+                  color: tab === t.id ? (isDark ? '#000' : '#fff') : C.textSec,
+                  border: `1px solid ${tab === t.id ? C.primary : C.border}`,
+                  borderRadius: '6px',
+                  padding: 'clamp(8px, 1vw, 10px) clamp(14px, 2vw, 20px)',
+                  fontSize: 'clamp(11px, 1.2vw, 13px)',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}>
+                  {t.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Week Selector */}
           {tab === 'weekly' && weekNums.length > 0 && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <select value={selected || ''} onChange={e => setSelected(Number(e.target.value))} style={{
-                background: '#000',
+                background: C.bg,
                 color: C.text,
                 border: `1px solid ${C.primary}`,
                 borderRadius: '6px',
                 padding: '8px 14px',
                 fontSize: '13px',
-                fontWeight: 600,
+                fontWeight: 700,
                 cursor: 'pointer',
                 minWidth: '100px'
               }}>
                 {weekNums.map(w => <option key={w} value={w}>Week {w}</option>)}
               </select>
-              {current && <span style={{ color: C.textMuted, fontSize: '12px' }}>{current.dateRange}</span>}
+              {current && <span style={{ color: C.textMuted, fontSize: '12px', fontWeight: 600 }}>{current.dateRange}</span>}
             </div>
           )}
         </div>
@@ -976,9 +1082,9 @@ export default function Dashboard() {
 
       {/* CONTENT */}
       <main>
-        {tab === 'weekly' && <Weekly data={current} prev={prev} allData={weeks} />}
-        {tab === 'monthly' && <Monthly weeksData={weeks} />}
-        {tab === 'upload' && <UploadPage weeksData={weeks} onUpload={handleUpload} onDelete={handleDelete} />}
+        {tab === 'weekly' && <Weekly data={current} prev={prev} allData={weeks} theme={C} />}
+        {tab === 'monthly' && <Monthly weeksData={weeks} theme={C} />}
+        {tab === 'upload' && <UploadPage weeksData={weeks} onUpload={handleUpload} onDelete={handleDelete} theme={C} />}
       </main>
     </div>
   )
