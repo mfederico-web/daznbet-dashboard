@@ -71,58 +71,32 @@ const fmtCurrency = (v, c=true) => { if (!v || isNaN(v)) return '€0'; if (c) {
 const fmtNum = v => (!v || isNaN(v)) ? '0' : v.toLocaleString('it-IT')
 const calcChange = (cur, prev) => (!prev || prev===0) ? null : ((cur-prev)/prev*100).toFixed(1)
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// DATE NORMALIZATION - Gestisce diversi formati di data
-// ═══════════════════════════════════════════════════════════════════════════════
+// Date normalization
 const normalizeDate = (dateVal) => {
   if (!dateVal) return null
   try {
     let d
-    if (dateVal instanceof Date) {
-      d = dateVal
-    } else if (typeof dateVal === 'number') {
-      // Excel serial date number
-      d = new Date((dateVal - 25569) * 86400 * 1000)
-    } else if (typeof dateVal === 'string') {
-      // Try parsing string - gestisce formati comuni
+    if (dateVal instanceof Date) d = dateVal
+    else if (typeof dateVal === 'number') d = new Date((dateVal - 25569) * 86400 * 1000)
+    else if (typeof dateVal === 'string') {
       if (dateVal.includes('/')) {
-        // DD/MM/YYYY or MM/DD/YYYY
         const parts = dateVal.split(/[\s\/]/)
-        if (parts.length >= 3) {
-          const day = parseInt(parts[0])
-          const month = parseInt(parts[1]) - 1
-          const year = parseInt(parts[2])
-          d = new Date(year, month, day)
-        }
-      } else {
-        d = new Date(dateVal)
-      }
-    } else {
-      return null
+        if (parts.length >= 3) d = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]))
+      } else d = new Date(dateVal)
     }
     if (!d || isNaN(d.getTime())) return null
-    // Return YYYY-MM-DD
-    const yyyy = d.getFullYear()
-    const mm = String(d.getMonth() + 1).padStart(2, '0')
-    const dd = String(d.getDate()).padStart(2, '0')
-    return `${yyyy}-${mm}-${dd}`
-  } catch {
-    return null
-  }
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  } catch { return null }
 }
 
 const formatDateLabel = (dateKey) => {
   if (!dateKey) return ''
-  try {
-    const d = new Date(dateKey)
-    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
-  } catch {
-    return dateKey
-  }
+  try { return new Date(dateKey).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) }
+  catch { return dateKey }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// CHANNEL CLASSIFICATION - UPDATED LOGIC
+// CHANNEL CLASSIFICATION
 // ═══════════════════════════════════════════════════════════════════════════════
 const classifyChannel = row => {
   const skin = String(row["Skin"] || "").toUpperCase().trim()
@@ -136,24 +110,17 @@ const classifyChannel = row => {
   }
   
   if (skin.includes("DAZNBET") || skin.includes("SCOMMETTENDO")) {
-    if (puntoVendita.includes("www.daznbet.it") || puntoVendita.includes("www.scommettendo.it")) {
-      return "DAZNBET Organic"
-    }
-    if (promoter.includes("dazn") || promoter.includes("funpoints") || codPunto.includes("DAZN_SUPERPRONOSTICO")) {
-      return "DAZN Direct"
-    }
+    if (puntoVendita.includes("www.daznbet.it") || puntoVendita.includes("www.scommettendo.it")) return "DAZNBET Organic"
+    if (promoter.includes("dazn") || promoter.includes("funpoints") || codPunto.includes("DAZN_SUPERPRONOSTICO")) return "DAZN Direct"
     return "AFFILIATES"
   }
   
-  if (!puntoVendita.includes("www.scommettendo.it")) {
-    return "PVR"
-  }
-  
+  if (!puntoVendita.includes("www.scommettendo.it")) return "PVR"
   return "OTHER"
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// DATA PROCESSOR - UPDATED with Fixed Daily REG
+// DATA PROCESSOR - Aggiornato con nuova mappatura v2
 // ═══════════════════════════════════════════════════════════════════════════════
 const processData = (files, weekNum, dateRange) => {
   const ana = files.anagrafica || []
@@ -164,30 +131,38 @@ const processData = (files, weekNum, dateRange) => {
   const academyTotal = files.academyTotal || []
   const organicTotal = files.organicTotal || []
   
-  // REGISTRATIONS: count rows from Anagrafica
-  const reg = ana.length
+  // ═══════════════════════════════════════════════════════════════════════════
+  // REG TOTALI da Anagrafica2.xlsx = Registrati AAMS + Registrazioni non attive
+  // ═══════════════════════════════════════════════════════════════════════════
+  const reg = ana2.reduce((s, r) => {
+    const regAams = parseNum(r["Registrati AAMS"]) || 0
+    const regNonAttive = parseNum(r["Registrazioni non attive"]) || 0
+    return s + regAams + regNonAttive
+  }, 0)
   
   // ═══════════════════════════════════════════════════════════════════════════
-  // DAILY REG from Anagrafica.xlsx - Costruisce daily stats direttamente
+  // DAILY STATS da Anagrafica2.xlsx (REG = Registrati AAMS + Registrazioni non attive per riga)
   // ═══════════════════════════════════════════════════════════════════════════
-  const dailyRegMap = {}
-  ana.forEach(r => {
-    const dateKey = normalizeDate(r["Data Creazione"])
-    if (dateKey) {
-      if (!dailyRegMap[dateKey]) {
-        dailyRegMap[dateKey] = { registrations: 0, ftdsFromAna: 0 }
-      }
-      dailyRegMap[dateKey].registrations++
-      // Conta anche FTD da Anagrafica se ha "Primo deposito"
-      if (r["Primo deposito"]) {
-        dailyRegMap[dateKey].ftdsFromAna++
-      }
+  const daily = ana2.map(r => {
+    const dateKey = normalizeDate(r["Data"])
+    const regAams = parseNum(r["Registrati AAMS"]) || 0
+    const regNonAttive = parseNum(r["Registrazioni non attive"]) || 0
+    
+    return {
+      date: formatDateLabel(dateKey),
+      dateKey,
+      registrations: regAams + regNonAttive,
+      ftds: parseNum(r["Primo deposito"]) || 0,
+      deposits: parseNum(r["Importo depositi"]) || 0,
+      withdrawals: parseNum(r["Importo prelievi processati"]) || 0,
+      bonus: parseNum(r["Importo bonus"]) || 0,
+      logins: parseNum(r["Login"]) || 0,
+      depositCount: parseNum(r["Depositi"]) || 0,
+      uniqueDepositors: parseNum(r["Depositanti unici"]) || 0
     }
-  })
+  }).filter(d => d.date).sort((a, b) => (a.dateKey || '').localeCompare(b.dateKey || ''))
   
-  console.log("Daily REG from Anagrafica.xlsx:", dailyRegMap)
-  
-  // Channel classification
+  // Channel classification da Anagrafica.xlsx
   const channelGroups = {}
   ana.forEach(r => {
     const ch = classifyChannel(r)
@@ -197,7 +172,7 @@ const processData = (files, weekNum, dateRange) => {
     if (r["Primo deposito"]) channelGroups[ch].ftds++
   })
   
-  // Quality Acquisition per channel + TOTALI row
+  // Quality Acquisition + TOTALI
   const qualityAcq = Object.entries(channelGroups).map(([ch, d]) => {
     const r = d.rows.length
     const f = d.ftds
@@ -206,25 +181,14 @@ const processData = (files, weekNum, dateRange) => {
       const bd = new Date(x)
       return (new Date() - bd) / (365.25 * 24 * 60 * 60 * 1000)
     }).reduce((a, b) => a + b, 0) / d.ages.length) : 0
-    return { 
-      channel: ch, 
-      reg: r, 
-      ftds: f, 
-      conv: r > 0 ? parseFloat((f / r * 100).toFixed(1)) : 0, 
-      activated: r > 0 ? Math.round(act / r * 100) : 0, 
-      avgAge 
-    }
+    return { channel: ch, reg: r, ftds: f, conv: r > 0 ? parseFloat((f / r * 100).toFixed(1)) : 0, activated: r > 0 ? Math.round(act / r * 100) : 0, avgAge }
   }).filter(c => c.channel !== "OTHER").sort((a, b) => b.reg - a.reg)
 
-  // Add TOTALI row
   const totalsRow = {
     channel: 'TOTALI',
     reg: qualityAcq.reduce((s, c) => s + c.reg, 0),
     ftds: qualityAcq.reduce((s, c) => s + c.ftds, 0),
-    conv: 0,
-    activated: 0,
-    avgAge: 0,
-    isTotal: true
+    conv: 0, activated: 0, avgAge: 0, isTotal: true
   }
   totalsRow.conv = totalsRow.reg > 0 ? parseFloat((totalsRow.ftds / totalsRow.reg * 100).toFixed(1)) : 0
   const totalActivated = qualityAcq.reduce((s, c) => s + Math.round(c.activated * c.reg / 100), 0)
@@ -233,49 +197,7 @@ const processData = (files, weekNum, dateRange) => {
   totalsRow.avgAge = totalsRow.reg > 0 ? Math.round(totalAgeSum / totalsRow.reg) : 0
   qualityAcq.push(totalsRow)
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // DAILY STATS - Combina dati da Anagrafica (REG) e Anagrafica2 (FTDs, deposits, etc.)
-  // ═══════════════════════════════════════════════════════════════════════════
-  
-  // Prima crea mappa da Anagrafica2 per lookup
-  const ana2Map = {}
-  ana2.forEach(r => {
-    const dateKey = normalizeDate(r["Data"])
-    if (dateKey) {
-      ana2Map[dateKey] = {
-        ftds: parseNum(r["Primo deposito"]) || 0,
-        deposits: parseNum(r["Importo depositi"]) || 0,
-        withdrawals: parseNum(r["Importo prelievi processati"]) || 0,
-        bonus: parseNum(r["Importo bonus"]) || 0,
-        logins: parseNum(r["Login"]) || 0,
-        depositCount: parseNum(r["Depositi"]) || 0,
-        uniqueDepositors: parseNum(r["Depositanti unici"]) || 0
-      }
-    }
-  })
-  
-  // Costruisci daily stats partendo da Anagrafica.xlsx (fonte REG)
-  const daily = Object.entries(dailyRegMap)
-    .map(([dateKey, regData]) => {
-      const ana2Data = ana2Map[dateKey] || {}
-      return {
-        date: formatDateLabel(dateKey),
-        dateKey,
-        registrations: regData.registrations, // REG da Anagrafica!
-        ftds: ana2Data.ftds || 0,
-        deposits: ana2Data.deposits || 0,
-        withdrawals: ana2Data.withdrawals || 0,
-        bonus: ana2Data.bonus || 0,
-        logins: ana2Data.logins || 0,
-        depositCount: ana2Data.depositCount || 0,
-        uniqueDepositors: ana2Data.uniqueDepositors || 0
-      }
-    })
-    .sort((a, b) => a.dateKey.localeCompare(b.dateKey)) // Ordina per data
-  
-  console.log("Daily stats (REG from Anagrafica):", daily)
-  
-  // Aggregated stats - usa ana2 per totali (più affidabile)
+  // Aggregated stats da ana2
   const ftds = ana2.reduce((s, r) => s + (parseNum(r["Primo deposito"]) || 0), 0)
   const totalDep = ana2.reduce((s, r) => s + (parseNum(r["Importo depositi"]) || 0), 0)
   const totalWit = ana2.reduce((s, r) => s + (parseNum(r["Importo prelievi processati"]) || 0), 0)
@@ -283,24 +205,21 @@ const processData = (files, weekNum, dateRange) => {
   const totalLogins = ana2.reduce((s, r) => s + (parseNum(r["Login"]) || 0), 0)
   const totalDepCount = ana2.reduce((s, r) => s + (parseNum(r["Depositi"]) || 0), 0)
   const totalUniqueDep = ana2.reduce((s, r) => s + (parseNum(r["Depositanti unici"]) || 0), 0)
-  const avgFirstDep = ana2.reduce((s, r) => s + parseNum(r["Importo primo deposito"]), 0)
+  const avgFirstDepSum = ana2.reduce((s, r) => s + (parseNum(r["Importo primo deposito"]) || 0), 0)
   
-  // ═══ TOTALS from Anagrafica_TOTAL (PRIMA RIGA) ═══
+  // TOTALS da Anagrafica_TOTAL (prima riga)
   const totRow = total[0] || {}
   const turnover = parseNum(totRow["Giocato"]) || 0
   const ggr = parseNum(totRow["rake"]) || parseNum(totRow["ggr"]) || 0
   const actives = parseNum(totRow["conti attivi"]) || 0
 
-  // ═══ TOP 3 PRODUCTS from Anagrafica_CATEGORIA ═══
+  // TOP 3 PRODUCTS da Anagrafica_CATEGORIA
   const top3Products = ['Scommesse', 'Casino', 'Casino Live'].map(prodName => {
     const row = cat.find(r => String(r["Categoria"] || "").toLowerCase().includes(prodName.toLowerCase()))
-    return {
-      name: prodName,
-      actives: row ? parseNum(row["conti attivi"]) : 0
-    }
+    return { name: prodName, actives: row ? parseNum(row["conti attivi"]) : 0 }
   })
 
-  // Products from Anagrafica_CATEGORIA
+  // Products da Anagrafica_CATEGORIA
   const products = cat.map(r => ({
     product: r["Categoria"] || '',
     turnover: parseNum(r["Giocato"]),
@@ -309,7 +228,7 @@ const processData = (files, weekNum, dateRange) => {
     payout: parseNum(r["Giocato"]) > 0 ? parseFloat((parseNum(r["vinto"]) / parseNum(r["Giocato"]) * 100).toFixed(1)) : null
   })).filter(p => p.product)
 
-  // Channel Performance from SKIN files
+  // Channel Performance da SKIN files
   const chanPerf = []
   let totGgr = 0
   
@@ -318,51 +237,32 @@ const processData = (files, weekNum, dateRange) => {
   skinTotal.forEach(r => {
     const s = String(r["Skin"] || "").toUpperCase()
     if (s && !s.includes("VIVABET") && !s.includes("DAZNBET") && !s.includes("SCOMMETTENDO")) {
-      pvrT += parseNum(r["Giocato"])
-      pvrG += parseNum(r["rake"]) || parseNum(r["ggr"])
-      pvrA += parseNum(r["conti attivi"])
+      pvrT += parseNum(r["Giocato"]); pvrG += parseNum(r["rake"]) || parseNum(r["ggr"]); pvrA += parseNum(r["conti attivi"])
     }
   })
-  if (pvrT > 0 || pvrA > 0) {
-    chanPerf.push({ channel: 'PVR', turnover: pvrT, ggr: pvrG, gwm: pvrT > 0 ? parseFloat((pvrG / pvrT * 100).toFixed(1)) : 0, actives: pvrA })
-    totGgr += pvrG
-  }
+  if (pvrT > 0 || pvrA > 0) { chanPerf.push({ channel: 'PVR', turnover: pvrT, ggr: pvrG, gwm: pvrT > 0 ? parseFloat((pvrG / pvrT * 100).toFixed(1)) : 0, actives: pvrA }); totGgr += pvrG }
   
   // VIVABET
   const vivRow = skinTotal.find(r => String(r["Skin"] || "").toUpperCase().includes("VIVABET"))
   const acadRow = academyTotal[0]
   if (vivRow) {
-    const vT = parseNum(vivRow["Giocato"])
-    const vG = parseNum(vivRow["rake"]) || parseNum(vivRow["ggr"])
-    const vA = parseNum(vivRow["conti attivi"])
-    const aT = acadRow ? parseNum(acadRow["Giocato"]) : 0
-    const aG = acadRow ? (parseNum(acadRow["rake"]) || parseNum(acadRow["ggr"])) : 0
-    const aA = acadRow ? parseNum(acadRow["conti attivi"]) : 0
-    
+    const vT = parseNum(vivRow["Giocato"]), vG = parseNum(vivRow["rake"]) || parseNum(vivRow["ggr"]), vA = parseNum(vivRow["conti attivi"])
+    const aT = acadRow ? parseNum(acadRow["Giocato"]) : 0, aG = acadRow ? (parseNum(acadRow["rake"]) || parseNum(acadRow["ggr"])) : 0, aA = acadRow ? parseNum(acadRow["conti attivi"]) : 0
     const gladT = vT - aT, gladG = vG - aG, gladA = vA - aA
-    if (gladT > 0 || gladA > 0) {
-      chanPerf.push({ channel: 'VIVABET/GLAD', turnover: gladT, ggr: gladG, gwm: gladT > 0 ? parseFloat((gladG / gladT * 100).toFixed(1)) : 0, actives: gladA })
-      totGgr += gladG
-    }
-    if (aT > 0 || aA > 0) {
-      chanPerf.push({ channel: 'Tipster Academy', turnover: aT, ggr: aG, gwm: aT > 0 ? parseFloat((aG / aT * 100).toFixed(1)) : 0, actives: aA })
-      totGgr += aG
-    }
+    if (gladT > 0 || gladA > 0) { chanPerf.push({ channel: 'VIVABET/GLAD', turnover: gladT, ggr: gladG, gwm: gladT > 0 ? parseFloat((gladG / gladT * 100).toFixed(1)) : 0, actives: gladA }); totGgr += gladG }
+    if (aT > 0 || aA > 0) { chanPerf.push({ channel: 'Tipster Academy', turnover: aT, ggr: aG, gwm: aT > 0 ? parseFloat((aG / aT * 100).toFixed(1)) : 0, actives: aA }); totGgr += aG }
   }
   
   // DAZNBET Organic
   const orgRow = organicTotal[0]
   if (orgRow) {
-    const oT = parseNum(orgRow["Giocato"])
-    const oG = parseNum(orgRow["rake"]) || parseNum(orgRow["ggr"])
-    const oA = parseNum(orgRow["conti attivi"])
-    chanPerf.push({ channel: 'DAZNBET Organic', turnover: oT, ggr: oG, gwm: oT > 0 ? parseFloat((oG / oT * 100).toFixed(1)) : 0, actives: oA })
-    totGgr += oG
+    const oT = parseNum(orgRow["Giocato"]), oG = parseNum(orgRow["rake"]) || parseNum(orgRow["ggr"]), oA = parseNum(orgRow["conti attivi"])
+    chanPerf.push({ channel: 'DAZNBET Organic', turnover: oT, ggr: oG, gwm: oT > 0 ? parseFloat((oG / oT * 100).toFixed(1)) : 0, actives: oA }); totGgr += oG
   }
   
   chanPerf.forEach(c => { c.revShare = totGgr > 0 ? parseFloat((c.ggr / totGgr * 100).toFixed(1)) : 0 })
 
-  // Demographics
+  // Demographics da Anagrafica
   const genderCount = { M: 0, F: 0 }
   ana.forEach(r => { const g = String(r["Sesso"] || "").toUpperCase(); if (g === "M" || g === "F") genderCount[g]++ })
   const totGender = genderCount.M + genderCount.F
@@ -386,7 +286,7 @@ const processData = (files, weekNum, dateRange) => {
   ana.forEach(r => { const p = r["Provincia di residenza"]; if (p) provCount[p] = (provCount[p] || 0) + 1 })
   const provinces = Object.entries(provCount).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name, count]) => ({ name, count }))
   
-  // Top Sources from Cod Punto
+  // Top Sources
   const srcCount = {}
   ana.forEach(r => { const s = r["Cod Punto"]; if (s) srcCount[s] = (srcCount[s] || 0) + 1 })
   const sources = Object.entries(srcCount).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, count]) => ({ name: name.substring(0, 20), count }))
@@ -397,7 +297,7 @@ const processData = (files, weekNum, dateRange) => {
     registrations: reg,
     ftds,
     conversionRate: reg > 0 ? parseFloat((ftds / reg * 100).toFixed(1)) : 0,
-    avgFirstDeposit: ftds > 0 ? Math.round(avgFirstDep / ftds) : 0,
+    avgFirstDeposit: ftds > 0 ? Math.round(avgFirstDepSum / ftds) : 0,
     totalDeposits: totalDep,
     totalWithdrawals: totalWit,
     netDeposit: totalDep - totalWit,
@@ -408,10 +308,7 @@ const processData = (files, weekNum, dateRange) => {
     top3Products,
     totalLogins,
     totalBonus,
-    demographics: {
-      male: totGender > 0 ? Math.round(genderCount.M / totGender * 100) : 0,
-      female: totGender > 0 ? Math.round(genderCount.F / totGender * 100) : 0
-    },
+    demographics: { male: totGender > 0 ? Math.round(genderCount.M / totGender * 100) : 0, female: totGender > 0 ? Math.round(genderCount.F / totGender * 100) : 0 },
     ageGroups: Object.entries(ageGroups).map(([range, count]) => ({ range, percent: totAges > 0 ? Math.round(count / totAges * 100) : 0 })),
     provinces,
     topSources: sources,
@@ -426,10 +323,7 @@ const processData = (files, weekNum, dateRange) => {
       customerValue: actives > 0 ? Math.round(ggr / actives) : 0,
       loginPerUser: actives > 0 ? parseFloat((totalLogins / actives).toFixed(1)) : 0,
       newPlayersRatio: actives > 0 ? parseFloat((ftds / actives * 100).toFixed(1)) : 0,
-      _ggr: ggr,
-      _bonus: totalBonus,
-      _logins: totalLogins,
-      _actives: actives
+      _ggr: ggr, _bonus: totalBonus, _logins: totalLogins, _actives: actives
     }
   }
 }
@@ -447,37 +341,21 @@ const KPI = ({ label, value, sub, change, delay = 0, cur = false, pct = false, i
   useEffect(() => {
     if (!vis) return
     const start = Date.now(), dur = 1000
-    const tick = () => {
-      const p = Math.min((Date.now() - start) / dur, 1)
-      setAnim(numVal * (1 - Math.pow(1 - p, 3)))
-      if (p < 1) requestAnimationFrame(tick)
-    }
+    const tick = () => { const p = Math.min((Date.now() - start) / dur, 1); setAnim(numVal * (1 - Math.pow(1 - p, 3))); if (p < 1) requestAnimationFrame(tick) }
     requestAnimationFrame(tick)
   }, [vis, numVal])
 
   const display = cur ? fmtCurrency(anim) : pct ? `${anim.toFixed(1)}%` : fmtNum(Math.round(anim))
   
   return (
-    <div style={{
-      background: C.card,
-      borderRadius: '12px',
-      padding: 'clamp(16px, 2vw, 24px)',
-      border: `1px solid ${C.border}`,
-      opacity: vis ? 1 : 0,
-      transform: vis ? 'translateY(0)' : 'translateY(15px)',
-      transition: 'all 0.4s ease'
-    }}>
+    <div style={{ background: C.card, borderRadius: '12px', padding: 'clamp(16px, 2vw, 24px)', border: `1px solid ${C.border}`, opacity: vis ? 1 : 0, transform: vis ? 'translateY(0)' : 'translateY(15px)', transition: 'all 0.4s ease' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
         <span style={{ color: C.textMuted, fontSize: 'clamp(10px, 1.1vw, 12px)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{label}</span>
         {icon && <span style={{ fontSize: '16px', opacity: 0.5 }}>{icon}</span>}
       </div>
       <p style={{ color: C.text, fontSize: 'clamp(24px, 3vw, 36px)', fontWeight: 800, margin: '0 0 4px 0', fontFamily: 'system-ui' }}>{display}</p>
       {sub && <p style={{ color: C.textMuted, fontSize: 'clamp(10px, 1vw, 12px)', margin: 0 }}>{sub}</p>}
-      {change && (
-        <p style={{ color: parseFloat(change) >= 0 ? C.success : C.danger, fontSize: 'clamp(11px, 1.1vw, 13px)', fontWeight: 700, margin: '6px 0 0 0' }}>
-          {parseFloat(change) > 0 ? '▲' : '▼'} {Math.abs(parseFloat(change))}% vs prev
-        </p>
-      )}
+      {change && <p style={{ color: parseFloat(change) >= 0 ? C.success : C.danger, fontSize: 'clamp(11px, 1.1vw, 13px)', fontWeight: 700, margin: '6px 0 0 0' }}>{parseFloat(change) > 0 ? '▲' : '▼'} {Math.abs(parseFloat(change))}% vs prev</p>}
     </div>
   )
 }
@@ -515,18 +393,13 @@ const Table = ({ cols, data, compact = false, theme }) => {
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: compact ? '12px' : 'clamp(12px, 1.2vw, 14px)' }}>
         <thead>
           <tr style={{ background: C.bg }}>
-            {cols.map((c, i) => (
-              <th key={i} style={{ padding: compact ? '10px 12px' : 'clamp(10px, 1.4vw, 14px) clamp(12px, 1.5vw, 18px)', textAlign: c.align || 'left', color: C.primary, fontWeight: 700, fontSize: compact ? '10px' : 'clamp(10px, 1vw, 12px)', textTransform: 'uppercase', letterSpacing: '0.3px', borderBottom: `2px solid ${C.primary}` }}>{c.header}</th>
-            ))}
+            {cols.map((c, i) => <th key={i} style={{ padding: compact ? '10px 12px' : 'clamp(10px, 1.4vw, 14px) clamp(12px, 1.5vw, 18px)', textAlign: c.align || 'left', color: C.primary, fontWeight: 700, fontSize: compact ? '10px' : 'clamp(10px, 1vw, 12px)', textTransform: 'uppercase', letterSpacing: '0.3px', borderBottom: `2px solid ${C.primary}` }}>{c.header}</th>)}
           </tr>
         </thead>
         <tbody>
           {data.map((r, ri) => (
             <tr key={ri} style={{ background: r.isTotal ? C.primary + '15' : ri % 2 === 0 ? C.card : C.bg }}>
-              {cols.map((c, ci) => {
-                const v = c.accessor ? r[c.accessor] : ''
-                return <td key={ci} style={{ padding: compact ? '8px 12px' : 'clamp(10px, 1.3vw, 12px) clamp(12px, 1.5vw, 18px)', textAlign: c.align || 'left', color: r.isTotal ? C.primary : C.text, fontWeight: r.isTotal ? 800 : 400, borderBottom: `1px solid ${C.border}` }}>{c.format ? c.format(v, r) : v}</td>
-              })}
+              {cols.map((c, ci) => { const v = c.accessor ? r[c.accessor] : ''; return <td key={ci} style={{ padding: compact ? '8px 12px' : 'clamp(10px, 1.3vw, 12px) clamp(12px, 1.5vw, 18px)', textAlign: c.align || 'left', color: r.isTotal ? C.primary : C.text, fontWeight: r.isTotal ? 800 : 400, borderBottom: `1px solid ${C.border}` }}>{c.format ? c.format(v, r) : v}</td> })}
             </tr>
           ))}
         </tbody>
@@ -564,24 +437,17 @@ const UploadPage = ({ weeksData, onUpload, onDelete, theme }) => {
   const [msg, setMsg] = useState(null)
   const exists = week && weeksData[parseInt(week)]
   
-  // Format date range from calendar inputs
   const formatDateRange = () => {
     if (!dateFrom || !dateTo) return ''
-    const from = new Date(dateFrom)
-    const to = new Date(dateTo)
+    const from = new Date(dateFrom), to = new Date(dateTo)
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
     const fromDay = from.getDate().toString().padStart(2, '0')
     const toDay = to.getDate().toString().padStart(2, '0')
     const toMonth = months[to.getMonth()]
     const toYear = to.getFullYear()
-    // Same month: "03 - 09 Feb 2025", different months: "28 Jan - 03 Feb 2025"
-    if (from.getMonth() === to.getMonth() && from.getFullYear() === to.getFullYear()) {
-      return `${fromDay} - ${toDay} ${toMonth} ${toYear}`
-    }
-    const fromMonth = months[from.getMonth()]
-    return `${fromDay} ${fromMonth} - ${toDay} ${toMonth} ${toYear}`
+    if (from.getMonth() === to.getMonth() && from.getFullYear() === to.getFullYear()) return `${fromDay} - ${toDay} ${toMonth} ${toYear}`
+    return `${fromDay} ${months[from.getMonth()]} - ${toDay} ${toMonth} ${toYear}`
   }
-  
   const dates = formatDateRange()
 
   const readFile = async f => new Promise((res, rej) => {
@@ -593,10 +459,7 @@ const UploadPage = ({ weeksData, onUpload, onDelete, theme }) => {
 
   const handleFile = async (e, key) => {
     const f = e.target.files[0]
-    if (f) {
-      try { const d = await readFile(f); setFiles(p => ({ ...p, [key]: { name: f.name, data: d, rows: d.length } })); setMsg(null) }
-      catch { setMsg({ t: 'error', m: 'Errore lettura file' }) }
-    }
+    if (f) { try { const d = await readFile(f); setFiles(p => ({ ...p, [key]: { name: f.name, data: d, rows: d.length } })); setMsg(null) } catch { setMsg({ t: 'error', m: 'Errore lettura file' }) } }
   }
 
   const handleUpload = async () => {
@@ -623,7 +486,7 @@ const UploadPage = ({ weeksData, onUpload, onDelete, theme }) => {
           <div>
             <label style={{ color: C.textMuted, fontSize: '11px', display: 'block', marginBottom: '6px', textTransform: 'uppercase', fontWeight: 600 }}>Settimana</label>
             <input type="number" value={week} onChange={e => setWeek(e.target.value)} placeholder="es. 6" style={{ width: '100%', background: C.bg, border: `1px solid ${exists ? C.orange : C.border}`, borderRadius: '8px', padding: '12px', color: C.text, fontSize: '16px', fontWeight: 700 }} />
-            {exists && <p style={{ color: C.orange, fontSize: '11px', marginTop: '6px' }}>⚠ Sovrascriverà i dati esistenti</p>}
+            {exists && <p style={{ color: C.orange, fontSize: '11px', marginTop: '6px' }}>⚠ Sovrascriverà</p>}
           </div>
           <div>
             <label style={{ color: C.textMuted, fontSize: '11px', display: 'block', marginBottom: '6px', textTransform: 'uppercase', fontWeight: 600 }}>Da</label>
@@ -705,14 +568,7 @@ const Monthly = ({ weeksData, theme }) => {
   const weeks = Object.values(weeksData).sort((a, b) => a.weekNumber - b.weekNumber)
   if (!weeks.length) return <div style={{ padding: '60px', textAlign: 'center' }}><p style={{ color: C.textMuted, fontSize: '16px' }}>Nessun dato disponibile</p></div>
 
-  const tot = {
-    reg: weeks.reduce((s, w) => s + (w.registrations || 0), 0),
-    ftds: weeks.reduce((s, w) => s + (w.ftds || 0), 0),
-    dep: weeks.reduce((s, w) => s + (w.totalDeposits || 0), 0),
-    wit: weeks.reduce((s, w) => s + (w.totalWithdrawals || 0), 0),
-    turn: weeks.reduce((s, w) => s + (w.turnover || 0), 0),
-    ggr: weeks.reduce((s, w) => s + (w.ggr || 0), 0)
-  }
+  const tot = { reg: weeks.reduce((s, w) => s + (w.registrations || 0), 0), ftds: weeks.reduce((s, w) => s + (w.ftds || 0), 0), dep: weeks.reduce((s, w) => s + (w.totalDeposits || 0), 0), wit: weeks.reduce((s, w) => s + (w.totalWithdrawals || 0), 0), turn: weeks.reduce((s, w) => s + (w.turnover || 0), 0), ggr: weeks.reduce((s, w) => s + (w.ggr || 0), 0) }
   const avgAct = Math.round(weeks.reduce((s, w) => s + (w.activeUsers || 0), 0) / weeks.length)
   const trend = weeks.map(w => ({ week: `W${w.weekNumber}`, REG: w.registrations, FTDs: w.ftds, GGR: Math.round(w.ggr / 1000), Actives: w.activeUsers }))
 
@@ -799,14 +655,12 @@ const Weekly = ({ data, prev, allData, theme }) => {
           <KPI label="GWM" value={data.gwm} sub={prev ? `${(data.gwm - prev.gwm) >= 0 ? '+' : ''}${(data.gwm - prev.gwm).toFixed(1)}pp` : null} pct icon="📊" delay={250} theme={C} />
         </div>
 
-        {/* Weekly Actives + Top 3 Products */}
         <div style={{ background: `linear-gradient(135deg, ${C.card} 0%, ${C.bg} 100%)`, borderRadius: '12px', padding: 'clamp(20px, 3vw, 32px)', border: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '24px' }}>
           <div>
             <p style={{ color: C.textMuted, fontSize: 'clamp(11px, 1.2vw, 14px)', fontWeight: 700, textTransform: 'uppercase', margin: '0 0 6px 0' }}>Weekly Active Users</p>
             <p style={{ color: C.primary, fontSize: 'clamp(36px, 5vw, 56px)', fontWeight: 900, margin: 0, fontFamily: 'system-ui' }}>{fmtNum(data.activeUsers)}</p>
             {actCh && <p style={{ color: parseFloat(actCh) >= 0 ? C.success : C.danger, fontSize: '14px', fontWeight: 700, margin: '8px 0 0 0' }}>{parseFloat(actCh) > 0 ? '▲' : '▼'} {Math.abs(parseFloat(actCh))}% vs prev week</p>}
           </div>
-          
           <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
             {(data.top3Products || []).map((prod, i) => (
               <div key={i} style={{ textAlign: 'center', minWidth: '80px' }}>
@@ -815,16 +669,9 @@ const Weekly = ({ data, prev, allData, theme }) => {
               </div>
             ))}
           </div>
-
           <div style={{ display: 'flex', gap: '20px' }}>
-            <div style={{ textAlign: 'center' }}>
-              <p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', textTransform: 'uppercase' }}>Logins</p>
-              <p style={{ color: C.text, fontSize: '20px', fontWeight: 800, margin: 0 }}>{fmtNum(data.totalLogins)}</p>
-            </div>
-            <div style={{ textAlign: 'center' }}>
-              <p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', textTransform: 'uppercase' }}>Bonus</p>
-              <p style={{ color: C.orange, fontSize: '20px', fontWeight: 800, margin: 0 }}>{fmtCurrency(data.totalBonus)}</p>
-            </div>
+            <div style={{ textAlign: 'center' }}><p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', textTransform: 'uppercase' }}>Logins</p><p style={{ color: C.text, fontSize: '20px', fontWeight: 800, margin: 0 }}>{fmtNum(data.totalLogins)}</p></div>
+            <div style={{ textAlign: 'center' }}><p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', textTransform: 'uppercase' }}>Bonus</p><p style={{ color: C.orange, fontSize: '20px', fontWeight: 800, margin: 0 }}>{fmtCurrency(data.totalBonus)}</p></div>
           </div>
         </div>
       </Section>
@@ -858,7 +705,6 @@ const Weekly = ({ data, prev, allData, theme }) => {
           </ChartCard>
         </div>
 
-        {/* Demographics */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 'clamp(16px, 2vw, 24px)' }}>
           <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}`, textAlign: 'center' }}>
             <h4 style={{ color: C.textMuted, margin: '0 0 16px 0', fontSize: '11px', textTransform: 'uppercase', fontWeight: 700 }}>Gender Split</h4>
@@ -867,18 +713,14 @@ const Weekly = ({ data, prev, allData, theme }) => {
               <div><p style={{ color: C.purple, fontSize: '36px', fontWeight: 900, margin: 0 }}>{data.demographics?.female || 0}%</p><p style={{ color: C.textMuted, fontSize: '12px', fontWeight: 600 }}>Female</p></div>
             </div>
           </div>
-
           <ChartCard title="Age Distribution" height={140} theme={C}>
             <BarChart data={data.ageGroups || []}>
               <XAxis dataKey="range" tick={{ fill: C.textMuted, fontSize: 9, fontWeight: 700 }} />
               <YAxis hide />
               <Tooltip content={<Tip theme={C} />} />
-              <Bar dataKey="percent" fill={C.primary} radius={[4, 4, 0, 0]} animationDuration={800}>
-                {(data.ageGroups || []).map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}
-              </Bar>
+              <Bar dataKey="percent" fill={C.primary} radius={[4, 4, 0, 0]} animationDuration={800}>{(data.ageGroups || []).map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}</Bar>
             </BarChart>
           </ChartCard>
-
           <ChartCard title="Top Provinces" height={140} theme={C}>
             <BarChart data={(data.provinces || []).slice(0, 5)} layout="vertical">
               <XAxis type="number" hide />
@@ -901,15 +743,12 @@ const Weekly = ({ data, prev, allData, theme }) => {
             { header: 'Activated', accessor: 'activated', align: 'center', format: v => <b>{v}%</b> },
             { header: 'Avg Age', accessor: 'avgAge', align: 'center', format: v => <b>{v}</b> }
           ]} data={data.qualityAcquisition || []} theme={C} />
-
           <ChartCard title="Conversion by Channel" height={220} theme={C}>
             <BarChart data={(data.qualityAcquisition || []).filter(c => !c.isTotal)} layout="vertical">
               <XAxis type="number" domain={[0, 80]} tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} />
               <YAxis dataKey="channel" type="category" width={100} tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} />
               <Tooltip content={<Tip theme={C} />} />
-              <Bar dataKey="conv" name="Conv%" fill={C.primary} radius={[0, 4, 4, 0]} animationDuration={1000}>
-                {(data.qualityAcquisition || []).filter(c => !c.isTotal).map((e, i) => <Cell key={i} fill={e.conv >= 55 ? C.success : e.conv >= 45 ? C.orange : C.danger} />)}
-              </Bar>
+              <Bar dataKey="conv" name="Conv%" fill={C.primary} radius={[0, 4, 4, 0]} animationDuration={1000}>{(data.qualityAcquisition || []).filter(c => !c.isTotal).map((e, i) => <Cell key={i} fill={e.conv >= 55 ? C.success : e.conv >= 45 ? C.orange : C.danger} />)}</Bar>
             </BarChart>
           </ChartCard>
         </div>
@@ -926,12 +765,9 @@ const Weekly = ({ data, prev, allData, theme }) => {
             { header: 'Actives', accessor: 'actives', align: 'right', format: v => <b>{fmtNum(v)}</b> },
             { header: 'Rev Share', accessor: 'revShare', align: 'center', format: v => <span style={{ color: C.primary, fontWeight: 800 }}>{v}%</span> }
           ]} data={data.channelPerformance || []} theme={C} />
-
           <ChartCard title="Revenue Share" height={220} theme={C}>
             <PieChart>
-              <Pie data={(data.channelPerformance || []).filter(c => c.revShare > 0)} cx="50%" cy="50%" innerRadius={50} outerRadius={85} paddingAngle={2} dataKey="revShare" nameKey="channel" animationDuration={1000}>
-                {(data.channelPerformance || []).map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}
-              </Pie>
+              <Pie data={(data.channelPerformance || []).filter(c => c.revShare > 0)} cx="50%" cy="50%" innerRadius={50} outerRadius={85} paddingAngle={2} dataKey="revShare" nameKey="channel" animationDuration={1000}>{(data.channelPerformance || []).map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}</Pie>
               <Tooltip content={<Tip theme={C} />} />
               <Legend />
             </PieChart>
@@ -949,21 +785,18 @@ const Weekly = ({ data, prev, allData, theme }) => {
             { header: 'Payout%', accessor: 'payout', align: 'center', format: v => v ? <b>{v}%</b> : '-' },
             { header: 'Actives', accessor: 'actives', align: 'right', format: v => <b>{fmtNum(v)}</b> }
           ]} data={data.productPerformance || []} compact theme={C} />
-
           <ChartCard title="GGR by Product" height={220} theme={C}>
             <BarChart data={(data.productPerformance || []).slice(0, 6)} layout="vertical">
               <XAxis type="number" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} />
               <YAxis dataKey="product" type="category" width={80} tick={{ fill: C.textMuted, fontSize: 9, fontWeight: 700 }} />
               <Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} />
-              <Bar dataKey="ggr" fill={C.primary} radius={[0, 4, 4, 0]} animationDuration={1000}>
-                {(data.productPerformance || []).map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}
-              </Bar>
+              <Bar dataKey="ggr" fill={C.primary} radius={[0, 4, 4, 0]} animationDuration={1000}>{(data.productPerformance || []).map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}</Bar>
             </BarChart>
           </ChartCard>
         </div>
       </Section>
 
-      {/* FINANCIAL HEALTH with Explanations */}
+      {/* FINANCIAL HEALTH */}
       <Section title="Financial Health" sub="Indicatori finanziari" theme={C}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'clamp(12px, 1.5vw, 16px)', marginBottom: 'clamp(20px, 2.5vw, 28px)' }}>
           <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}` }}>
@@ -971,25 +804,21 @@ const Weekly = ({ data, prev, allData, theme }) => {
             <p style={{ color: C.text, fontSize: '28px', fontWeight: 900, margin: '0 0 8px 0' }}>{data.financialHealth?.withdrawalRatio || 0}%</p>
             <p style={{ color: C.textMuted, fontSize: '10px', margin: 0, lineHeight: 1.4 }}>Prelievi / Depositi × 100<br/><span style={{ color: C.textSec }}>{fmtCurrency(data.totalWithdrawals)} / {fmtCurrency(data.totalDeposits)}</span></p>
           </div>
-          
           <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}` }}>
             <p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', margin: '0 0 8px 0' }}>Bonus ROI</p>
             <p style={{ color: C.text, fontSize: '28px', fontWeight: 900, margin: '0 0 8px 0' }}>{data.financialHealth?.bonusROI || 0}x</p>
             <p style={{ color: C.textMuted, fontSize: '10px', margin: 0, lineHeight: 1.4 }}>GGR / Bonus erogati<br/><span style={{ color: C.textSec }}>{fmtCurrency(data.financialHealth?._ggr)} / {fmtCurrency(data.financialHealth?._bonus)}</span></p>
           </div>
-          
           <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}` }}>
             <p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', margin: '0 0 8px 0' }}>Customer Value</p>
             <p style={{ color: C.text, fontSize: '28px', fontWeight: 900, margin: '0 0 8px 0' }}>{fmtCurrency(data.financialHealth?.customerValue || 0)}</p>
             <p style={{ color: C.textMuted, fontSize: '10px', margin: 0, lineHeight: 1.4 }}>GGR / Utenti attivi<br/><span style={{ color: C.textSec }}>{fmtCurrency(data.financialHealth?._ggr)} / {fmtNum(data.financialHealth?._actives)}</span></p>
           </div>
-          
           <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}` }}>
             <p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', margin: '0 0 8px 0' }}>Login / User</p>
             <p style={{ color: C.text, fontSize: '28px', fontWeight: 900, margin: '0 0 8px 0' }}>{data.financialHealth?.loginPerUser || 0}</p>
             <p style={{ color: C.textMuted, fontSize: '10px', margin: 0, lineHeight: 1.4 }}>Login totali / Utenti attivi<br/><span style={{ color: C.textSec }}>{fmtNum(data.financialHealth?._logins)} / {fmtNum(data.financialHealth?._actives)}</span></p>
           </div>
-          
           <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}` }}>
             <p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', margin: '0 0 8px 0' }}>Deposit Frequency</p>
             <p style={{ color: C.text, fontSize: '28px', fontWeight: 900, margin: '0 0 8px 0' }}>{data.financialHealth?.depositFrequency || 0}</p>
@@ -1009,12 +838,9 @@ const Weekly = ({ data, prev, allData, theme }) => {
               <Bar dataKey="withdrawals" name="Withdrawals" fill={C.danger} radius={[3, 3, 0, 0]} animationDuration={800} />
             </BarChart>
           </ChartCard>
-
           <ChartCard title="Daily Bonus" theme={C}>
             <AreaChart data={data.dailyStats || []}>
-              <defs>
-                <linearGradient id="bG" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.orange} stopOpacity={0.4} /><stop offset="95%" stopColor={C.orange} stopOpacity={0} /></linearGradient>
-              </defs>
+              <defs><linearGradient id="bG" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.orange} stopOpacity={0.4} /><stop offset="95%" stopColor={C.orange} stopOpacity={0} /></linearGradient></defs>
               <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
               <XAxis dataKey="date" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} />
               <YAxis tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} />
@@ -1027,9 +853,7 @@ const Weekly = ({ data, prev, allData, theme }) => {
 
       {/* FOOTER */}
       <div style={{ background: `linear-gradient(135deg, ${C.card} 0%, ${C.bg} 100%)`, borderRadius: '16px', padding: 'clamp(40px, 5vw, 80px)', textAlign: 'center', border: `1px solid ${C.border}`, marginTop: '40px' }}>
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '24px' }}>
-          <img src="/logo.png" alt="DAZN Bet" style={{ height: '60px' }} />
-        </div>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '24px' }}><img src="/logo.png" alt="DAZN Bet" style={{ height: '60px' }} /></div>
         <h2 style={{ color: C.primary, fontSize: 'clamp(28px, 4vw, 40px)', fontWeight: 900, margin: '0 0 8px 0' }}>Thank You</h2>
         <p style={{ color: C.text, fontSize: 'clamp(14px, 1.8vw, 18px)', margin: '0 0 4px 0', fontWeight: 600 }}>Weekly Trading Report • Week {data.weekNumber} 2025</p>
         <p style={{ color: C.textMuted, fontSize: 'clamp(12px, 1.4vw, 16px)', margin: 0 }}>DAZN Bet Italy</p>
@@ -1056,27 +880,14 @@ export default function Dashboard() {
       try {
         const c = await checkConnection(); setDb(c)
         const r = await loadAllWeeksData()
-        if (r.data && Object.keys(r.data).length) {
-          setWeeks(r.data)
-          setSelected(Math.max(...Object.keys(r.data).map(Number)))
-        }
+        if (r.data && Object.keys(r.data).length) { setWeeks(r.data); setSelected(Math.max(...Object.keys(r.data).map(Number))) }
       } catch (e) { console.error(e) }
       setLoading(false)
     })()
   }, [])
 
-  const handleUpload = async d => {
-    const u = { ...weeks, [d.weekNumber]: d }
-    setWeeks(u); setSelected(d.weekNumber)
-    await saveWeekData(d); setTab('weekly')
-  }
-
-  const handleDelete = async n => {
-    if (!confirm(`Eliminare Week ${n}?`)) return
-    const { [n]: _, ...rest } = weeks; setWeeks(rest)
-    await deleteWeekData(n)
-    setSelected(Object.keys(rest).length ? Math.max(...Object.keys(rest).map(Number)) : null)
-  }
+  const handleUpload = async d => { const u = { ...weeks, [d.weekNumber]: d }; setWeeks(u); setSelected(d.weekNumber); await saveWeekData(d); setTab('weekly') }
+  const handleDelete = async n => { if (!confirm(`Eliminare Week ${n}?`)) return; const { [n]: _, ...rest } = weeks; setWeeks(rest); await deleteWeekData(n); setSelected(Object.keys(rest).length ? Math.max(...Object.keys(rest).map(Number)) : null) }
 
   const weekNums = Object.keys(weeks).map(Number).sort((a, b) => b - a)
   const current = selected ? weeks[selected] : null
@@ -1094,79 +905,31 @@ export default function Dashboard() {
 
   return (
     <div style={{ minHeight: '100vh', background: C.bg, fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", color: C.text, transition: 'background 0.3s, color 0.3s' }}>
-      {/* HEADER */}
       <header style={{ background: C.bg, padding: 'clamp(12px, 1.5vw, 16px) clamp(20px, 3vw, 48px)', position: 'sticky', top: 0, zIndex: 100, borderBottom: `1px solid ${C.border}` }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'clamp(12px, 2vw, 20px)' }}>
             <img src="/logo.png" alt="DAZN Bet" style={{ height: '40px' }} />
             <div>
               <h1 style={{ color: C.text, fontSize: 'clamp(14px, 1.6vw, 18px)', fontWeight: 800, margin: 0 }}>Weekly Trading Report</h1>
-              <p style={{ color: C.textMuted, fontSize: 'clamp(10px, 1vw, 12px)', margin: 0 }}>
-                Italy
-                <span style={{ marginLeft: '8px', fontSize: '10px', padding: '2px 6px', borderRadius: '4px', background: db.connected ? C.successDim : C.border, color: db.connected ? C.success : C.textMuted, fontWeight: 700 }}>
-                  {db.connected ? '● Cloud' : '● Local'}
-                </span>
-              </p>
+              <p style={{ color: C.textMuted, fontSize: 'clamp(10px, 1vw, 12px)', margin: 0 }}>Italy <span style={{ marginLeft: '8px', fontSize: '10px', padding: '2px 6px', borderRadius: '4px', background: db.connected ? C.successDim : C.border, color: db.connected ? C.success : C.textMuted, fontWeight: 700 }}>{db.connected ? '● Cloud' : '● Local'}</span></p>
             </div>
           </div>
-
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <button onClick={() => setIsDark(!isDark)} style={{
-              background: C.card,
-              color: C.text,
-              border: `1px solid ${C.border}`,
-              borderRadius: '6px',
-              padding: '8px 12px',
-              fontSize: '12px',
-              fontWeight: 700,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px'
-            }}>
-              {isDark ? '☀️' : '🌙'} {isDark ? 'Light' : 'Dark'}
-            </button>
-
+            <button onClick={() => setIsDark(!isDark)} style={{ background: C.card, color: C.text, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '8px 12px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>{isDark ? '☀️' : '🌙'} {isDark ? 'Light' : 'Dark'}</button>
             <div style={{ display: 'flex', gap: '6px' }}>
               {[{ id: 'weekly', label: 'Weekly' }, { id: 'monthly', label: 'Monthly' }, { id: 'upload', label: 'Upload' }].map(t => (
-                <button key={t.id} onClick={() => setTab(t.id)} style={{
-                  background: tab === t.id ? C.primary : 'transparent',
-                  color: tab === t.id ? (isDark ? '#000' : '#fff') : C.textSec,
-                  border: `1px solid ${tab === t.id ? C.primary : C.border}`,
-                  borderRadius: '6px',
-                  padding: 'clamp(8px, 1vw, 10px) clamp(14px, 2vw, 20px)',
-                  fontSize: 'clamp(11px, 1.2vw, 13px)',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  transition: 'all 0.2s'
-                }}>
-                  {t.label}
-                </button>
+                <button key={t.id} onClick={() => setTab(t.id)} style={{ background: tab === t.id ? C.primary : 'transparent', color: tab === t.id ? (isDark ? '#000' : '#fff') : C.textSec, border: `1px solid ${tab === t.id ? C.primary : C.border}`, borderRadius: '6px', padding: 'clamp(8px, 1vw, 10px) clamp(14px, 2vw, 20px)', fontSize: 'clamp(11px, 1.2vw, 13px)', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s' }}>{t.label}</button>
               ))}
             </div>
           </div>
-
           {tab === 'weekly' && weekNums.length > 0 && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <select value={selected || ''} onChange={e => setSelected(Number(e.target.value))} style={{
-                background: C.bg,
-                color: C.text,
-                border: `1px solid ${C.primary}`,
-                borderRadius: '6px',
-                padding: '8px 14px',
-                fontSize: '13px',
-                fontWeight: 700,
-                cursor: 'pointer',
-                minWidth: '100px'
-              }}>
-                {weekNums.map(w => <option key={w} value={w}>Week {w}</option>)}
-              </select>
+              <select value={selected || ''} onChange={e => setSelected(Number(e.target.value))} style={{ background: C.bg, color: C.text, border: `1px solid ${C.primary}`, borderRadius: '6px', padding: '8px 14px', fontSize: '13px', fontWeight: 700, cursor: 'pointer', minWidth: '100px' }}>{weekNums.map(w => <option key={w} value={w}>Week {w}</option>)}</select>
               {current && <span style={{ color: C.textMuted, fontSize: '12px', fontWeight: 600 }}>{current.dateRange}</span>}
             </div>
           )}
         </div>
       </header>
-
       <main>
         {tab === 'weekly' && <Weekly data={current} prev={prev} allData={weeks} theme={C} />}
         {tab === 'monthly' && <Monthly weeksData={weeks} theme={C} />}
