@@ -113,7 +113,14 @@ const calcChange = (current, previous) => (!previous || previous === 0) ? null :
 // DATA PROCESSOR
 // ═══════════════════════════════════════════════════════════════════════════════
 const processWeekData = (files, weekNumber, dateRange) => {
-  const ana = files.anagrafica || [], ana2 = files.anagrafica2 || [], cat = files.categoria || [], skinTotal = files.skinTotal || [], academyTotal = files.academyTotal || [], organicTotal = files.organicTotal || []
+  const ana = files.anagrafica || []
+  const ana2 = files.anagrafica2 || []
+  const total = files.total || []  // Anagrafica_TOTAL - fonte per totali
+  const cat = files.categoria || []
+  const skinTotal = files.skinTotal || []
+  const academyTotal = files.academyTotal || []
+  const organicTotal = files.organicTotal || []
+  
   const registrations = ana.length
   const channelGroups = {}
   ana.forEach(row => { const channel = classifyChannel(row); if (!channelGroups[channel]) channelGroups[channel] = { rows: [], birthdates: [] }; channelGroups[channel].rows.push(row); if (row["Nato il"]) channelGroups[channel].birthdates.push(row["Nato il"]) })
@@ -125,8 +132,22 @@ const processWeekData = (files, weekNumber, dateRange) => {
 
   const dailyStats = ana2.map(r => { const dateVal = r["Data"]; let dateStr = ''; if (dateVal) { const d = new Date(dateVal); dateStr = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) }; return { date: dateStr, registrations: parseNum(r["Registrati AAMS"]) || 0, ftds: parseNum(r["Primo deposito"]) || 0, deposits: parseNum(r["Importo depositi"]) || 0, withdrawals: parseNum(r["Importo prelievi processati"]) || 0, logins: parseNum(r["Login"]) || 0, bonus: parseNum(r["Importo bonus"]) || 0, depositCount: parseNum(r["Depositi"]) || 0, uniqueDepositors: parseNum(r["Depositanti unici"]) || 0 } })
 
-  const ftds = dailyStats.reduce((sum, d) => sum + d.ftds, 0), totalDeposits = dailyStats.reduce((sum, d) => sum + d.deposits, 0), totalWithdrawals = dailyStats.reduce((sum, d) => sum + d.withdrawals, 0), totalLogins = dailyStats.reduce((sum, d) => sum + d.logins, 0), totalBonus = dailyStats.reduce((sum, d) => sum + d.bonus, 0), totalDepositCount = dailyStats.reduce((sum, d) => sum + d.depositCount, 0), totalUniqueDepositors = dailyStats.reduce((sum, d) => sum + d.uniqueDepositors, 0), importoPrimoDeposito = ana2.reduce((sum, r) => sum + parseNum(r["Importo primo deposito"]), 0)
-  const turnover = cat.reduce((sum, r) => sum + parseNum(r["Giocato"]), 0), ggr = cat.reduce((sum, r) => sum + parseNum(r["ggr"]), 0), activeUsers = cat.reduce((max, r) => Math.max(max, parseNum(r["conti attivi"])), 0)
+  const ftds = dailyStats.reduce((sum, d) => sum + d.ftds, 0)
+  const totalDeposits = dailyStats.reduce((sum, d) => sum + d.deposits, 0)
+  const totalWithdrawals = dailyStats.reduce((sum, d) => sum + d.withdrawals, 0)
+  const totalLogins = dailyStats.reduce((sum, d) => sum + d.logins, 0)
+  const totalBonus = dailyStats.reduce((sum, d) => sum + d.bonus, 0)
+  const totalDepositCount = dailyStats.reduce((sum, d) => sum + d.depositCount, 0)
+  const totalUniqueDepositors = dailyStats.reduce((sum, d) => sum + d.uniqueDepositors, 0)
+  const importoPrimoDeposito = ana2.reduce((sum, r) => sum + parseNum(r["Importo primo deposito"]), 0)
+  
+  // *** TOTALI DA Anagrafica_TOTAL (non da categoria!) ***
+  const totalRow = total[0] || {}
+  const turnover = parseNum(totalRow["Giocato"]) || total.reduce((sum, r) => sum + parseNum(r["Giocato"]), 0)
+  const ggr = parseNum(totalRow["ggr"]) || parseNum(totalRow["rake"]) || total.reduce((sum, r) => sum + (parseNum(r["ggr"]) || parseNum(r["rake"])), 0)
+  const activeUsers = parseNum(totalRow["conti attivi"]) || total.reduce((max, r) => Math.max(max, parseNum(r["conti attivi"])), 0)
+  
+  // Product performance da categoria (per dettaglio prodotti)
   const productPerformance = cat.map(r => { const prodTurnover = parseNum(r["Giocato"]), prodGgr = parseNum(r["ggr"]), prodActives = parseNum(r["conti attivi"]), prodVinto = parseNum(r["vinto"]); return { product: r["Categoria"] || '', turnover: prodTurnover, ggr: prodGgr, payout: prodTurnover > 0 ? parseFloat(KPI.payout(prodVinto, prodTurnover)) : null, actives: prodActives, arpu: parseFloat(KPI.arpu(prodGgr, prodActives)) } }).filter(p => p.product)
 
   const channelPerformance = []; let totalGgrForShare = 0
@@ -161,11 +182,12 @@ const CustomTooltip = ({ active, payload, label, t }) => {
   return null
 }
 
-const Metric = ({ label, value, change, t }) => (
+const Metric = ({ label, value, change, subtitle, t }) => (
   <div style={{ padding: '16px 20px', background: t.card, borderRadius: '6px', border: `1px solid ${t.border}` }}>
     <p style={{ color: t.textSecondary, fontSize: '11px', fontWeight: '500', textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 8px 0' }}>{label}</p>
     <p style={{ color: t.text, fontSize: '24px', fontWeight: '600', margin: 0, fontFamily: 'system-ui, -apple-system, sans-serif' }}>{value}</p>
-    {change && <p style={{ color: parseFloat(change) >= 0 ? t.success : t.danger, fontSize: '11px', margin: '6px 0 0 0' }}>{parseFloat(change) > 0 ? '+' : ''}{change}%</p>}
+    {subtitle && <p style={{ color: t.textSecondary, fontSize: '11px', margin: '6px 0 0 0' }}>{subtitle}</p>}
+    {change && <p style={{ color: parseFloat(change) >= 0 ? t.success : t.danger, fontSize: '11px', margin: '4px 0 0 0' }}>{parseFloat(change) > 0 ? '+' : ''}{change}% vs prev</p>}
   </div>
 )
 
@@ -331,11 +353,11 @@ const WeeklyReport = ({ data, prevData, allWeeksData, t }) => {
         <p style={{ color: t.textSecondary, fontSize: '12px', margin: '-12px 0 16px 0' }}>Week {data.weekNumber} | {data.dateRange}</p>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px', marginBottom: '16px' }}>
           <Metric label="Registrations" value={formatNumber(data.registrations)} change={regChange} t={t} />
-          <Metric label="FTDs" value={formatNumber(data.ftds)} change={ftdChange} t={t} />
-          <Metric label="Net Deposit" value={formatCurrency(data.netDeposit)} t={t} />
+          <Metric label="FTDs" value={formatNumber(data.ftds)} subtitle={`Conv: ${data.conversionRate}% | Avg: €${data.avgFirstDeposit}`} change={ftdChange} t={t} />
+          <Metric label="Net Deposit" value={formatCurrency(data.netDeposit)} subtitle={`Dep ${formatCurrency(data.totalDeposits)} - Wit ${formatCurrency(data.totalWithdrawals)}`} t={t} />
           <Metric label="Turnover" value={formatCurrency(data.turnover)} change={turnoverChange} t={t} />
           <Metric label="GGR" value={formatCurrency(data.ggr)} change={ggrChange} t={t} />
-          <Metric label="GWM" value={`${data.gwm}%`} t={t} />
+          <Metric label="GWM" value={`${data.gwm}%`} subtitle={prevData ? `${(data.gwm - prevData.gwm) >= 0 ? '+' : ''}${(data.gwm - prevData.gwm).toFixed(1)}pp vs prev` : null} t={t} />
         </div>
         <div style={{ background: t.card, borderRadius: '6px', padding: '16px 20px', border: `1px solid ${t.border}` }}>
           <p style={{ color: t.textSecondary, fontSize: '10px', fontWeight: '500', textTransform: 'uppercase', margin: '0 0 4px 0' }}>Weekly Actives</p>
