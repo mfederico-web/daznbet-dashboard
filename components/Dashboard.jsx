@@ -168,19 +168,24 @@ const processData = (files, weekNum, dateRange) => {
   const reg = ana.length
   
   // ═══════════════════════════════════════════════════════════════════════════
-  // DAILY REG from Anagrafica.xlsx - Conta righe per giorno (Data Creazione)
+  // DAILY REG from Anagrafica.xlsx - Costruisce daily stats direttamente
   // ═══════════════════════════════════════════════════════════════════════════
-  const dailyRegCount = {}
+  const dailyRegMap = {}
   ana.forEach(r => {
     const dateKey = normalizeDate(r["Data Creazione"])
     if (dateKey) {
-      dailyRegCount[dateKey] = (dailyRegCount[dateKey] || 0) + 1
+      if (!dailyRegMap[dateKey]) {
+        dailyRegMap[dateKey] = { registrations: 0, ftdsFromAna: 0 }
+      }
+      dailyRegMap[dateKey].registrations++
+      // Conta anche FTD da Anagrafica se ha "Primo deposito"
+      if (r["Primo deposito"]) {
+        dailyRegMap[dateKey].ftdsFromAna++
+      }
     }
   })
   
-  // Debug: log delle date trovate
-  console.log("Daily REG counts from Anagrafica:", dailyRegCount)
-  console.log("Total REG:", reg)
+  console.log("Daily REG from Anagrafica.xlsx:", dailyRegMap)
   
   // Channel classification
   const channelGroups = {}
@@ -229,37 +234,55 @@ const processData = (files, weekNum, dateRange) => {
   qualityAcq.push(totalsRow)
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // DAILY STATS from Anagrafica2.xlsx + merge REG da Anagrafica
+  // DAILY STATS - Combina dati da Anagrafica (REG) e Anagrafica2 (FTDs, deposits, etc.)
   // ═══════════════════════════════════════════════════════════════════════════
-  const daily = ana2.map(r => {
+  
+  // Prima crea mappa da Anagrafica2 per lookup
+  const ana2Map = {}
+  ana2.forEach(r => {
     const dateKey = normalizeDate(r["Data"])
-    const dateLabel = formatDateLabel(dateKey)
-    const regFromAnagrafica = dateKey ? (dailyRegCount[dateKey] || 0) : 0
-    
-    return {
-      date: dateLabel,
-      dateKey,
-      registrations: regFromAnagrafica, // ← REG dal file Anagrafica!
-      ftds: parseNum(r["Primo deposito"]) || 0,
-      deposits: parseNum(r["Importo depositi"]) || 0,
-      withdrawals: parseNum(r["Importo prelievi processati"]) || 0,
-      bonus: parseNum(r["Importo bonus"]) || 0,
-      logins: parseNum(r["Login"]) || 0,
-      depositCount: parseNum(r["Depositi"]) || 0,
-      uniqueDepositors: parseNum(r["Depositanti unici"]) || 0
+    if (dateKey) {
+      ana2Map[dateKey] = {
+        ftds: parseNum(r["Primo deposito"]) || 0,
+        deposits: parseNum(r["Importo depositi"]) || 0,
+        withdrawals: parseNum(r["Importo prelievi processati"]) || 0,
+        bonus: parseNum(r["Importo bonus"]) || 0,
+        logins: parseNum(r["Login"]) || 0,
+        depositCount: parseNum(r["Depositi"]) || 0,
+        uniqueDepositors: parseNum(r["Depositanti unici"]) || 0
+      }
     }
-  }).filter(d => d.date) // Rimuovi righe senza data valida
+  })
   
-  console.log("Daily stats with REG:", daily)
+  // Costruisci daily stats partendo da Anagrafica.xlsx (fonte REG)
+  const daily = Object.entries(dailyRegMap)
+    .map(([dateKey, regData]) => {
+      const ana2Data = ana2Map[dateKey] || {}
+      return {
+        date: formatDateLabel(dateKey),
+        dateKey,
+        registrations: regData.registrations, // REG da Anagrafica!
+        ftds: ana2Data.ftds || 0,
+        deposits: ana2Data.deposits || 0,
+        withdrawals: ana2Data.withdrawals || 0,
+        bonus: ana2Data.bonus || 0,
+        logins: ana2Data.logins || 0,
+        depositCount: ana2Data.depositCount || 0,
+        uniqueDepositors: ana2Data.uniqueDepositors || 0
+      }
+    })
+    .sort((a, b) => a.dateKey.localeCompare(b.dateKey)) // Ordina per data
   
-  // Aggregated stats
-  const ftds = daily.reduce((s, d) => s + d.ftds, 0)
-  const totalDep = daily.reduce((s, d) => s + d.deposits, 0)
-  const totalWit = daily.reduce((s, d) => s + d.withdrawals, 0)
-  const totalBonus = daily.reduce((s, d) => s + d.bonus, 0)
-  const totalLogins = daily.reduce((s, d) => s + d.logins, 0)
-  const totalDepCount = daily.reduce((s, d) => s + d.depositCount, 0)
-  const totalUniqueDep = daily.reduce((s, d) => s + d.uniqueDepositors, 0)
+  console.log("Daily stats (REG from Anagrafica):", daily)
+  
+  // Aggregated stats - usa ana2 per totali (più affidabile)
+  const ftds = ana2.reduce((s, r) => s + (parseNum(r["Primo deposito"]) || 0), 0)
+  const totalDep = ana2.reduce((s, r) => s + (parseNum(r["Importo depositi"]) || 0), 0)
+  const totalWit = ana2.reduce((s, r) => s + (parseNum(r["Importo prelievi processati"]) || 0), 0)
+  const totalBonus = ana2.reduce((s, r) => s + (parseNum(r["Importo bonus"]) || 0), 0)
+  const totalLogins = ana2.reduce((s, r) => s + (parseNum(r["Login"]) || 0), 0)
+  const totalDepCount = ana2.reduce((s, r) => s + (parseNum(r["Depositi"]) || 0), 0)
+  const totalUniqueDep = ana2.reduce((s, r) => s + (parseNum(r["Depositanti unici"]) || 0), 0)
   const avgFirstDep = ana2.reduce((s, r) => s + parseNum(r["Importo primo deposito"]), 0)
   
   // ═══ TOTALS from Anagrafica_TOTAL (PRIMA RIGA) ═══
