@@ -2,541 +2,494 @@
 
 import React, { useState, useEffect } from 'react'
 import * as XLSX from 'xlsx'
-import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts'
+import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from 'recharts'
 import { saveWeekData, loadAllWeeksData, deleteWeekData, checkConnection } from '../lib/supabase'
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// THEME SYSTEM
-// ═══════════════════════════════════════════════════════════════════════════════
-const THEMES = {
-  dark: {
-    name: 'dark',
-    bg: '#0A0A0A',
-    bgSecondary: '#111111',
-    card: '#161616',
-    cardHover: '#1c1c1c',
-    border: '#262626',
-    text: '#FFFFFF',
-    textSecondary: '#A0A0A0',
-    textMuted: '#666666',
-    accent: '#CCFF00',
-    accentDim: 'rgba(204, 255, 0, 0.08)',
-    success: '#10B981',
-    successDim: 'rgba(16, 185, 129, 0.1)',
-    danger: '#EF4444',
-    dangerDim: 'rgba(239, 68, 68, 0.1)',
-    chart: ['#CCFF00', '#10B981', '#3B82F6', '#8B5CF6', '#F59E0B'],
-  },
-  light: {
-    name: 'light',
-    bg: '#FAFAFA',
-    bgSecondary: '#FFFFFF',
-    card: '#FFFFFF',
-    cardHover: '#F5F5F5',
-    border: '#E5E5E5',
-    text: '#0A0A0A',
-    textSecondary: '#666666',
-    textMuted: '#999999',
-    accent: '#0A0A0A',
-    accentDim: 'rgba(10, 10, 10, 0.04)',
-    success: '#059669',
-    successDim: 'rgba(5, 150, 105, 0.08)',
-    danger: '#DC2626',
-    dangerDim: 'rgba(220, 38, 38, 0.08)',
-    chart: ['#0A0A0A', '#059669', '#2563EB', '#7C3AED', '#D97706'],
-  }
+// COLORS
+const C = {
+  primary: '#CCFF00', primaryDim: 'rgba(204,255,0,0.1)', bg: '#0A0A0A', card: '#111111', border: '#222',
+  text: '#FFF', textSec: '#888', textMuted: '#555', success: '#00D26A', successDim: 'rgba(0,210,106,0.1)',
+  danger: '#FF4757', dangerDim: 'rgba(255,71,87,0.1)', blue: '#3B82F6', purple: '#8B5CF6', orange: '#F59E0B',
+  chart: ['#CCFF00', '#00D26A', '#3B82F6', '#8B5CF6', '#F59E0B', '#EC4899']
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// FILE REQUIREMENTS
-// ═══════════════════════════════════════════════════════════════════════════════
-const FILE_REQUIREMENTS = [
-  { key: 'anagrafica', name: 'Anagrafica.xlsx', boPath: 'Modifica Conto Telematico → Ricerca Avanzata → Ricerca anagrafica' },
-  { key: 'anagrafica2', name: 'Anagrafica2.xlsx', boPath: 'Statistica Conti' },
-  { key: 'total', name: 'Anagrafica_TOTAL.xlsx', boPath: 'Stats Multilivello → tutti i prodotti → GRID senza selezioni' },
-  { key: 'categoria', name: 'Anagrafica_CATEGORIA.xlsx', boPath: 'Stats Multilivello → tutti i prodotti → GRID Categoria' },
-  { key: 'daznbet', name: 'Anagrafica_DAZNBET.xlsx', boPath: 'Stats Multilivello → DAZNBET SKIN → GRID senza selezioni' },
-  { key: 'organic', name: 'Anagrafica_ORGANIC.xlsx', boPath: 'Stats Multilivello → DAZNBET SKIN, PV: www.daznbet.it → GRID Categoria' },
-  { key: 'organicTotal', name: 'Anagrafica_ORGANIC_TOTAL.xlsx', boPath: 'Stats Multilivello → DAZNBET SKIN, PV: www.daznbet.it → GRID senza selezioni' },
-  { key: 'skin', name: 'Anagrafica_SKIN.xlsx', boPath: 'Stats Multilivello → tutti i prodotti → GRID SKIN e Categoria' },
-  { key: 'skinTotal', name: 'Anagrafica_SKIN_TOTAL.xlsx', boPath: 'Stats Multilivello → tutti i prodotti → GRID SKIN' },
-  { key: 'academyTotal', name: 'Anagrafica_ACCADEMY_TOTAL.xlsx', boPath: 'Stats Multilivello → VIVABET SKIN, Promoter: Academy → GRID senza selezioni' }
+// FILES
+const FILES = [
+  { key: 'anagrafica', name: 'Anagrafica.xlsx', path: 'Modifica Conto Telematico → Ricerca anagrafica' },
+  { key: 'anagrafica2', name: 'Anagrafica2.xlsx', path: 'Statistica Conti' },
+  { key: 'total', name: 'Anagrafica_TOTAL.xlsx', path: 'Stats Multilivello → GRID senza selezioni' },
+  { key: 'categoria', name: 'Anagrafica_CATEGORIA.xlsx', path: 'Stats Multilivello → GRID Categoria' },
+  { key: 'daznbet', name: 'Anagrafica_DAZNBET.xlsx', path: 'Stats Multilivello → DAZNBET SKIN' },
+  { key: 'organic', name: 'Anagrafica_ORGANIC.xlsx', path: 'DAZNBET SKIN, PV: www.daznbet.it → GRID Categoria' },
+  { key: 'organicTotal', name: 'Anagrafica_ORGANIC_TOTAL.xlsx', path: 'DAZNBET SKIN, PV: www.daznbet.it → GRID senza selezioni' },
+  { key: 'skin', name: 'Anagrafica_SKIN.xlsx', path: 'Stats Multilivello → GRID SKIN e Categoria' },
+  { key: 'skinTotal', name: 'Anagrafica_SKIN_TOTAL.xlsx', path: 'Stats Multilivello → GRID SKIN' },
+  { key: 'academyTotal', name: 'Anagrafica_ACCADEMY_TOTAL.xlsx', path: 'VIVABET SKIN, Promoter: Academy' }
 ]
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// KPI & UTILITIES
-// ═══════════════════════════════════════════════════════════════════════════════
-const KPI = {
-  conversionRate: (ftds, reg) => reg > 0 ? (ftds / reg * 100).toFixed(1) : "0.0",
-  gwm: (ggr, turnover) => turnover > 0 ? (ggr / turnover * 100).toFixed(1) : "0.0",
-  avgFirstDeposit: (importo, ftds) => ftds > 0 ? Math.round(importo / ftds) : 0,
-  withdrawalRatio: (wit, dep) => dep > 0 ? (wit / dep * 100).toFixed(1) : "0.0",
-  depositFrequency: (nDep, depositanti) => depositanti > 0 ? (nDep / depositanti).toFixed(1) : "0.0",
-  bonusROI: (ggr, bonus) => bonus > 0 ? Math.round(ggr / bonus) : 0,
-  customerValue: (ggr, actives) => actives > 0 ? Math.round(ggr / actives) : 0,
-  loginFrequency: (logins, actives) => actives > 0 ? (logins / actives).toFixed(1) : "0.0",
-  payout: (vinto, giocato) => giocato > 0 ? (vinto / giocato * 100).toFixed(1) : "0.0",
-  arpu: (ggr, actives) => actives > 0 ? (ggr / actives).toFixed(2) : "0.00",
-  revenueShare: (ggrProd, ggrTot) => ggrTot > 0 ? (ggrProd / ggrTot * 100).toFixed(1) : "0.0",
-  activationRate: (attivati, reg) => reg > 0 ? Math.round(attivati / reg * 100).toString() : "0",
-  avgAge: (birthdates) => {
-    const now = new Date()
-    const valid = birthdates.filter(d => d)
-    if (valid.length === 0) return 0
-    const ages = valid.map(d => (now - new Date(d)) / (365.25 * 24 * 60 * 60 * 1000))
-    return Math.round(ages.reduce((a, b) => a + b, 0) / ages.length)
-  }
-}
+// UTILS
+const parseNum = v => { if (typeof v === 'number') return v; if (typeof v === 'string') return parseFloat(v.replace(/[.]/g,'').replace(',','.').replace(/[^\d.-]/g,'')) || 0; return 0 }
+const fmtCurrency = (v, c=true) => { if (!v || isNaN(v)) return '€0'; if (c) { if (Math.abs(v)>=1e6) return `€${(v/1e6).toFixed(2)}M`; if (Math.abs(v)>=1e3) return `€${(v/1e3).toFixed(0)}k` } return `€${v.toLocaleString('it-IT')}` }
+const fmtNum = v => (!v || isNaN(v)) ? '0' : v.toLocaleString('it-IT')
+const calcChange = (cur, prev) => (!prev || prev===0) ? null : ((cur-prev)/prev*100).toFixed(1)
 
-const CHANNELS = { PVR: "PVR", VIVABET_GLAD: "VIVABET/GLAD", TIPSTER_ACADEMY: "Tipster Academy", DAZNBET_ORGANIC: "DAZNBET Organic", DAZN_DIRECT: "DAZN Direct", AFFILIATES: "AFFILIATES" }
-
-const classifyChannel = (row) => {
-  const skin = String(row["Skin"] || "").toUpperCase().trim()
-  const promoter = String(row["Promoter"] || "").toLowerCase().trim()
-  const puntoVendita = String(row["Punto vendita"] || "").toUpperCase().trim()
-  if (!skin.includes("DAZNBET") && !skin.includes("VIVABET")) { if (!["dazn", "funpoints", "igaming.com ltd", "one click marketing ltd"].some(p => promoter.includes(p))) return CHANNELS.PVR }
-  if (skin.includes("VIVABET")) return ["nsg social web srl"].some(p => promoter.includes(p)) ? CHANNELS.VIVABET_GLAD : CHANNELS.TIPSTER_ACADEMY
+// CHANNEL CLASSIFICATION
+const classifyChannel = row => {
+  const skin = String(row["Skin"]||"").toUpperCase(), promoter = String(row["Promoter"]||"").toLowerCase(), pv = String(row["Punto vendita"]||"").toUpperCase()
+  if (!skin.includes("DAZNBET") && !skin.includes("VIVABET")) { if (!["dazn","funpoints","igaming.com ltd","one click marketing ltd"].some(p=>promoter.includes(p))) return "PVR" }
+  if (skin.includes("VIVABET")) return promoter.includes("nsg social web") ? "VIVABET/GLAD" : "Tipster Academy"
   if (skin.includes("DAZNBET")) {
-    if (["WWW.DAZNBET.IT", "DAZNBET"].some(pv => puntoVendita.includes(pv))) return CHANNELS.DAZNBET_ORGANIC
-    if (["dazn", "funpoints"].some(p => promoter.includes(p)) || puntoVendita.includes("SUPERPRONOSTICO")) return CHANNELS.DAZN_DIRECT
-    return CHANNELS.AFFILIATES
+    if (pv.includes("WWW.DAZNBET.IT") || pv==="DAZNBET") return "DAZNBET Organic"
+    if (["dazn","funpoints"].some(p=>promoter.includes(p)) || pv.includes("SUPERPRONOSTICO")) return "DAZN Direct"
+    return "AFFILIATES"
   }
   return "OTHER"
 }
 
-const parseNum = (val) => { if (typeof val === 'number') return val; if (typeof val === 'string') return parseFloat(val.replace(/[.]/g, '').replace(',', '.').replace(/[^\d.-]/g, '')) || 0; return 0 }
-const formatCurrency = (val, compact = true) => { if (!val || isNaN(val)) return '€0'; if (compact) { if (Math.abs(val) >= 1000000) return `€${(val / 1000000).toFixed(2)}M`; if (Math.abs(val) >= 1000) return `€${(val / 1000).toFixed(0)}k` } return `€${val.toLocaleString('it-IT')}` }
-const formatNumber = (val) => (!val || isNaN(val)) ? '0' : val.toLocaleString('it-IT')
-const calcChange = (current, previous) => (!previous || previous === 0) ? null : ((current - previous) / previous * 100).toFixed(1)
-
-// ═══════════════════════════════════════════════════════════════════════════════
 // DATA PROCESSOR
-// ═══════════════════════════════════════════════════════════════════════════════
-const processWeekData = (files, weekNumber, dateRange) => {
-  const ana = files.anagrafica || []
-  const ana2 = files.anagrafica2 || []
-  const total = files.total || []  // Anagrafica_TOTAL - fonte per totali
-  const cat = files.categoria || []
-  const skinTotal = files.skinTotal || []
-  const academyTotal = files.academyTotal || []
-  const organicTotal = files.organicTotal || []
+const processData = (files, weekNum, dateRange) => {
+  const ana = files.anagrafica||[], ana2 = files.anagrafica2||[], total = files.total||[], cat = files.categoria||[], skinTotal = files.skinTotal||[], academyTotal = files.academyTotal||[], organicTotal = files.organicTotal||[]
+  const reg = ana.length, channelGroups = {}
+  ana.forEach(r => { const ch = classifyChannel(r); if (!channelGroups[ch]) channelGroups[ch] = {rows:[],ages:[]}; channelGroups[ch].rows.push(r); if(r["Nato il"]) channelGroups[ch].ages.push(r["Nato il"]) })
   
-  const registrations = ana.length
-  const channelGroups = {}
-  ana.forEach(row => { const channel = classifyChannel(row); if (!channelGroups[channel]) channelGroups[channel] = { rows: [], birthdates: [] }; channelGroups[channel].rows.push(row); if (row["Nato il"]) channelGroups[channel].birthdates.push(row["Nato il"]) })
+  const qualityAcq = Object.entries(channelGroups).map(([ch, d]) => {
+    const r = d.rows.length, f = d.rows.filter(x=>x["Primo deposito"]||parseNum(x["Depositi"])>0).length, act = d.rows.filter(x=>String(x["Stato conto"]||"").includes("ATTIVATO")).length
+    const avgAge = d.ages.length ? Math.round(d.ages.map(x=>(new Date()-new Date(x))/(365.25*24*60*60*1000)).reduce((a,b)=>a+b,0)/d.ages.length) : 0
+    return { channel: ch, reg: r, ftds: f, conv: r>0 ? parseFloat((f/r*100).toFixed(1)) : 0, activated: r>0 ? Math.round(act/r*100) : 0, avgAge }
+  }).filter(c=>c.channel!=="OTHER").sort((a,b)=>b.reg-a.reg)
 
-  const qualityAcquisition = Object.entries(channelGroups).map(([channel, data]) => {
-    const reg = data.rows.length, ftds = data.rows.filter(r => r["Primo deposito"] || parseNum(r["Depositi"]) > 0).length, activated = data.rows.filter(r => String(r["Stato conto"] || "").includes("ATTIVATO")).length
-    return { channel, reg, ftds, conv: parseFloat(KPI.conversionRate(ftds, reg)), activated: parseInt(KPI.activationRate(activated, reg)), avgAge: KPI.avgAge(data.birthdates) }
-  }).filter(c => c.channel !== "OTHER").sort((a, b) => b.reg - a.reg)
-
-  const dailyStats = ana2.map(r => { const dateVal = r["Data"]; let dateStr = ''; if (dateVal) { const d = new Date(dateVal); dateStr = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) }; return { date: dateStr, registrations: parseNum(r["Registrati AAMS"]) || 0, ftds: parseNum(r["Primo deposito"]) || 0, deposits: parseNum(r["Importo depositi"]) || 0, withdrawals: parseNum(r["Importo prelievi processati"]) || 0, logins: parseNum(r["Login"]) || 0, bonus: parseNum(r["Importo bonus"]) || 0, depositCount: parseNum(r["Depositi"]) || 0, uniqueDepositors: parseNum(r["Depositanti unici"]) || 0 } })
-
-  const ftds = dailyStats.reduce((sum, d) => sum + d.ftds, 0)
-  const totalDeposits = dailyStats.reduce((sum, d) => sum + d.deposits, 0)
-  const totalWithdrawals = dailyStats.reduce((sum, d) => sum + d.withdrawals, 0)
-  const totalLogins = dailyStats.reduce((sum, d) => sum + d.logins, 0)
-  const totalBonus = dailyStats.reduce((sum, d) => sum + d.bonus, 0)
-  const totalDepositCount = dailyStats.reduce((sum, d) => sum + d.depositCount, 0)
-  const totalUniqueDepositors = dailyStats.reduce((sum, d) => sum + d.uniqueDepositors, 0)
-  const importoPrimoDeposito = ana2.reduce((sum, r) => sum + parseNum(r["Importo primo deposito"]), 0)
+  const daily = ana2.map(r => { const d = r["Data"]; return { date: d ? new Date(d).toLocaleDateString('en-GB',{day:'2-digit',month:'short'}) : '', registrations: parseNum(r["Registrati AAMS"])||0, ftds: parseNum(r["Primo deposito"])||0, deposits: parseNum(r["Importo depositi"])||0, withdrawals: parseNum(r["Importo prelievi processati"])||0, bonus: parseNum(r["Importo bonus"])||0 }})
   
-  // *** TOTALI DA Anagrafica_TOTAL (non da categoria!) ***
-  const totalRow = total[0] || {}
-  const turnover = parseNum(totalRow["Giocato"]) || total.reduce((sum, r) => sum + parseNum(r["Giocato"]), 0)
-  const ggr = parseNum(totalRow["ggr"]) || parseNum(totalRow["rake"]) || total.reduce((sum, r) => sum + (parseNum(r["ggr"]) || parseNum(r["rake"])), 0)
-  const activeUsers = parseNum(totalRow["conti attivi"]) || total.reduce((max, r) => Math.max(max, parseNum(r["conti attivi"])), 0)
+  const ftds = daily.reduce((s,d)=>s+d.ftds,0), totalDep = daily.reduce((s,d)=>s+d.deposits,0), totalWit = daily.reduce((s,d)=>s+d.withdrawals,0), totalBonus = daily.reduce((s,d)=>s+d.bonus,0), avgFirstDep = ana2.reduce((s,r)=>s+parseNum(r["Importo primo deposito"]),0)
   
-  // Product performance da categoria (per dettaglio prodotti)
-  const productPerformance = cat.map(r => { const prodTurnover = parseNum(r["Giocato"]), prodGgr = parseNum(r["ggr"]), prodActives = parseNum(r["conti attivi"]), prodVinto = parseNum(r["vinto"]); return { product: r["Categoria"] || '', turnover: prodTurnover, ggr: prodGgr, payout: prodTurnover > 0 ? parseFloat(KPI.payout(prodVinto, prodTurnover)) : null, actives: prodActives, arpu: parseFloat(KPI.arpu(prodGgr, prodActives)) } }).filter(p => p.product)
+  // TOTALS from Anagrafica_TOTAL
+  const totRow = total[0]||{}
+  const turnover = parseNum(totRow["Giocato"])||total.reduce((s,r)=>s+parseNum(r["Giocato"]),0)
+  const ggr = parseNum(totRow["ggr"])||parseNum(totRow["rake"])||total.reduce((s,r)=>s+(parseNum(r["ggr"])||parseNum(r["rake"])),0)
+  const actives = parseNum(totRow["conti attivi"])||total.reduce((m,r)=>Math.max(m,parseNum(r["conti attivi"])),0)
 
-  const channelPerformance = []; let totalGgrForShare = 0
-  let pvrTurnover = 0, pvrGgr = 0, pvrActives = 0
-  skinTotal.forEach(r => { const skinName = String(r["Skin"] || "").toUpperCase(); if (skinName && !skinName.includes("VIVABET") && !skinName.includes("DAZNBET")) { pvrTurnover += parseNum(r["Giocato"]); pvrGgr += parseNum(r["ggr"]) || parseNum(r["rake"]); pvrActives += parseNum(r["conti attivi"]) } })
-  if (pvrTurnover > 0 || pvrActives > 0) { channelPerformance.push({ channel: 'PVR', turnover: pvrTurnover, ggr: pvrGgr, gwm: parseFloat(KPI.gwm(pvrGgr, pvrTurnover)), actives: pvrActives, revShare: 0 }); totalGgrForShare += pvrGgr }
+  const products = cat.map(r => ({ product: r["Categoria"]||'', turnover: parseNum(r["Giocato"]), ggr: parseNum(r["ggr"]), actives: parseNum(r["conti attivi"]), payout: parseNum(r["Giocato"])>0 ? parseFloat((parseNum(r["vinto"])/parseNum(r["Giocato"])*100).toFixed(1)) : null })).filter(p=>p.product)
 
-  const vivabetRow = skinTotal.find(r => String(r["Skin"] || "").toUpperCase().includes("VIVABET")), academyRow = academyTotal[0]
-  if (vivabetRow) { const vivTurnover = parseNum(vivabetRow["Giocato"]), vivGgr = parseNum(vivabetRow["ggr"]) || parseNum(vivabetRow["rake"]), vivActives = parseNum(vivabetRow["conti attivi"]), acadTurnover = academyRow ? parseNum(academyRow["Giocato"]) : 0, acadGgr = academyRow ? (parseNum(academyRow["ggr"]) || parseNum(academyRow["rake"])) : 0, acadActives = academyRow ? parseNum(academyRow["conti attivi"]) : 0; channelPerformance.push({ channel: 'VIVABET/GLAD', turnover: vivTurnover - acadTurnover, ggr: vivGgr - acadGgr, gwm: parseFloat(KPI.gwm(vivGgr - acadGgr, vivTurnover - acadTurnover)), actives: vivActives - acadActives, revShare: 0 }); totalGgrForShare += vivGgr - acadGgr; if (acadTurnover > 0 || acadActives > 0) { channelPerformance.push({ channel: 'Tipster Academy', turnover: acadTurnover, ggr: acadGgr, gwm: parseFloat(KPI.gwm(acadGgr, acadTurnover)), actives: acadActives, revShare: 0 }); totalGgrForShare += acadGgr } }
-
-  const organicRow = organicTotal[0]
-  if (organicRow) { const orgTurnover = parseNum(organicRow["Giocato"]), orgGgr = parseNum(organicRow["ggr"]) || parseNum(organicRow["rake"]), orgActives = parseNum(organicRow["conti attivi"]); channelPerformance.push({ channel: 'DAZNBET Organic', turnover: orgTurnover, ggr: orgGgr, gwm: parseFloat(KPI.gwm(orgGgr, orgTurnover)), actives: orgActives, revShare: 0 }); totalGgrForShare += orgGgr }
-  channelPerformance.forEach(c => { c.revShare = parseFloat(KPI.revenueShare(c.ggr, totalGgrForShare)) })
-
-  const genderCount = { M: 0, F: 0 }; ana.forEach(r => { const gender = String(r["Sesso"] || "").toUpperCase(); if (gender === "M" || gender === "F") genderCount[gender]++ }); const totalGender = genderCount.M + genderCount.F
-  const ageGroups = { "18-24": 0, "25-34": 0, "35-44": 0, "45-54": 0, "55-64": 0, "65+": 0 }; ana.forEach(r => { if (r["Nato il"]) { const age = (new Date() - new Date(r["Nato il"])) / (365.25 * 24 * 60 * 60 * 1000); if (age < 25) ageGroups["18-24"]++; else if (age < 35) ageGroups["25-34"]++; else if (age < 45) ageGroups["35-44"]++; else if (age < 55) ageGroups["45-54"]++; else if (age < 65) ageGroups["55-64"]++; else ageGroups["65+"]++ } }); const totalAges = Object.values(ageGroups).reduce((a, b) => a + b, 0)
-  const provinceCount = {}; ana.forEach(r => { const prov = r["Provincia di residenza"]; if (prov) provinceCount[prov] = (provinceCount[prov] || 0) + 1 }); const provinces = Object.entries(provinceCount).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, count]) => ({ name, count }))
-  const sourceCount = {}; ana.forEach(r => { let source = r["Cod Punto"] || r["Punto vendita"] || "Unknown"; if (source.toLowerCase().includes("daznbet")) source = "DAZNBET (Organic)"; sourceCount[source] = (sourceCount[source] || 0) + 1 }); const topSources = Object.entries(sourceCount).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([name, count]) => ({ name: name.substring(0, 20), count }))
-
-  const deepDiveEntry = { week: weekNumber, pvr: { reg: qualityAcquisition.find(q => q.channel === 'PVR')?.reg || 0, ftds: qualityAcquisition.find(q => q.channel === 'PVR')?.ftds || 0, ggr: Math.round((channelPerformance.find(c => c.channel === 'PVR')?.ggr || 0) / 1000) }, vivabet: { reg: (qualityAcquisition.find(q => q.channel === 'VIVABET/GLAD')?.reg || 0) + (qualityAcquisition.find(q => q.channel === 'Tipster Academy')?.reg || 0), ftds: (qualityAcquisition.find(q => q.channel === 'VIVABET/GLAD')?.ftds || 0) + (qualityAcquisition.find(q => q.channel === 'Tipster Academy')?.ftds || 0), ggr: Math.round(((channelPerformance.find(c => c.channel === 'VIVABET/GLAD')?.ggr || 0) + (channelPerformance.find(c => c.channel === 'Tipster Academy')?.ggr || 0)) / 1000) }, organic: { reg: qualityAcquisition.find(q => q.channel === 'DAZNBET Organic')?.reg || 0, ftds: qualityAcquisition.find(q => q.channel === 'DAZNBET Organic')?.ftds || 0, ggr: Math.round((channelPerformance.find(c => c.channel === 'DAZNBET Organic')?.ggr || 0) / 1000) }, direct: { reg: qualityAcquisition.find(q => q.channel === 'DAZN Direct')?.reg || 0, ftds: qualityAcquisition.find(q => q.channel === 'DAZN Direct')?.ftds || 0, ggr: 0 }, affiliates: { reg: qualityAcquisition.find(q => q.channel === 'AFFILIATES')?.reg || 0, ftds: qualityAcquisition.find(q => q.channel === 'AFFILIATES')?.ftds || 0, ggr: 0 }, total: { reg: registrations, ftds, ggr: Math.round(ggr / 1000) } }
-
-  return { weekNumber, dateRange, registrations, ftds, conversionRate: parseFloat(KPI.conversionRate(ftds, registrations)), avgFirstDeposit: KPI.avgFirstDeposit(importoPrimoDeposito, ftds), totalDeposits, totalWithdrawals, netDeposit: totalDeposits - totalWithdrawals, turnover, ggr, gwm: parseFloat(KPI.gwm(ggr, turnover)), activeUsers, totalLogins, totalBonus, demographics: { male: totalGender > 0 ? Math.round(genderCount.M / totalGender * 100) : 0, female: totalGender > 0 ? Math.round(genderCount.F / totalGender * 100) : 0 }, ageGroups: Object.entries(ageGroups).map(([range, count]) => ({ range, percent: totalAges > 0 ? Math.round(count / totalAges * 100) : 0 })), provinces, topSources, dailyStats, qualityAcquisition, channelPerformance, productPerformance, financialHealth: { withdrawalRatio: parseFloat(KPI.withdrawalRatio(totalWithdrawals, totalDeposits)), depositFrequency: parseFloat(KPI.depositFrequency(totalDepositCount, totalUniqueDepositors)), bonusROI: KPI.bonusROI(ggr, totalBonus), customerValue: KPI.customerValue(ggr, activeUsers), loginPerUser: parseFloat(KPI.loginFrequency(totalLogins, activeUsers)), newPlayersRatio: activeUsers > 0 ? parseFloat((ftds / activeUsers * 100).toFixed(1)) : 0, returningRatio: activeUsers > 0 ? parseFloat((100 - (ftds / activeUsers * 100)).toFixed(1)) : 0 }, deepDive: [deepDiveEntry] }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// UI COMPONENTS - MINIMAL STYLE
-// ═══════════════════════════════════════════════════════════════════════════════
-const CustomTooltip = ({ active, payload, label, t }) => {
-  if (active && payload && payload.length) {
-    return (<div style={{ background: t.card, border: `1px solid ${t.border}`, borderRadius: '4px', padding: '8px 12px', boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}><p style={{ color: t.text, margin: '0 0 4px 0', fontWeight: '500', fontSize: '12px' }}>{label}</p>{payload.map((entry, i) => (<p key={i} style={{ color: entry.color, margin: '2px 0', fontSize: '11px' }}>{entry.name}: <strong>{typeof entry.value === 'number' && entry.value > 1000 ? formatNumber(entry.value) : entry.value}</strong></p>))}</div>)
+  // Channel Performance
+  const chanPerf = []; let totGgr = 0
+  let pvrT=0, pvrG=0, pvrA=0
+  skinTotal.forEach(r => { const s = String(r["Skin"]||"").toUpperCase(); if (s && !s.includes("VIVABET") && !s.includes("DAZNBET")) { pvrT+=parseNum(r["Giocato"]); pvrG+=parseNum(r["ggr"])||parseNum(r["rake"]); pvrA+=parseNum(r["conti attivi"]) }})
+  if (pvrT>0||pvrA>0) { chanPerf.push({channel:'PVR',turnover:pvrT,ggr:pvrG,gwm:pvrT>0?parseFloat((pvrG/pvrT*100).toFixed(1)):0,actives:pvrA}); totGgr+=pvrG }
+  
+  const vivRow = skinTotal.find(r=>String(r["Skin"]||"").toUpperCase().includes("VIVABET")), acadRow = academyTotal[0]
+  if (vivRow) {
+    const vT=parseNum(vivRow["Giocato"]), vG=parseNum(vivRow["ggr"])||parseNum(vivRow["rake"]), vA=parseNum(vivRow["conti attivi"])
+    const aT=acadRow?parseNum(acadRow["Giocato"]):0, aG=acadRow?(parseNum(acadRow["ggr"])||parseNum(acadRow["rake"])):0, aA=acadRow?parseNum(acadRow["conti attivi"]):0
+    chanPerf.push({channel:'VIVABET/GLAD',turnover:vT-aT,ggr:vG-aG,gwm:(vT-aT)>0?parseFloat(((vG-aG)/(vT-aT)*100).toFixed(1)):0,actives:vA-aA}); totGgr+=vG-aG
+    if (aT>0||aA>0) { chanPerf.push({channel:'Tipster Academy',turnover:aT,ggr:aG,gwm:aT>0?parseFloat((aG/aT*100).toFixed(1)):0,actives:aA}); totGgr+=aG }
   }
-  return null
+  const orgRow = organicTotal[0]
+  if (orgRow) { const oT=parseNum(orgRow["Giocato"]), oG=parseNum(orgRow["ggr"])||parseNum(orgRow["rake"]), oA=parseNum(orgRow["conti attivi"]); chanPerf.push({channel:'DAZNBET Organic',turnover:oT,ggr:oG,gwm:oT>0?parseFloat((oG/oT*100).toFixed(1)):0,actives:oA}); totGgr+=oG }
+  chanPerf.forEach(c => { c.revShare = totGgr>0 ? parseFloat((c.ggr/totGgr*100).toFixed(1)) : 0 })
+
+  // Demographics
+  const genderCount = {M:0,F:0}; ana.forEach(r => { const g = String(r["Sesso"]||"").toUpperCase(); if (g==="M"||g==="F") genderCount[g]++ }); const totGender = genderCount.M+genderCount.F
+  const ageGroups = {"18-24":0,"25-34":0,"35-44":0,"45-54":0,"55-64":0,"65+":0}
+  ana.forEach(r => { if(r["Nato il"]) { const age = (new Date()-new Date(r["Nato il"]))/(365.25*24*60*60*1000); if(age<25)ageGroups["18-24"]++;else if(age<35)ageGroups["25-34"]++;else if(age<45)ageGroups["35-44"]++;else if(age<55)ageGroups["45-54"]++;else if(age<65)ageGroups["55-64"]++;else ageGroups["65+"]++ }})
+  const totAges = Object.values(ageGroups).reduce((a,b)=>a+b,0)
+  const provinces = Object.entries(ana.reduce((acc,r)=>{const p=r["Provincia di residenza"];if(p)acc[p]=(acc[p]||0)+1;return acc},{})).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([name,count])=>({name,count}))
+  const sources = Object.entries(ana.reduce((acc,r)=>{let s=r["Cod Punto"]||r["Punto vendita"]||"Unknown";if(s.toLowerCase().includes("daznbet"))s="DAZNBET (Organic)";acc[s]=(acc[s]||0)+1;return acc},{})).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([name,count])=>({name:name.substring(0,20),count}))
+
+  return { weekNumber:weekNum, dateRange, registrations:reg, ftds, conversionRate:reg>0?parseFloat((ftds/reg*100).toFixed(1)):0, avgFirstDeposit:ftds>0?Math.round(avgFirstDep/ftds):0, totalDeposits:totalDep, totalWithdrawals:totalWit, netDeposit:totalDep-totalWit, turnover, ggr, gwm:turnover>0?parseFloat((ggr/turnover*100).toFixed(1)):0, activeUsers:actives, totalBonus, demographics:{male:totGender>0?Math.round(genderCount.M/totGender*100):0,female:totGender>0?Math.round(genderCount.F/totGender*100):0}, ageGroups:Object.entries(ageGroups).map(([range,count])=>({range,percent:totAges>0?Math.round(count/totAges*100):0})), provinces, topSources:sources, dailyStats:daily, qualityAcquisition:qualityAcq, channelPerformance:chanPerf, productPerformance:products }
 }
 
-const Metric = ({ label, value, change, subtitle, t }) => (
-  <div style={{ padding: '16px 20px', background: t.card, borderRadius: '6px', border: `1px solid ${t.border}` }}>
-    <p style={{ color: t.textSecondary, fontSize: '11px', fontWeight: '500', textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 8px 0' }}>{label}</p>
-    <p style={{ color: t.text, fontSize: '24px', fontWeight: '600', margin: 0, fontFamily: 'system-ui, -apple-system, sans-serif' }}>{value}</p>
-    {subtitle && <p style={{ color: t.textSecondary, fontSize: '11px', margin: '6px 0 0 0' }}>{subtitle}</p>}
-    {change && <p style={{ color: parseFloat(change) >= 0 ? t.success : t.danger, fontSize: '11px', margin: '4px 0 0 0' }}>{parseFloat(change) > 0 ? '+' : ''}{change}% vs prev</p>}
+// ANIMATED KPI
+const KPI = ({ label, value, sub, change, delay=0, cur=false, pct=false }) => {
+  const [vis, setVis] = useState(false)
+  const [anim, setAnim] = useState(0)
+  const numVal = typeof value==='number' ? value : parseFloat(String(value).replace(/[^0-9.-]/g,''))||0
+  
+  useEffect(() => { setTimeout(()=>setVis(true), delay) }, [delay])
+  useEffect(() => {
+    if (!vis) return
+    const start = Date.now(), dur = 1200
+    const tick = () => {
+      const p = Math.min((Date.now()-start)/dur, 1)
+      setAnim(numVal * (1-Math.pow(1-p,3)))
+      if (p<1) requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+  }, [vis, numVal])
+
+  const display = cur ? fmtCurrency(anim) : pct ? `${anim.toFixed(1)}%` : fmtNum(Math.round(anim))
+  
+  return (
+    <div style={{ background:C.card, borderRadius:'16px', padding:'clamp(16px,2vw,28px)', border:`1px solid ${C.border}`, opacity:vis?1:0, transform:vis?'translateY(0)':'translateY(20px)', transition:'all 0.5s ease', position:'relative', overflow:'hidden' }}>
+      <div style={{ position:'absolute', top:0, left:0, width:'4px', height:'100%', background:`linear-gradient(180deg,${C.primary},transparent)` }} />
+      <p style={{ color:C.textSec, fontSize:'clamp(11px,1.2vw,14px)', fontWeight:600, textTransform:'uppercase', letterSpacing:'1px', margin:'0 0 10px 0' }}>{label}</p>
+      <p style={{ color:C.text, fontSize:'clamp(28px,3.5vw,42px)', fontWeight:700, margin:'0 0 6px 0' }}>{display}</p>
+      {sub && <p style={{ color:C.textMuted, fontSize:'clamp(11px,1.1vw,14px)', margin:'0 0 4px 0' }}>{sub}</p>}
+      {change && <p style={{ color:parseFloat(change)>=0?C.success:C.danger, fontSize:'clamp(12px,1.2vw,15px)', fontWeight:600, margin:0 }}>{parseFloat(change)>0?'↑':'↓'} {Math.abs(parseFloat(change))}%</p>}
+    </div>
+  )
+}
+
+// TOOLTIP
+const Tip = ({ active, payload, label }) => active && payload?.length ? (
+  <div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:'10px', padding:'12px 16px', boxShadow:'0 8px 32px rgba(0,0,0,0.4)' }}>
+    <p style={{ color:C.text, margin:'0 0 8px 0', fontWeight:600, fontSize:'14px' }}>{label}</p>
+    {payload.map((e,i) => <p key={i} style={{ color:e.color, margin:'4px 0', fontSize:'13px' }}>{e.name}: <b>{typeof e.value==='number' && e.value>1000 ? fmtNum(e.value) : e.value}</b></p>)}
   </div>
+) : null
+
+// SECTION
+const Section = ({ title, sub, children }) => (
+  <section style={{ marginBottom:'clamp(32px,4vw,56px)' }}>
+    <div style={{ marginBottom:'clamp(16px,2vw,24px)' }}>
+      <h2 style={{ color:C.text, fontSize:'clamp(20px,2.5vw,28px)', fontWeight:700, margin:'0 0 4px 0', display:'flex', alignItems:'center', gap:'12px' }}>
+        <span style={{ width:'4px', height:'28px', background:C.primary, borderRadius:'2px' }} />{title}
+      </h2>
+      {sub && <p style={{ color:C.textSec, fontSize:'clamp(12px,1.3vw,15px)', margin:0, paddingLeft:'16px' }}>{sub}</p>}
+    </div>
+    {children}
+  </section>
 )
 
-const SectionTitle = ({ children, t }) => (<h3 style={{ color: t.text, fontSize: '14px', fontWeight: '600', margin: '0 0 16px 0', letterSpacing: '-0.01em' }}>{children}</h3>)
+// CARD
+const Card = ({ children, style={} }) => <div style={{ background:C.card, borderRadius:'16px', padding:'clamp(16px,2vw,28px)', border:`1px solid ${C.border}`, ...style }}>{children}</div>
 
-const Table = ({ columns, data, t }) => (
-  <div style={{ overflowX: 'auto', borderRadius: '6px', border: `1px solid ${t.border}` }}>
-    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-      <thead>
-        <tr style={{ background: t.bgSecondary }}>
-          {columns.map((col, i) => (<th key={i} style={{ padding: '10px 12px', textAlign: col.align || 'left', color: t.textSecondary, fontWeight: '500', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: `1px solid ${t.border}` }}>{col.header}</th>))}
-        </tr>
-      </thead>
-      <tbody>
-        {data.map((row, ri) => (
-          <tr key={ri} style={{ background: ri % 2 === 0 ? t.card : t.bgSecondary }}>
-            {columns.map((col, ci) => { const val = col.accessor ? row[col.accessor] : ''; return (<td key={ci} style={{ padding: '10px 12px', textAlign: col.align || 'left', color: t.text, borderBottom: `1px solid ${t.border}` }}>{col.format ? col.format(val, row) : val}</td>) })}
-          </tr>
-        ))}
-      </tbody>
+// TABLE
+const Table = ({ cols, data }) => (
+  <div style={{ overflowX:'auto', borderRadius:'12px', border:`1px solid ${C.border}` }}>
+    <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'clamp(12px,1.3vw,15px)' }}>
+      <thead><tr style={{ background:C.bg }}>{cols.map((c,i) => <th key={i} style={{ padding:'clamp(10px,1.5vw,16px)', textAlign:c.align||'left', color:C.primary, fontWeight:600, fontSize:'clamp(10px,1.1vw,13px)', textTransform:'uppercase', borderBottom:`2px solid ${C.primary}` }}>{c.header}</th>)}</tr></thead>
+      <tbody>{data.map((r,ri) => <tr key={ri} style={{ background:ri%2===0?C.card:C.bg }}>{cols.map((c,ci) => { const v = c.accessor ? r[c.accessor] : ''; return <td key={ci} style={{ padding:'clamp(10px,1.4vw,14px) clamp(10px,1.5vw,16px)', textAlign:c.align||'left', color:C.text, borderBottom:`1px solid ${C.border}` }}>{c.format ? c.format(v,r) : v}</td> })}</tr>)}</tbody>
     </table>
   </div>
 )
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// PAGES
-// ═══════════════════════════════════════════════════════════════════════════════
-
 // UPLOAD PAGE
-const UploadPage = ({ weeksData, onUploadComplete, onDeleteWeek, t }) => {
-  const [weekNumber, setWeekNumber] = useState('')
-  const [dateRange, setDateRange] = useState('')
-  const [uploadedFiles, setUploadedFiles] = useState({})
-  const [isProcessing, setIsProcessing] = useState(false)
-  const [status, setStatus] = useState(null)
+const UploadPage = ({ weeksData, onUpload, onDelete }) => {
+  const [week, setWeek] = useState('')
+  const [dates, setDates] = useState('')
+  const [files, setFiles] = useState({})
+  const [loading, setLoading] = useState(false)
+  const [msg, setMsg] = useState(null)
+  const exists = week && weeksData[parseInt(week)]
 
-  const processExcel = async (file) => new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = (e) => { try { const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array', cellDates: true }); resolve(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]])) } catch (err) { reject(err) } }; reader.onerror = reject; reader.readAsArrayBuffer(file) })
-  const handleFile = async (e, key) => { const file = e.target.files[0]; if (file) { try { const data = await processExcel(file); setUploadedFiles(prev => ({ ...prev, [key]: { name: file.name, data, rows: data.length } })) } catch { setStatus({ type: 'error', msg: `Error: ${file.name}` }) } } }
+  const readFile = async f => new Promise((res, rej) => { const r = new FileReader(); r.onload = e => { try { const wb = XLSX.read(new Uint8Array(e.target.result), {type:'array',cellDates:true}); res(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]])) } catch(err){rej(err)} }; r.onerror = rej; r.readAsArrayBuffer(f) })
+  const handleFile = async (e, key) => { const f = e.target.files[0]; if (f) { try { const d = await readFile(f); setFiles(p=>({...p,[key]:{name:f.name,data:d,rows:d.length}})); setMsg(null) } catch { setMsg({t:'error',m:'Errore file'}) }}}
   const handleUpload = async () => {
-    if (!weekNumber || !dateRange) { setStatus({ type: 'error', msg: 'Enter week number and date range' }); return }
-    const missing = FILE_REQUIREMENTS.filter(f => !uploadedFiles[f.key])
-    if (missing.length > 0) { setStatus({ type: 'error', msg: `Missing: ${missing.map(f => f.name).join(', ')}` }); return }
-    setIsProcessing(true)
-    try { const filesData = {}; Object.entries(uploadedFiles).forEach(([k, f]) => { filesData[k] = f.data }); const processed = processWeekData(filesData, parseInt(weekNumber), dateRange); await onUploadComplete(processed); setStatus({ type: 'success', msg: `Week ${weekNumber} uploaded` }); setWeekNumber(''); setDateRange(''); setUploadedFiles({}) } catch { setStatus({ type: 'error', msg: 'Processing error' }) }
-    setIsProcessing(false)
+    if (!week || !dates) { setMsg({t:'error',m:'Inserisci settimana e date'}); return }
+    const missing = FILES.filter(f => !files[f.key])
+    if (missing.length) { setMsg({t:'error',m:`Mancano ${missing.length} file`}); return }
+    setLoading(true)
+    try {
+      const fd = {}; Object.entries(files).forEach(([k,v]) => fd[k] = v.data)
+      const proc = processData(fd, parseInt(week), dates)
+      await onUpload(proc)
+      setMsg({t:'success',m:exists?`Week ${week} aggiornata!`:`Week ${week} caricata!`})
+      setWeek(''); setDates(''); setFiles({})
+    } catch { setMsg({t:'error',m:'Errore elaborazione'}) }
+    setLoading(false)
   }
-  const uploadedCount = Object.keys(uploadedFiles).length
 
   return (
-    <div style={{ padding: '32px', maxWidth: '1100px', margin: '0 auto' }}>
-      <SectionTitle t={t}>Upload Week Data</SectionTitle>
-      <p style={{ color: t.textSecondary, fontSize: '13px', margin: '0 0 24px 0' }}>Upload 10 required Excel files</p>
-      
-      <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: '12px', marginBottom: '24px' }}>
-        <input type="number" value={weekNumber} onChange={(e) => setWeekNumber(e.target.value)} placeholder="Week #" style={{ background: t.card, border: `1px solid ${t.border}`, borderRadius: '4px', padding: '10px 12px', color: t.text, fontSize: '13px' }} />
-        <input type="text" value={dateRange} onChange={(e) => setDateRange(e.target.value)} placeholder="Date range (e.g. 03 Feb - 09 Feb 2025)" style={{ background: t.card, border: `1px solid ${t.border}`, borderRadius: '4px', padding: '10px 12px', color: t.text, fontSize: '13px' }} />
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '10px', marginBottom: '24px' }}>
-        {FILE_REQUIREMENTS.map(file => {
-          const uploaded = uploadedFiles[file.key]
-          return (
-            <div key={file.key} style={{ background: t.card, borderRadius: '6px', padding: '12px 14px', border: `1px solid ${uploaded ? t.success : t.border}` }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                <span style={{ color: uploaded ? t.success : t.text, fontWeight: '500', fontSize: '12px' }}>{file.name}</span>
-                {uploaded && <span style={{ color: t.success, fontSize: '10px' }}>{uploaded.rows} rows</span>}
-              </div>
-              <p style={{ color: t.textMuted, fontSize: '10px', margin: '0 0 8px 0' }}>{file.boPath}</p>
-              <input type="file" accept=".xlsx,.xls" onChange={(e) => handleFile(e, file.key)} style={{ fontSize: '11px', color: t.textSecondary }} />
+    <div style={{ padding:'clamp(20px,3vw,40px)' }}>
+      <Section title="Upload Week Data" sub="Carica i 10 file Excel dal Back Office">
+        <Card style={{ marginBottom:'24px' }}>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))', gap:'20px' }}>
+            <div>
+              <label style={{ color:C.textSec, fontSize:'12px', display:'block', marginBottom:'8px', fontWeight:600 }}>NUMERO SETTIMANA</label>
+              <input type="number" value={week} onChange={e=>setWeek(e.target.value)} placeholder="es. 6" style={{ width:'100%', background:C.bg, border:`2px solid ${exists?C.orange:C.border}`, borderRadius:'12px', padding:'14px', color:C.text, fontSize:'18px', fontWeight:600 }} />
+              {exists && <p style={{ color:C.orange, fontSize:'12px', marginTop:'8px' }}>⚠️ Week {week} verrà sovrascritta</p>}
             </div>
-          )
-        })}
-      </div>
-
-      {status && (<div style={{ background: status.type === 'success' ? t.successDim : t.dangerDim, border: `1px solid ${status.type === 'success' ? t.success : t.danger}`, borderRadius: '4px', padding: '10px 14px', marginBottom: '16px' }}><p style={{ color: status.type === 'success' ? t.success : t.danger, margin: 0, fontSize: '12px' }}>{status.msg}</p></div>)}
-
-      <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginBottom: '48px' }}>
-        <button onClick={handleUpload} disabled={isProcessing || uploadedCount < 10} style={{ background: uploadedCount >= 10 ? t.text : t.border, color: uploadedCount >= 10 ? t.bg : t.textMuted, border: 'none', borderRadius: '4px', padding: '10px 20px', fontSize: '13px', fontWeight: '500', cursor: uploadedCount >= 10 ? 'pointer' : 'not-allowed' }}>{isProcessing ? 'Processing...' : 'Upload Week'}</button>
-        <span style={{ color: t.textSecondary, fontSize: '12px' }}>{uploadedCount}/10 files</span>
-      </div>
-
-      {Object.keys(weeksData).length > 0 && (
-        <>
-          <SectionTitle t={t}>Uploaded Weeks</SectionTitle>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px' }}>
-            {Object.values(weeksData).sort((a, b) => b.weekNumber - a.weekNumber).map(week => (
-              <div key={week.weekNumber} style={{ background: t.card, borderRadius: '6px', padding: '14px', border: `1px solid ${t.border}` }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                  <span style={{ color: t.text, fontWeight: '600', fontSize: '14px' }}>Week {week.weekNumber}</span>
-                  <button onClick={() => onDeleteWeek(week.weekNumber)} style={{ background: 'transparent', color: t.danger, border: 'none', fontSize: '11px', cursor: 'pointer' }}>Delete</button>
-                </div>
-                <p style={{ color: t.textSecondary, margin: '0 0 6px 0', fontSize: '11px' }}>{week.dateRange}</p>
-                <p style={{ color: t.textMuted, margin: 0, fontSize: '11px' }}>REG: {formatNumber(week.registrations)} | GGR: {formatCurrency(week.ggr)}</p>
-              </div>
-            ))}
+            <div>
+              <label style={{ color:C.textSec, fontSize:'12px', display:'block', marginBottom:'8px', fontWeight:600 }}>DATE RANGE</label>
+              <input type="text" value={dates} onChange={e=>setDates(e.target.value)} placeholder="es. 03 - 09 Feb 2025" style={{ width:'100%', background:C.bg, border:`2px solid ${C.border}`, borderRadius:'12px', padding:'14px', color:C.text, fontSize:'18px' }} />
+            </div>
           </div>
-        </>
-      )}
+        </Card>
+
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(300px,1fr))', gap:'14px', marginBottom:'24px' }}>
+          {FILES.map((f,i) => {
+            const up = files[f.key]
+            return (
+              <div key={f.key} style={{ background:C.card, borderRadius:'12px', padding:'16px', border:`2px solid ${up?C.success:C.border}`, animation:`fadeIn 0.4s ease ${i*0.04}s both` }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'6px' }}>
+                  <span style={{ color:up?C.success:C.text, fontWeight:700, fontSize:'14px' }}>{up?'✓':'○'} {f.name}</span>
+                  {up && <span style={{ color:C.success, fontSize:'11px', background:C.successDim, padding:'3px 8px', borderRadius:'6px' }}>{up.rows} righe</span>}
+                </div>
+                <p style={{ color:C.textMuted, fontSize:'11px', margin:'0 0 10px 0', padding:'6px 10px', background:C.bg, borderRadius:'6px', borderLeft:`3px solid ${C.primary}` }}>{f.path}</p>
+                <input type="file" accept=".xlsx,.xls" onChange={e=>handleFile(e,f.key)} style={{ width:'100%', background:C.bg, border:`1px solid ${C.border}`, borderRadius:'8px', padding:'10px', color:C.text, fontSize:'12px', cursor:'pointer' }} />
+              </div>
+            )
+          })}
+        </div>
+
+        {msg && <div style={{ background:msg.t==='success'?C.successDim:C.dangerDim, border:`1px solid ${msg.t==='success'?C.success:C.danger}`, borderRadius:'12px', padding:'14px', marginBottom:'20px' }}><p style={{ color:msg.t==='success'?C.success:C.danger, margin:0, fontWeight:600 }}>{msg.m}</p></div>}
+
+        <div style={{ display:'flex', gap:'20px', alignItems:'center', marginBottom:'40px' }}>
+          <button onClick={handleUpload} disabled={loading || Object.keys(files).length<10} style={{ background:Object.keys(files).length>=10?`linear-gradient(135deg,${C.primary},#a8cc00)`:C.border, color:C.bg, border:'none', borderRadius:'12px', padding:'16px 40px', fontSize:'16px', fontWeight:700, cursor:Object.keys(files).length>=10?'pointer':'not-allowed' }}>{loading?'⏳ Elaborazione...':exists?`🔄 Aggiorna Week ${week}`:`📥 Carica Week ${week||'X'}`}</button>
+          <span style={{ color:C.textSec, fontSize:'16px' }}><b style={{ color:Object.keys(files).length>=10?C.success:C.text, fontSize:'24px' }}>{Object.keys(files).length}</b>/10</span>
+        </div>
+
+        {Object.keys(weeksData).length > 0 && (
+          <>
+            <h3 style={{ color:C.text, fontSize:'18px', margin:'0 0 16px 0' }}>📅 Settimane Caricate</h3>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(260px,1fr))', gap:'16px' }}>
+              {Object.values(weeksData).sort((a,b)=>b.weekNumber-a.weekNumber).map(w => (
+                <Card key={w.weekNumber} style={{ position:'relative' }}>
+                  <button onClick={()=>onDelete(w.weekNumber)} style={{ position:'absolute', top:'14px', right:'14px', background:C.dangerDim, color:C.danger, border:`1px solid ${C.danger}`, borderRadius:'8px', padding:'6px 12px', fontSize:'12px', cursor:'pointer' }}>🗑️</button>
+                  <h3 style={{ color:C.primary, margin:'0 0 6px 0', fontSize:'24px', fontWeight:700 }}>Week {w.weekNumber}</h3>
+                  <p style={{ color:C.textSec, margin:'0 0 14px 0', fontSize:'13px' }}>{w.dateRange}</p>
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px' }}>
+                    <div><span style={{ color:C.textMuted, fontSize:'11px' }}>REG</span><p style={{ color:C.text, fontSize:'18px', fontWeight:600, margin:0 }}>{fmtNum(w.registrations)}</p></div>
+                    <div><span style={{ color:C.textMuted, fontSize:'11px' }}>FTDs</span><p style={{ color:C.text, fontSize:'18px', fontWeight:600, margin:0 }}>{fmtNum(w.ftds)}</p></div>
+                    <div><span style={{ color:C.textMuted, fontSize:'11px' }}>GGR</span><p style={{ color:C.success, fontSize:'18px', fontWeight:600, margin:0 }}>{fmtCurrency(w.ggr)}</p></div>
+                    <div><span style={{ color:C.textMuted, fontSize:'11px' }}>Actives</span><p style={{ color:C.text, fontSize:'18px', fontWeight:600, margin:0 }}>{fmtNum(w.activeUsers)}</p></div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          </>
+        )}
+      </Section>
+      <style>{`@keyframes fadeIn { from { opacity:0; transform:translateY(15px); } to { opacity:1; transform:translateY(0); } }`}</style>
     </div>
   )
 }
 
-// MONTHLY SUMMARY
-const MonthlySummary = ({ weeksData, t }) => {
-  const weeks = Object.values(weeksData).sort((a, b) => a.weekNumber - b.weekNumber)
-  if (weeks.length === 0) return <div style={{ padding: '32px', textAlign: 'center' }}><p style={{ color: t.textSecondary }}>Upload at least one week</p></div>
+// MONTHLY
+const Monthly = ({ weeksData }) => {
+  const weeks = Object.values(weeksData).sort((a,b)=>a.weekNumber-b.weekNumber)
+  if (!weeks.length) return <div style={{ padding:'60px', textAlign:'center' }}><p style={{ color:C.textSec, fontSize:'18px' }}>Carica almeno una settimana</p></div>
 
-  const totals = { registrations: weeks.reduce((s, w) => s + (w.registrations || 0), 0), ftds: weeks.reduce((s, w) => s + (w.ftds || 0), 0), deposits: weeks.reduce((s, w) => s + (w.totalDeposits || 0), 0), withdrawals: weeks.reduce((s, w) => s + (w.totalWithdrawals || 0), 0), turnover: weeks.reduce((s, w) => s + (w.turnover || 0), 0), ggr: weeks.reduce((s, w) => s + (w.ggr || 0), 0) }
-  const avgActives = Math.round(weeks.reduce((s, w) => s + (w.activeUsers || 0), 0) / weeks.length)
-  const trendData = weeks.map(w => ({ week: `W${w.weekNumber}`, registrations: w.registrations, ftds: w.ftds, ggr: Math.round(w.ggr / 1000) }))
-
-  return (
-    <div style={{ padding: '32px', maxWidth: '1100px', margin: '0 auto' }}>
-      <SectionTitle t={t}>Monthly Summary</SectionTitle>
-      <p style={{ color: t.textSecondary, fontSize: '12px', margin: '-12px 0 24px 0' }}>Week {weeks[0].weekNumber} - {weeks[weeks.length-1].weekNumber} | {weeks.length} weeks</p>
-      
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px', marginBottom: '32px' }}>
-        <Metric label="Total Registrations" value={formatNumber(totals.registrations)} t={t} />
-        <Metric label="Total FTDs" value={formatNumber(totals.ftds)} t={t} />
-        <Metric label="Net Deposit" value={formatCurrency(totals.deposits - totals.withdrawals)} t={t} />
-        <Metric label="Total Turnover" value={formatCurrency(totals.turnover)} t={t} />
-        <Metric label="Total GGR" value={formatCurrency(totals.ggr)} t={t} />
-        <Metric label="Avg Actives" value={formatNumber(avgActives)} t={t} />
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '32px' }}>
-        <div style={{ background: t.card, borderRadius: '6px', padding: '16px', border: `1px solid ${t.border}` }}>
-          <p style={{ color: t.textSecondary, fontSize: '11px', fontWeight: '500', textTransform: 'uppercase', margin: '0 0 12px 0' }}>REG & FTD Trend</p>
-          <ResponsiveContainer width="100%" height={160}>
-            <AreaChart data={trendData}>
-              <defs><linearGradient id="gReg" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={t.chart[0]} stopOpacity={0.15}/><stop offset="95%" stopColor={t.chart[0]} stopOpacity={0}/></linearGradient><linearGradient id="gFtd" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={t.chart[1]} stopOpacity={0.15}/><stop offset="95%" stopColor={t.chart[1]} stopOpacity={0}/></linearGradient></defs>
-              <CartesianGrid strokeDasharray="3 3" stroke={t.border} /><XAxis dataKey="week" tick={{ fill: t.textMuted, fontSize: 10 }} /><YAxis tick={{ fill: t.textMuted, fontSize: 10 }} /><Tooltip content={<CustomTooltip t={t} />} />
-              <Area type="monotone" dataKey="registrations" name="REG" stroke={t.chart[0]} fill="url(#gReg)" strokeWidth={1.5} /><Area type="monotone" dataKey="ftds" name="FTDs" stroke={t.chart[1]} fill="url(#gFtd)" strokeWidth={1.5} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-        <div style={{ background: t.card, borderRadius: '6px', padding: '16px', border: `1px solid ${t.border}` }}>
-          <p style={{ color: t.textSecondary, fontSize: '11px', fontWeight: '500', textTransform: 'uppercase', margin: '0 0 12px 0' }}>GGR Trend (€k)</p>
-          <ResponsiveContainer width="100%" height={160}>
-            <BarChart data={trendData}><CartesianGrid strokeDasharray="3 3" stroke={t.border} /><XAxis dataKey="week" tick={{ fill: t.textMuted, fontSize: 10 }} /><YAxis tick={{ fill: t.textMuted, fontSize: 10 }} /><Tooltip content={<CustomTooltip t={t} />} /><Bar dataKey="ggr" name="GGR" fill={t.chart[0]} radius={[3, 3, 0, 0]} /></BarChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      <Table columns={[{ header: 'Week', accessor: 'weekNumber', format: v => `Week ${v}` }, { header: 'Date Range', accessor: 'dateRange' }, { header: 'REG', accessor: 'registrations', align: 'right', format: formatNumber }, { header: 'FTDs', accessor: 'ftds', align: 'right', format: formatNumber }, { header: 'Conv %', accessor: 'conversionRate', align: 'center', format: v => `${v}%` }, { header: 'Turnover', accessor: 'turnover', align: 'right', format: formatCurrency }, { header: 'GGR', accessor: 'ggr', align: 'right', format: formatCurrency }, { header: 'GWM', accessor: 'gwm', align: 'center', format: v => `${v}%` }]} data={weeks} t={t} />
-    </div>
-  )
-}
-
-// WEEKLY REPORT
-const WeeklyReport = ({ data, prevData, allWeeksData, t }) => {
-  if (!data) return <div style={{ padding: '32px', textAlign: 'center' }}><p style={{ color: t.textSecondary }}>Select a week or upload data</p></div>
-
-  const allWeeks = Object.keys(allWeeksData).map(Number).sort((a, b) => b - a), latestWeek = Math.max(...allWeeks), deepDiveWeeks = allWeeks.filter(w => w > latestWeek - 5).sort((a, b) => b - a)
-  const allDeepDive = []; Object.values(allWeeksData).forEach(w => { if (w.deepDive && deepDiveWeeks.includes(w.weekNumber)) allDeepDive.push(...w.deepDive) }); const filteredDeepDive = allDeepDive.sort((a, b) => b.week - a.week)
-  const regChange = prevData ? calcChange(data.registrations, prevData.registrations) : null, ftdChange = prevData ? calcChange(data.ftds, prevData.ftds) : null, turnoverChange = prevData ? calcChange(data.turnover, prevData.turnover) : null, ggrChange = prevData ? calcChange(data.ggr, prevData.ggr) : null
+  const tot = { reg:weeks.reduce((s,w)=>s+(w.registrations||0),0), ftds:weeks.reduce((s,w)=>s+(w.ftds||0),0), dep:weeks.reduce((s,w)=>s+(w.totalDeposits||0),0), wit:weeks.reduce((s,w)=>s+(w.totalWithdrawals||0),0), turn:weeks.reduce((s,w)=>s+(w.turnover||0),0), ggr:weeks.reduce((s,w)=>s+(w.ggr||0),0) }
+  const avgAct = Math.round(weeks.reduce((s,w)=>s+(w.activeUsers||0),0)/weeks.length)
+  const trend = weeks.map(w => ({ week:`W${w.weekNumber}`, REG:w.registrations, FTDs:w.ftds, GGR:Math.round(w.ggr/1000) }))
 
   return (
-    <div style={{ padding: '32px', maxWidth: '1100px', margin: '0 auto' }}>
-      {/* Summary */}
-      <section style={{ marginBottom: '40px' }}>
-        <SectionTitle t={t}>Trading Summary</SectionTitle>
-        <p style={{ color: t.textSecondary, fontSize: '12px', margin: '-12px 0 16px 0' }}>Week {data.weekNumber} | {data.dateRange}</p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px', marginBottom: '16px' }}>
-          <Metric label="Registrations" value={formatNumber(data.registrations)} change={regChange} t={t} />
-          <Metric label="FTDs" value={formatNumber(data.ftds)} subtitle={`Conv: ${data.conversionRate}% | Avg: €${data.avgFirstDeposit}`} change={ftdChange} t={t} />
-          <Metric label="Net Deposit" value={formatCurrency(data.netDeposit)} subtitle={`Dep ${formatCurrency(data.totalDeposits)} - Wit ${formatCurrency(data.totalWithdrawals)}`} t={t} />
-          <Metric label="Turnover" value={formatCurrency(data.turnover)} change={turnoverChange} t={t} />
-          <Metric label="GGR" value={formatCurrency(data.ggr)} change={ggrChange} t={t} />
-          <Metric label="GWM" value={`${data.gwm}%`} subtitle={prevData ? `${(data.gwm - prevData.gwm) >= 0 ? '+' : ''}${(data.gwm - prevData.gwm).toFixed(1)}pp vs prev` : null} t={t} />
+    <div style={{ padding:'clamp(20px,3vw,40px)' }}>
+      <Section title="Monthly Summary" sub={`Week ${weeks[0].weekNumber} - ${weeks[weeks.length-1].weekNumber} | ${weeks.length} settimane`}>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))', gap:'clamp(12px,1.5vw,20px)', marginBottom:'clamp(24px,3vw,40px)' }}>
+          <KPI label="Total REG" value={tot.reg} delay={0} />
+          <KPI label="Total FTDs" value={tot.ftds} sub={`Conv: ${(tot.ftds/tot.reg*100).toFixed(1)}%`} delay={100} />
+          <KPI label="Net Deposit" value={tot.dep-tot.wit} cur delay={200} />
+          <KPI label="Turnover" value={tot.turn} cur delay={300} />
+          <KPI label="GGR" value={tot.ggr} sub={`GWM: ${(tot.ggr/tot.turn*100).toFixed(1)}%`} cur delay={400} />
+          <KPI label="Avg Actives" value={avgAct} delay={500} />
         </div>
-        <div style={{ background: t.card, borderRadius: '6px', padding: '16px 20px', border: `1px solid ${t.border}` }}>
-          <p style={{ color: t.textSecondary, fontSize: '10px', fontWeight: '500', textTransform: 'uppercase', margin: '0 0 4px 0' }}>Weekly Actives</p>
-          <p style={{ color: t.text, fontSize: '32px', fontWeight: '600', margin: 0 }}>{formatNumber(data.activeUsers)}</p>
-        </div>
-      </section>
 
-      {/* Acquisition */}
-      <section style={{ marginBottom: '40px' }}>
-        <SectionTitle t={t}>Acquisition</SectionTitle>
-        <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '12px', marginBottom: '12px' }}>
-          <div style={{ background: t.card, borderRadius: '6px', padding: '16px', border: `1px solid ${t.border}` }}>
-            <p style={{ color: t.textSecondary, fontSize: '10px', fontWeight: '500', textTransform: 'uppercase', margin: '0 0 12px 0' }}>Daily Trend</p>
-            <ResponsiveContainer width="100%" height={180}>
-              <AreaChart data={data.dailyStats || []}>
-                <defs><linearGradient id="dReg" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={t.chart[0]} stopOpacity={0.15}/><stop offset="95%" stopColor={t.chart[0]} stopOpacity={0}/></linearGradient><linearGradient id="dFtd" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={t.chart[1]} stopOpacity={0.15}/><stop offset="95%" stopColor={t.chart[1]} stopOpacity={0}/></linearGradient></defs>
-                <CartesianGrid strokeDasharray="3 3" stroke={t.border} /><XAxis dataKey="date" tick={{ fill: t.textMuted, fontSize: 10 }} /><YAxis tick={{ fill: t.textMuted, fontSize: 10 }} /><Tooltip content={<CustomTooltip t={t} />} />
-                <Area type="monotone" dataKey="registrations" name="REG" stroke={t.chart[0]} fill="url(#dReg)" strokeWidth={1.5} /><Area type="monotone" dataKey="ftds" name="FTDs" stroke={t.chart[1]} fill="url(#dFtd)" strokeWidth={1.5} />
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(400px,1fr))', gap:'clamp(16px,2vw,28px)', marginBottom:'clamp(24px,3vw,40px)' }}>
+          <Card>
+            <h4 style={{ color:C.text, margin:'0 0 16px 0', fontSize:'16px', fontWeight:600 }}>📈 REG & FTD Trend</h4>
+            <ResponsiveContainer width="100%" height={280}>
+              <AreaChart data={trend}>
+                <defs><linearGradient id="gR" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.primary} stopOpacity={0.3}/><stop offset="95%" stopColor={C.primary} stopOpacity={0}/></linearGradient><linearGradient id="gF" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.success} stopOpacity={0.3}/><stop offset="95%" stopColor={C.success} stopOpacity={0}/></linearGradient></defs>
+                <CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="week" tick={{fill:C.textMuted,fontSize:12}} /><YAxis tick={{fill:C.textMuted,fontSize:12}} /><Tooltip content={<Tip/>} /><Legend />
+                <Area type="monotone" dataKey="REG" stroke={C.primary} fill="url(#gR)" strokeWidth={3} animationDuration={1500} />
+                <Area type="monotone" dataKey="FTDs" stroke={C.success} fill="url(#gF)" strokeWidth={3} animationDuration={1500} animationBegin={300} />
               </AreaChart>
             </ResponsiveContainer>
-          </div>
-          <div style={{ background: t.card, borderRadius: '6px', padding: '16px', border: `1px solid ${t.border}` }}>
-            <p style={{ color: t.textSecondary, fontSize: '10px', fontWeight: '500', textTransform: 'uppercase', margin: '0 0 12px 0' }}>Top Sources</p>
-            <ResponsiveContainer width="100%" height={180}>
-              <BarChart data={data.topSources || []} layout="vertical"><XAxis type="number" tick={{ fill: t.textMuted, fontSize: 9 }} /><YAxis dataKey="name" type="category" width={90} tick={{ fill: t.textMuted, fontSize: 9 }} /><Tooltip content={<CustomTooltip t={t} />} /><Bar dataKey="count" fill={t.chart[1]} radius={[0, 3, 3, 0]} /></BarChart>
+          </Card>
+          <Card>
+            <h4 style={{ color:C.text, margin:'0 0 16px 0', fontSize:'16px', fontWeight:600 }}>💰 GGR Trend (€k)</h4>
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={trend}><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="week" tick={{fill:C.textMuted,fontSize:12}} /><YAxis tick={{fill:C.textMuted,fontSize:12}} /><Tooltip content={<Tip/>} /><Bar dataKey="GGR" fill={C.primary} radius={[6,6,0,0]} animationDuration={1200} /></BarChart>
             </ResponsiveContainer>
-          </div>
+          </Card>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
-          <div style={{ background: t.card, borderRadius: '6px', padding: '16px', border: `1px solid ${t.border}`, textAlign: 'center' }}>
-            <p style={{ color: t.textSecondary, fontSize: '10px', fontWeight: '500', textTransform: 'uppercase', margin: '0 0 10px 0' }}>Gender</p>
-            <div style={{ display: 'flex', justifyContent: 'center', gap: '24px' }}>
-              <div><p style={{ color: t.text, fontSize: '22px', fontWeight: '600', margin: 0 }}>{data.demographics?.male || 0}%</p><p style={{ color: t.textMuted, fontSize: '10px', margin: 0 }}>Male</p></div>
-              <div><p style={{ color: t.text, fontSize: '22px', fontWeight: '600', margin: 0 }}>{data.demographics?.female || 0}%</p><p style={{ color: t.textMuted, fontSize: '10px', margin: 0 }}>Female</p></div>
-            </div>
-          </div>
-          <div style={{ background: t.card, borderRadius: '6px', padding: '16px', border: `1px solid ${t.border}` }}>
-            <p style={{ color: t.textSecondary, fontSize: '10px', fontWeight: '500', textTransform: 'uppercase', margin: '0 0 10px 0' }}>Age</p>
-            <ResponsiveContainer width="100%" height={60}><BarChart data={data.ageGroups || []}><XAxis dataKey="range" tick={{ fill: t.textMuted, fontSize: 8 }} /><YAxis hide /><Bar dataKey="percent" fill={t.chart[0]} radius={[2, 2, 0, 0]} /></BarChart></ResponsiveContainer>
-          </div>
-          <div style={{ background: t.card, borderRadius: '6px', padding: '16px', border: `1px solid ${t.border}` }}>
-            <p style={{ color: t.textSecondary, fontSize: '10px', fontWeight: '500', textTransform: 'uppercase', margin: '0 0 10px 0' }}>Top Provinces</p>
-            <ResponsiveContainer width="100%" height={60}><BarChart data={data.provinces || []} layout="vertical"><XAxis type="number" hide /><YAxis dataKey="name" type="category" width={28} tick={{ fill: t.textMuted, fontSize: 9 }} /><Bar dataKey="count" fill={t.chart[1]} radius={[0, 2, 2, 0]} /></BarChart></ResponsiveContainer>
-          </div>
-        </div>
-      </section>
 
-      {/* Quality Acquisition */}
-      <section style={{ marginBottom: '40px' }}>
-        <SectionTitle t={t}>Quality Acquisition</SectionTitle>
-        <Table columns={[{ header: 'Channel', accessor: 'channel' }, { header: 'REG', accessor: 'reg', align: 'right', format: formatNumber }, { header: 'FTDs', accessor: 'ftds', align: 'right', format: formatNumber }, { header: 'Conv %', accessor: 'conv', align: 'center', format: v => `${v}%` }, { header: 'Activated', accessor: 'activated', align: 'center', format: v => `${v}%` }, { header: 'Avg Age', accessor: 'avgAge', align: 'center', format: v => `${v} yrs` }]} data={data.qualityAcquisition || []} t={t} />
-      </section>
-
-      {/* Channel Performance */}
-      <section style={{ marginBottom: '40px' }}>
-        <SectionTitle t={t}>Channel Performance</SectionTitle>
-        <Table columns={[{ header: 'Channel', accessor: 'channel' }, { header: 'Turnover', accessor: 'turnover', align: 'right', format: formatCurrency }, { header: 'GGR', accessor: 'ggr', align: 'right', format: formatCurrency }, { header: 'GWM', accessor: 'gwm', align: 'center', format: v => `${v}%` }, { header: 'Actives', accessor: 'actives', align: 'right', format: formatNumber }, { header: 'Rev Share', accessor: 'revShare', align: 'center', format: v => `${v}%` }]} data={data.channelPerformance || []} t={t} />
-      </section>
-
-      {/* Product Performance */}
-      <section style={{ marginBottom: '40px' }}>
-        <SectionTitle t={t}>Product Performance</SectionTitle>
-        <Table columns={[{ header: 'Product', accessor: 'product' }, { header: 'Turnover', accessor: 'turnover', align: 'right', format: formatCurrency }, { header: 'GGR', accessor: 'ggr', align: 'right', format: formatCurrency }, { header: 'Payout', accessor: 'payout', align: 'center', format: v => v ? `${v}%` : '-' }, { header: 'Actives', accessor: 'actives', align: 'right', format: formatNumber }, { header: 'ARPU', accessor: 'arpu', align: 'right', format: v => `€${v}` }]} data={data.productPerformance || []} t={t} />
-      </section>
-
-      {/* Financial Health */}
-      <section style={{ marginBottom: '40px' }}>
-        <SectionTitle t={t}>Financial Health</SectionTitle>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px' }}>
-          <Metric label="Withdrawal Ratio" value={`${data.financialHealth?.withdrawalRatio || 0}%`} t={t} />
-          <Metric label="Deposit Frequency" value={`${data.financialHealth?.depositFrequency || 0}x`} t={t} />
-          <Metric label="Bonus ROI" value={`${data.financialHealth?.bonusROI || 0}x`} t={t} />
-          <Metric label="Customer Value" value={`€${data.financialHealth?.customerValue || 0}`} t={t} />
-          <Metric label="Login / User" value={data.financialHealth?.loginPerUser || 0} t={t} />
-        </div>
-      </section>
-
-      {/* Deep Dive */}
-      {filteredDeepDive.length > 0 && (
-        <section>
-          <SectionTitle t={t}>Deep Dive - Last {deepDiveWeeks.length} Weeks</SectionTitle>
-          <div style={{ background: t.card, borderRadius: '6px', border: `1px solid ${t.border}`, overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
-              <thead><tr><th style={{ padding: '10px', textAlign: 'left', color: t.textSecondary, borderBottom: `1px solid ${t.border}` }}></th><th style={{ padding: '10px', textAlign: 'right', color: t.textSecondary, borderBottom: `1px solid ${t.border}` }}>PVR</th><th style={{ padding: '10px', textAlign: 'right', color: t.textSecondary, borderBottom: `1px solid ${t.border}` }}>Vivabet+Acad</th><th style={{ padding: '10px', textAlign: 'right', color: t.textSecondary, borderBottom: `1px solid ${t.border}` }}>Organic</th><th style={{ padding: '10px', textAlign: 'right', color: t.textSecondary, borderBottom: `1px solid ${t.border}` }}>Direct</th><th style={{ padding: '10px', textAlign: 'right', color: t.textSecondary, borderBottom: `1px solid ${t.border}` }}>Affiliates</th><th style={{ padding: '10px', textAlign: 'right', color: t.textSecondary, borderBottom: `1px solid ${t.border}` }}>TOTAL</th></tr></thead>
-              <tbody>
-                {filteredDeepDive.map((week) => (
-                  <React.Fragment key={week.week}>
-                    <tr><td colSpan={7} style={{ padding: '8px 10px', color: t.text, fontWeight: '500', background: t.accentDim, borderBottom: `1px solid ${t.border}` }}>Week {week.week} {week.week === latestWeek && <span style={{ color: t.success, fontSize: '9px', marginLeft: '6px' }}>LATEST</span>}</td></tr>
-                    {['Reg', 'FTDs', 'GGR (k)'].map((metric) => { const key = metric === 'Reg' ? 'reg' : metric === 'FTDs' ? 'ftds' : 'ggr'; return (<tr key={`${week.week}-${metric}`}><td style={{ padding: '6px 10px', color: t.textSecondary, borderBottom: `1px solid ${t.border}` }}>{metric}</td><td style={{ padding: '6px 10px', textAlign: 'right', color: t.text, borderBottom: `1px solid ${t.border}` }}>{week.pvr?.[key] || 0}</td><td style={{ padding: '6px 10px', textAlign: 'right', color: t.text, borderBottom: `1px solid ${t.border}` }}>{week.vivabet?.[key] || 0}</td><td style={{ padding: '6px 10px', textAlign: 'right', color: t.text, borderBottom: `1px solid ${t.border}` }}>{week.organic?.[key] || 0}</td><td style={{ padding: '6px 10px', textAlign: 'right', color: t.text, borderBottom: `1px solid ${t.border}` }}>{week.direct?.[key] || 0}</td><td style={{ padding: '6px 10px', textAlign: 'right', color: t.text, borderBottom: `1px solid ${t.border}` }}>{week.affiliates?.[key] || 0}</td><td style={{ padding: '6px 10px', textAlign: 'right', color: t.text, fontWeight: '500', borderBottom: `1px solid ${t.border}` }}>{week.total?.[key] || 0}</td></tr>) })}
-                  </React.Fragment>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
+        <Table cols={[{header:'Week',accessor:'weekNumber',format:v=><span style={{color:C.primary,fontWeight:700}}>Week {v}</span>},{header:'Date',accessor:'dateRange'},{header:'REG',accessor:'registrations',align:'right',format:fmtNum},{header:'FTDs',accessor:'ftds',align:'right',format:fmtNum},{header:'Conv%',accessor:'conversionRate',align:'center',format:v=>`${v}%`},{header:'Turnover',accessor:'turnover',align:'right',format:fmtCurrency},{header:'GGR',accessor:'ggr',align:'right',format:v=><span style={{color:C.success,fontWeight:600}}>{fmtCurrency(v)}</span>},{header:'GWM',accessor:'gwm',align:'center',format:v=>`${v}%`},{header:'Actives',accessor:'activeUsers',align:'right',format:fmtNum}]} data={weeks} />
+      </Section>
     </div>
   )
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// MAIN DASHBOARD
-// ═══════════════════════════════════════════════════════════════════════════════
-export default function Dashboard() {
-  const [theme, setTheme] = useState('dark')
-  const [activeTab, setActiveTab] = useState('weekly')
-  const [weeksData, setWeeksData] = useState({})
-  const [selectedWeek, setSelectedWeek] = useState(null)
-  const [isLoading, setIsLoading] = useState(true)
-  const [dbStatus, setDbStatus] = useState({ connected: false })
+// WEEKLY
+const Weekly = ({ data, prev, allData }) => {
+  if (!data) return <div style={{ padding:'60px', textAlign:'center' }}><p style={{ color:C.textSec, fontSize:'18px' }}>Seleziona o carica una settimana</p></div>
 
-  const t = THEMES[theme]
-
-  useEffect(() => {
-    const load = async () => {
-      try { const conn = await checkConnection(); setDbStatus(conn); const result = await loadAllWeeksData(); if (result.data && Object.keys(result.data).length > 0) { setWeeksData(result.data); const weeks = Object.keys(result.data).map(Number); if (weeks.length > 0) setSelectedWeek(Math.max(...weeks)) } } catch (e) { console.error(e) }
-      setIsLoading(false)
-    }
-    load()
-  }, [])
-
-  const handleUpload = async (data) => { const updated = { ...weeksData, [data.weekNumber]: data }; setWeeksData(updated); setSelectedWeek(data.weekNumber); await saveWeekData(data); setActiveTab('weekly') }
-  const handleDelete = async (num) => { if (confirm(`Delete Week ${num}?`)) { const { [num]: _, ...rest } = weeksData; setWeeksData(rest); await deleteWeekData(num); const weeks = Object.keys(rest).map(Number); setSelectedWeek(weeks.length > 0 ? Math.max(...weeks) : null) } }
-
-  const allWeeks = Object.keys(weeksData).map(Number).sort((a, b) => b - a)
-  const currentData = selectedWeek ? weeksData[selectedWeek] : null
-  const prevData = selectedWeek && weeksData[selectedWeek - 1] ? weeksData[selectedWeek - 1] : null
-
-  if (isLoading) return <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><p style={{ color: t.textSecondary, fontSize: '13px' }}>Loading...</p></div>
+  const regCh = prev ? calcChange(data.registrations, prev.registrations) : null
+  const ftdCh = prev ? calcChange(data.ftds, prev.ftds) : null
+  const turnCh = prev ? calcChange(data.turnover, prev.turnover) : null
+  const ggrCh = prev ? calcChange(data.ggr, prev.ggr) : null
+  const actCh = prev ? calcChange(data.activeUsers, prev.activeUsers) : null
 
   return (
-    <div style={{ minHeight: '100vh', background: t.bg, fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", color: t.text }}>
-      {/* Header */}
-      <header style={{ background: t.bgSecondary, padding: '0 24px', height: '56px', display: 'flex', alignItems: 'center', borderBottom: `1px solid ${t.border}`, position: 'sticky', top: 0, zIndex: 100 }}>
-        <div style={{ maxWidth: '1100px', width: '100%', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          {/* Logo */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <img src="/favicon.png" alt="DAZN Bet" style={{ height: '28px' }} />
-            <div style={{ borderLeft: `1px solid ${t.border}`, paddingLeft: '12px' }}>
-              <p style={{ color: t.text, fontSize: '13px', fontWeight: '500', margin: 0, lineHeight: 1.2 }}>Weekly Trading Report</p>
-              <p style={{ color: t.textMuted, fontSize: '10px', margin: 0 }}>Italy</p>
+    <div style={{ padding:'clamp(20px,3vw,40px)' }}>
+      {/* TRADING SUMMARY */}
+      <Section title="Trading Summary" sub={`Week ${data.weekNumber} | ${data.dateRange}`}>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))', gap:'clamp(12px,1.5vw,20px)', marginBottom:'clamp(20px,2.5vw,32px)' }}>
+          <KPI label="Registrations" value={data.registrations} change={regCh} delay={0} />
+          <KPI label="FTDs" value={data.ftds} sub={`Conv: ${data.conversionRate}% | Avg: €${data.avgFirstDeposit}`} change={ftdCh} delay={100} />
+          <KPI label="Net Deposit" value={data.netDeposit} sub={`Dep ${fmtCurrency(data.totalDeposits)} - Wit ${fmtCurrency(data.totalWithdrawals)}`} cur delay={200} />
+          <KPI label="Turnover" value={data.turnover} change={turnCh} cur delay={300} />
+          <KPI label="GGR" value={data.ggr} change={ggrCh} cur delay={400} />
+          <KPI label="GWM" value={data.gwm} sub={prev?`${(data.gwm-prev.gwm)>=0?'+':''}${(data.gwm-prev.gwm).toFixed(1)}pp`:null} pct delay={500} />
+        </div>
+
+        <Card style={{ background:`linear-gradient(135deg,${C.card},${C.bg})`, marginBottom:'clamp(24px,3vw,40px)' }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:'20px' }}>
+            <div>
+              <p style={{ color:C.textSec, fontSize:'clamp(12px,1.3vw,16px)', fontWeight:600, textTransform:'uppercase', margin:'0 0 8px 0' }}>WEEKLY ACTIVES</p>
+              <p style={{ color:C.primary, fontSize:'clamp(40px,6vw,64px)', fontWeight:800, margin:0 }}>{fmtNum(data.activeUsers)}</p>
+              {actCh && <p style={{ color:parseFloat(actCh)>=0?C.success:C.danger, fontSize:'clamp(14px,1.5vw,18px)', margin:'8px 0 0 0' }}>{parseFloat(actCh)>0?'↑':'↓'} {Math.abs(parseFloat(actCh))}% vs prev</p>}
+            </div>
+            <div style={{ fontSize:'clamp(60px,8vw,100px)', opacity:0.1 }}>👥</div>
+          </div>
+        </Card>
+      </Section>
+
+      {/* ACQUISITION */}
+      <Section title="Acquisition" sub="Daily trends & demographics">
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(400px,1fr))', gap:'clamp(16px,2vw,28px)', marginBottom:'clamp(20px,2.5vw,32px)' }}>
+          <Card>
+            <h4 style={{ color:C.text, margin:'0 0 16px 0', fontSize:'16px', fontWeight:600 }}>📈 Daily REG & FTDs</h4>
+            <ResponsiveContainer width="100%" height={300}>
+              <AreaChart data={data.dailyStats||[]}>
+                <defs><linearGradient id="dR" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.primary} stopOpacity={0.4}/><stop offset="95%" stopColor={C.primary} stopOpacity={0}/></linearGradient><linearGradient id="dF" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.success} stopOpacity={0.4}/><stop offset="95%" stopColor={C.success} stopOpacity={0}/></linearGradient></defs>
+                <CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="date" tick={{fill:C.textMuted,fontSize:12}} /><YAxis tick={{fill:C.textMuted,fontSize:12}} /><Tooltip content={<Tip/>} /><Legend />
+                <Area type="monotone" dataKey="registrations" name="REG" stroke={C.primary} fill="url(#dR)" strokeWidth={3} animationDuration={1500} />
+                <Area type="monotone" dataKey="ftds" name="FTDs" stroke={C.success} fill="url(#dF)" strokeWidth={3} animationDuration={1500} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </Card>
+          <Card>
+            <h4 style={{ color:C.text, margin:'0 0 16px 0', fontSize:'16px', fontWeight:600 }}>🏆 Top Sources</h4>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={data.topSources||[]} layout="vertical"><XAxis type="number" tick={{fill:C.textMuted,fontSize:11}} /><YAxis dataKey="name" type="category" width={110} tick={{fill:C.textMuted,fontSize:11}} /><Tooltip content={<Tip/>} /><Bar dataKey="count" fill={C.success} radius={[0,6,6,0]} animationDuration={1200} /></BarChart>
+            </ResponsiveContainer>
+          </Card>
+        </div>
+
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(280px,1fr))', gap:'clamp(16px,2vw,28px)', marginBottom:'clamp(24px,3vw,40px)' }}>
+          <Card style={{ textAlign:'center' }}>
+            <h4 style={{ color:C.textSec, margin:'0 0 20px 0', fontSize:'13px', fontWeight:600, textTransform:'uppercase' }}>👤 Gender</h4>
+            <div style={{ display:'flex', justifyContent:'center', gap:'clamp(32px,5vw,60px)' }}>
+              <div><p style={{ color:C.blue, fontSize:'clamp(36px,5vw,52px)', fontWeight:700, margin:0 }}>{data.demographics?.male||0}%</p><p style={{ color:C.textMuted, fontSize:'14px' }}>Male</p></div>
+              <div><p style={{ color:C.purple, fontSize:'clamp(36px,5vw,52px)', fontWeight:700, margin:0 }}>{data.demographics?.female||0}%</p><p style={{ color:C.textMuted, fontSize:'14px' }}>Female</p></div>
+            </div>
+          </Card>
+          <Card>
+            <h4 style={{ color:C.textSec, margin:'0 0 12px 0', fontSize:'13px', fontWeight:600, textTransform:'uppercase' }}>📊 Age Distribution</h4>
+            <ResponsiveContainer width="100%" height={150}><BarChart data={data.ageGroups||[]}><XAxis dataKey="range" tick={{fill:C.textMuted,fontSize:10}} /><YAxis hide /><Tooltip content={<Tip/>} /><Bar dataKey="percent" fill={C.primary} radius={[6,6,0,0]} animationDuration={1000}>{(data.ageGroups||[]).map((_,i)=><Cell key={i} fill={C.chart[i%C.chart.length]} />)}</Bar></BarChart></ResponsiveContainer>
+          </Card>
+          <Card>
+            <h4 style={{ color:C.textSec, margin:'0 0 12px 0', fontSize:'13px', fontWeight:600, textTransform:'uppercase' }}>🗺️ Top Provinces</h4>
+            <ResponsiveContainer width="100%" height={150}><BarChart data={(data.provinces||[]).slice(0,5)} layout="vertical"><XAxis type="number" hide /><YAxis dataKey="name" type="category" width={50} tick={{fill:C.textMuted,fontSize:10}} /><Tooltip content={<Tip/>} /><Bar dataKey="count" fill={C.blue} radius={[0,6,6,0]} animationDuration={1000} /></BarChart></ResponsiveContainer>
+          </Card>
+        </div>
+      </Section>
+
+      {/* QUALITY ACQUISITION */}
+      <Section title="Quality Acquisition" sub="Performance per canale">
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(400px,1fr))', gap:'clamp(16px,2vw,28px)', marginBottom:'clamp(24px,3vw,40px)' }}>
+          <Table cols={[{header:'Channel',accessor:'channel',format:v=><span style={{fontWeight:600}}>{v}</span>},{header:'REG',accessor:'reg',align:'right',format:fmtNum},{header:'FTDs',accessor:'ftds',align:'right',format:fmtNum},{header:'Conv%',accessor:'conv',align:'center',format:v=><span style={{color:v>=55?C.success:v>=45?C.orange:C.danger,fontWeight:600}}>{v}%</span>},{header:'Activated',accessor:'activated',align:'center',format:v=>`${v}%`},{header:'Avg Age',accessor:'avgAge',align:'center',format:v=>`${v} yrs`}]} data={data.qualityAcquisition||[]} />
+          <Card>
+            <h4 style={{ color:C.text, margin:'0 0 12px 0', fontSize:'16px', fontWeight:600 }}>🎯 Conversion by Channel</h4>
+            <ResponsiveContainer width="100%" height={250}><BarChart data={data.qualityAcquisition||[]} layout="vertical"><XAxis type="number" domain={[0,80]} tick={{fill:C.textMuted,fontSize:11}} /><YAxis dataKey="channel" type="category" width={110} tick={{fill:C.textMuted,fontSize:11}} /><Tooltip content={<Tip/>} /><Bar dataKey="conv" name="Conv%" fill={C.primary} radius={[0,6,6,0]} animationDuration={1200}>{(data.qualityAcquisition||[]).map((e,i)=><Cell key={i} fill={e.conv>=55?C.success:e.conv>=45?C.orange:C.danger} />)}</Bar></BarChart></ResponsiveContainer>
+          </Card>
+        </div>
+      </Section>
+
+      {/* CHANNEL PERFORMANCE */}
+      <Section title="Performance by Channel">
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(400px,1fr))', gap:'clamp(16px,2vw,28px)', marginBottom:'clamp(24px,3vw,40px)' }}>
+          <Table cols={[{header:'Channel',accessor:'channel',format:v=><span style={{fontWeight:600}}>{v}</span>},{header:'Turnover',accessor:'turnover',align:'right',format:fmtCurrency},{header:'GGR',accessor:'ggr',align:'right',format:v=><span style={{color:C.success,fontWeight:600}}>{fmtCurrency(v)}</span>},{header:'GWM',accessor:'gwm',align:'center',format:v=>`${v}%`},{header:'Actives',accessor:'actives',align:'right',format:fmtNum},{header:'Rev Share',accessor:'revShare',align:'center',format:v=><span style={{color:C.primary,fontWeight:600}}>{v}%</span>}]} data={data.channelPerformance||[]} />
+          <Card>
+            <h4 style={{ color:C.text, margin:'0 0 12px 0', fontSize:'16px', fontWeight:600 }}>📊 Revenue Share</h4>
+            <ResponsiveContainer width="100%" height={250}><PieChart><Pie data={(data.channelPerformance||[]).filter(c=>c.revShare>0)} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={3} dataKey="revShare" nameKey="channel" animationDuration={1200}>{(data.channelPerformance||[]).map((_,i)=><Cell key={i} fill={C.chart[i%C.chart.length]} />)}</Pie><Tooltip content={<Tip/>} /><Legend /></PieChart></ResponsiveContainer>
+          </Card>
+        </div>
+      </Section>
+
+      {/* PRODUCT PERFORMANCE */}
+      <Section title="Performance by Product">
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(400px,1fr))', gap:'clamp(16px,2vw,28px)', marginBottom:'clamp(24px,3vw,40px)' }}>
+          <Table cols={[{header:'Product',accessor:'product',format:v=><span style={{fontWeight:600}}>{v}</span>},{header:'Turnover',accessor:'turnover',align:'right',format:fmtCurrency},{header:'GGR',accessor:'ggr',align:'right',format:v=><span style={{color:C.success,fontWeight:600}}>{fmtCurrency(v)}</span>},{header:'Payout',accessor:'payout',align:'center',format:v=>v?`${v}%`:'-'},{header:'Actives',accessor:'actives',align:'right',format:fmtNum}]} data={data.productPerformance||[]} />
+          <Card>
+            <h4 style={{ color:C.text, margin:'0 0 12px 0', fontSize:'16px', fontWeight:600 }}>💰 GGR by Product</h4>
+            <ResponsiveContainer width="100%" height={250}><BarChart data={(data.productPerformance||[]).slice(0,6)} layout="vertical"><XAxis type="number" tick={{fill:C.textMuted,fontSize:11}} tickFormatter={v=>`€${(v/1000).toFixed(0)}k`} /><YAxis dataKey="product" type="category" width={100} tick={{fill:C.textMuted,fontSize:11}} /><Tooltip content={<Tip/>} formatter={v=>fmtCurrency(v)} /><Bar dataKey="ggr" fill={C.primary} radius={[0,6,6,0]} animationDuration={1200}>{(data.productPerformance||[]).map((_,i)=><Cell key={i} fill={C.chart[i%C.chart.length]} />)}</Bar></BarChart></ResponsiveContainer>
+          </Card>
+        </div>
+      </Section>
+
+      {/* FINANCIAL */}
+      <Section title="Financial Health">
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(400px,1fr))', gap:'clamp(16px,2vw,28px)', marginBottom:'clamp(24px,3vw,40px)' }}>
+          <Card>
+            <h4 style={{ color:C.text, margin:'0 0 16px 0', fontSize:'16px', fontWeight:600 }}>💵 Daily Cash Flow</h4>
+            <ResponsiveContainer width="100%" height={250}><BarChart data={data.dailyStats||[]}><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="date" tick={{fill:C.textMuted,fontSize:11}} /><YAxis tick={{fill:C.textMuted,fontSize:11}} tickFormatter={v=>`€${(v/1000).toFixed(0)}k`} /><Tooltip content={<Tip/>} /><Legend /><Bar dataKey="deposits" name="Deposits" fill={C.success} radius={[4,4,0,0]} animationDuration={1000} /><Bar dataKey="withdrawals" name="Withdrawals" fill={C.danger} radius={[4,4,0,0]} animationDuration={1000} /></BarChart></ResponsiveContainer>
+          </Card>
+          <Card>
+            <h4 style={{ color:C.text, margin:'0 0 16px 0', fontSize:'16px', fontWeight:600 }}>🎁 Daily Bonus</h4>
+            <ResponsiveContainer width="100%" height={250}><AreaChart data={data.dailyStats||[]}><defs><linearGradient id="bG" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.orange} stopOpacity={0.4}/><stop offset="95%" stopColor={C.orange} stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="date" tick={{fill:C.textMuted,fontSize:11}} /><YAxis tick={{fill:C.textMuted,fontSize:11}} tickFormatter={v=>`€${(v/1000).toFixed(0)}k`} /><Tooltip content={<Tip/>} /><Area type="monotone" dataKey="bonus" name="Bonus" stroke={C.orange} fill="url(#bG)" strokeWidth={3} animationDuration={1200} /></AreaChart></ResponsiveContainer>
+          </Card>
+        </div>
+      </Section>
+
+      {/* FOOTER */}
+      <Card style={{ textAlign:'center', background:`linear-gradient(135deg,${C.bg},${C.card})`, padding:'clamp(40px,5vw,80px)' }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'center', marginBottom:'24px' }}>
+          <div style={{ background:C.bg, border:`3px solid ${C.text}`, borderRadius:'8px', padding:'12px 16px', display:'flex', flexDirection:'column', alignItems:'center', lineHeight:1 }}><span style={{ color:C.text, fontSize:'clamp(20px,3vw,28px)', fontWeight:900 }}>DA</span><span style={{ color:C.text, fontSize:'clamp(20px,3vw,28px)', fontWeight:900 }}>ZN</span></div>
+          <div style={{ background:C.primary, borderRadius:'8px', padding:'12px 16px', marginLeft:'-2px' }}><span style={{ color:C.bg, fontSize:'clamp(28px,4vw,36px)', fontWeight:900, fontStyle:'italic' }}>BET</span></div>
+        </div>
+        <h2 style={{ color:C.primary, fontSize:'clamp(28px,4vw,40px)', fontWeight:700, margin:'0 0 12px 0' }}>Thank You</h2>
+        <p style={{ color:C.text, fontSize:'clamp(16px,2vw,20px)', margin:'0 0 4px 0' }}>Weekly Trading Report - Week {data.weekNumber} 2025</p>
+        <p style={{ color:C.textSec, fontSize:'clamp(14px,1.5vw,18px)', margin:0 }}>DAZN Bet Italy</p>
+      </Card>
+    </div>
+  )
+}
+
+// MAIN
+export default function Dashboard() {
+  const [tab, setTab] = useState('weekly')
+  const [weeks, setWeeks] = useState({})
+  const [selected, setSelected] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [db, setDb] = useState({connected:false})
+
+  useEffect(() => { (async () => { try { const c = await checkConnection(); setDb(c); const r = await loadAllWeeksData(); if (r.data && Object.keys(r.data).length) { setWeeks(r.data); setSelected(Math.max(...Object.keys(r.data).map(Number))) }} catch(e){console.error(e)} setLoading(false) })() }, [])
+
+  const handleUpload = async d => { const u = {...weeks,[d.weekNumber]:d}; setWeeks(u); setSelected(d.weekNumber); await saveWeekData(d); setTab('weekly') }
+  const handleDelete = async n => { if (!confirm(`Eliminare Week ${n}?`)) return; const {[n]:_,...rest} = weeks; setWeeks(rest); await deleteWeekData(n); setSelected(Object.keys(rest).length ? Math.max(...Object.keys(rest).map(Number)) : null) }
+
+  const weekNums = Object.keys(weeks).map(Number).sort((a,b)=>b-a)
+  const current = selected ? weeks[selected] : null
+  const prev = selected && weeks[selected-1] ? weeks[selected-1] : null
+
+  if (loading) return <div style={{ minHeight:'100vh', background:C.bg, display:'flex', alignItems:'center', justifyContent:'center' }}><div style={{ textAlign:'center' }}><div style={{ width:'48px', height:'48px', border:`3px solid ${C.border}`, borderTopColor:C.primary, borderRadius:'50%', animation:'spin 1s linear infinite', margin:'0 auto 16px' }} /><p style={{ color:C.primary, fontSize:'18px' }}>Loading...</p></div><style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style></div>
+
+  return (
+    <div style={{ minHeight:'100vh', background:C.bg, fontFamily:"system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif", color:C.text }}>
+      {/* HEADER */}
+      <header style={{ background:C.card, padding:'clamp(12px,1.5vw,20px) clamp(16px,3vw,40px)', position:'sticky', top:0, zIndex:100, borderBottom:`1px solid ${C.border}` }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:'16px' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:'clamp(12px,2vw,24px)' }}>
+            <div style={{ display:'flex', alignItems:'center' }}>
+              <div style={{ background:C.bg, border:`2px solid ${C.text}`, borderRadius:'6px', padding:'5px 8px', display:'flex', flexDirection:'column', alignItems:'center', lineHeight:1 }}><span style={{ color:C.text, fontSize:'clamp(10px,1.2vw,14px)', fontWeight:900 }}>DA</span><span style={{ color:C.text, fontSize:'clamp(10px,1.2vw,14px)', fontWeight:900 }}>ZN</span></div>
+              <div style={{ background:C.primary, borderRadius:'6px', padding:'5px 8px', marginLeft:'-2px' }}><span style={{ color:C.bg, fontSize:'clamp(14px,1.8vw,20px)', fontWeight:900, fontStyle:'italic' }}>BET</span></div>
+            </div>
+            <div>
+              <h1 style={{ color:C.text, fontSize:'clamp(14px,1.8vw,20px)', fontWeight:700, margin:0 }}>Weekly Trading Report</h1>
+              <p style={{ color:C.textSec, fontSize:'clamp(10px,1.1vw,13px)', margin:0 }}>ITALY <span style={{ marginLeft:'8px', fontSize:'10px', padding:'2px 8px', borderRadius:'4px', background:db.connected?C.successDim:C.primaryDim, color:db.connected?C.success:C.primary }}>{db.connected?'● Cloud':'● Local'}</span></p>
             </div>
           </div>
-
-          {/* Nav */}
-          <nav style={{ display: 'flex', gap: '2px' }}>
-            {[{ id: 'weekly', label: 'Weekly' }, { id: 'monthly', label: 'Monthly' }, { id: 'upload', label: 'Upload' }].map(tab => (
-              <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{ background: activeTab === tab.id ? t.accentDim : 'transparent', color: activeTab === tab.id ? t.text : t.textSecondary, border: 'none', borderRadius: '4px', padding: '6px 14px', fontSize: '12px', fontWeight: '500', cursor: 'pointer', transition: 'all 0.15s' }}>{tab.label}</button>
+          <div style={{ display:'flex', gap:'8px', flexWrap:'wrap' }}>
+            {[{id:'weekly',icon:'📊',label:'Weekly'},{id:'monthly',icon:'📅',label:'Monthly'},{id:'upload',icon:'⬆️',label:'Upload'}].map(t=>(
+              <button key={t.id} onClick={()=>setTab(t.id)} style={{ background:tab===t.id?C.primary:'transparent', color:tab===t.id?C.bg:C.text, border:`1px solid ${tab===t.id?C.primary:C.border}`, borderRadius:'8px', padding:'clamp(8px,1vw,12px) clamp(14px,2vw,24px)', fontSize:'clamp(12px,1.3vw,15px)', fontWeight:600, cursor:'pointer' }}>{t.icon} {t.label}</button>
             ))}
-          </nav>
-
-          {/* Controls */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            {activeTab === 'weekly' && allWeeks.length > 0 && (
-              <>
-                <select value={selectedWeek || ''} onChange={(e) => setSelectedWeek(Number(e.target.value))} style={{ background: t.card, color: t.text, border: `1px solid ${t.border}`, borderRadius: '4px', padding: '6px 10px', fontSize: '12px', cursor: 'pointer' }}>
-                  {allWeeks.map(w => <option key={w} value={w}>Week {w}</option>)}
-                </select>
-                {currentData && <span style={{ color: t.textMuted, fontSize: '11px' }}>{currentData.dateRange}</span>}
-              </>
-            )}
-            
-            {/* Theme Toggle */}
-            <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} style={{ background: t.card, color: t.textSecondary, border: `1px solid ${t.border}`, borderRadius: '4px', padding: '6px 10px', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <span style={{ fontSize: '14px' }}>{theme === 'dark' ? '○' : '●'}</span>
-              {theme === 'dark' ? 'Light' : 'Dark'}
-            </button>
-
-            {/* Status */}
-            <span style={{ color: dbStatus.connected ? t.success : t.textMuted, fontSize: '10px' }}>{dbStatus.connected ? 'DB' : 'Local'}</span>
           </div>
+          {tab==='weekly' && weekNums.length>0 && (
+            <div style={{ display:'flex', alignItems:'center', gap:'12px', flexWrap:'wrap' }}>
+              <select value={selected||''} onChange={e=>setSelected(Number(e.target.value))} style={{ background:C.bg, color:C.text, border:`2px solid ${C.primary}`, borderRadius:'8px', padding:'clamp(8px,1vw,12px) clamp(12px,1.5vw,20px)', fontSize:'clamp(13px,1.4vw,16px)', fontWeight:600, cursor:'pointer', minWidth:'120px' }}>{weekNums.map(w=><option key={w} value={w}>Week {w}</option>)}</select>
+              {current && <span style={{ background:C.primary, color:C.bg, padding:'clamp(8px,1vw,12px) clamp(12px,1.5vw,20px)', borderRadius:'8px', fontWeight:600, fontSize:'clamp(12px,1.3vw,15px)' }}>{current.dateRange}</span>}
+            </div>
+          )}
         </div>
       </header>
-
-      {/* Content */}
       <main>
-        {activeTab === 'weekly' && <WeeklyReport data={currentData} prevData={prevData} allWeeksData={weeksData} t={t} />}
-        {activeTab === 'monthly' && <MonthlySummary weeksData={weeksData} t={t} />}
-        {activeTab === 'upload' && <UploadPage weeksData={weeksData} onUploadComplete={handleUpload} onDeleteWeek={handleDelete} t={t} />}
+        {tab==='weekly' && <Weekly data={current} prev={prev} allData={weeks} />}
+        {tab==='monthly' && <Monthly weeksData={weeks} />}
+        {tab==='upload' && <UploadPage weeksData={weeks} onUpload={handleUpload} onDelete={handleDelete} />}
       </main>
     </div>
   )
