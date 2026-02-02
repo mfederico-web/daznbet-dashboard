@@ -57,6 +57,19 @@ const DASHBOARD_PASSWORD = 'daznbet2026'
 const UPLOAD_PASSWORD = 'soloperpochi2026'
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// RESPONSIVE HOOK
+// ═══════════════════════════════════════════════════════════════════════════════
+const useWindowWidth = () => {
+  const [w, setW] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200)
+  useEffect(() => {
+    const h = () => setW(window.innerWidth)
+    window.addEventListener('resize', h)
+    return () => window.removeEventListener('resize', h)
+  }, [])
+  return w
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // FILE REQUIREMENTS
 // ═══════════════════════════════════════════════════════════════════════════════
 const FILES = [
@@ -627,7 +640,7 @@ const UploadPage = ({ weeksData, onUpload, onDelete, onLogout, theme }) => {
                   <button onClick={() => onDelete(w.weekNumber)} style={{ position: 'absolute', top: '10px', right: '10px', background: 'transparent', color: C.danger, border: 'none', fontSize: '14px', cursor: 'pointer', opacity: 0.6 }}>✕</button>
                   <h4 style={{ color: C.accent, margin: '0 0 4px 0', fontSize: '20px', fontWeight: 800 }}>W{w.weekNumber}</h4>
                   <p style={{ color: C.textMuted, margin: '0 0 12px 0', fontSize: '12px' }}>{w.dateRange}</p>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '12px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '1fr 1fr', gap: '8px', fontSize: '12px' }}>
                     <div><span style={{ color: C.textMuted }}>REG</span><p style={{ color: C.text, margin: 0, fontWeight: 700 }}>{fmtNum(w.registrations)}</p></div>
                     <div><span style={{ color: C.textMuted }}>FTDs</span><p style={{ color: C.text, margin: 0, fontWeight: 700 }}>{fmtNum(w.ftds)}</p></div>
                     <div><span style={{ color: C.textMuted }}>GGR</span><p style={{ color: C.success, margin: 0, fontWeight: 700 }}>{fmtCurrency(w.ggr)}</p></div>
@@ -648,6 +661,8 @@ const UploadPage = ({ weeksData, onUpload, onDelete, onLogout, theme }) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 const Monthly = ({ weeksData, theme }) => {
   const C = theme
+  const ww = useWindowWidth()
+  const mob = ww < 768
   const allWeeks = Object.values(weeksData).sort((a, b) => a.weekNumber - b.weekNumber)
   
   const [filterMode, setFilterMode] = useState('all')
@@ -747,7 +762,7 @@ const Monthly = ({ weeksData, theme }) => {
           <KPI label="Avg Actives" value={avgAct} icon="👥" delay={250} theme={C} />
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: 'clamp(16px, 2vw, 24px)', marginBottom: 'clamp(24px, 3vw, 40px)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : 'repeat(auto-fit, minmax(380px, 1fr))', gap: 'clamp(16px, 2vw, 24px)', marginBottom: 'clamp(24px, 3vw, 40px)' }}>
           <ChartCard title="Registration & FTD Trend" theme={C}>
             <AreaChart data={trend}><defs><linearGradient id="gR" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.primary} stopOpacity={0.3} /><stop offset="95%" stopColor={C.primary} stopOpacity={0} /></linearGradient><linearGradient id="gF" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.success} stopOpacity={0.3} /><stop offset="95%" stopColor={C.success} stopOpacity={0} /></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} /><YAxis tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} /><Tooltip content={<Tip theme={C} />} /><Legend /><Area type="monotone" dataKey="REG" stroke={C.primary} fill="url(#gR)" strokeWidth={2} /><Area type="monotone" dataKey="FTDs" stroke={C.success} fill="url(#gF)" strokeWidth={2} /></AreaChart>
           </ChartCard>
@@ -770,7 +785,7 @@ const Monthly = ({ weeksData, theme }) => {
       </Section>
 
       <Section title="Weekly Cash Flow" theme={C}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: 'clamp(16px, 2vw, 24px)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : 'repeat(auto-fit, minmax(380px, 1fr))', gap: 'clamp(16px, 2vw, 24px)' }}>
           <ChartCard title="Deposits vs Withdrawals" height={300} theme={C}>
             <BarChart data={cashFlowTrend}><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} /><YAxis tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} /><Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} /><Legend /><Bar dataKey="Deposits" fill={C.success} radius={[4, 4, 0, 0]} /><Bar dataKey="Withdrawals" fill={C.danger} radius={[4, 4, 0, 0]} /></BarChart>
           </ChartCard>
@@ -781,13 +796,13 @@ const Monthly = ({ weeksData, theme }) => {
       </Section>
 
       <Section title="Weekly Bonus" theme={C}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '1fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
           <ChartCard title="Bonus Trend" height={250} theme={C}>
             <AreaChart data={bonusTrend}><defs><linearGradient id="bonusG" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.orange} stopOpacity={0.4} /><stop offset="95%" stopColor={C.orange} stopOpacity={0} /></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} /><YAxis tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} /><Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} /><Area type="monotone" dataKey="Bonus" stroke={C.orange} fill="url(#bonusG)" strokeWidth={2} /></AreaChart>
           </ChartCard>
           <div style={{ background: C.card, borderRadius: '12px', padding: '24px', border: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
             <h4 style={{ color: C.textMuted, margin: '0 0 16px 0', fontSize: '11px', textTransform: 'uppercase', fontWeight: 700 }}>Bonus Summary</h4>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '1fr 1fr', gap: '20px' }}>
               <div><p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', textTransform: 'uppercase' }}>Total Bonus</p><p style={{ color: C.orange, fontSize: '28px', fontWeight: 900, margin: 0 }}>{fmtCurrency(tot.bonus)}</p></div>
               <div><p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', textTransform: 'uppercase' }}>Avg Weekly</p><p style={{ color: C.text, fontSize: '28px', fontWeight: 900, margin: 0 }}>{fmtCurrency(tot.bonus / weeks.length)}</p></div>
               <div><p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', textTransform: 'uppercase' }}>Bonus ROI</p><p style={{ color: C.success, fontSize: '28px', fontWeight: 900, margin: 0 }}>{tot.bonus > 0 ? (tot.ggr / tot.bonus).toFixed(1) : 0}x</p></div>
@@ -798,7 +813,7 @@ const Monthly = ({ weeksData, theme }) => {
       </Section>
 
       <Section title="Quality Acquisition" theme={C}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '1.5fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
           <Table cols={[
             { header: 'Channel', accessor: 'channel', format: (v, r) => <span style={{ fontWeight: r.isTotal ? 900 : 700, color: r.isTotal ? C.accent : C.text }}>{v}</span> },
             { header: 'REG', accessor: 'reg', align: 'right', format: v => <b>{fmtNum(v)}</b> },
@@ -806,13 +821,13 @@ const Monthly = ({ weeksData, theme }) => {
             { header: 'Conv%', accessor: 'conv', align: 'center', format: (v, r) => <span style={{ color: r.isTotal ? C.accent : v >= 55 ? C.success : v >= 45 ? C.orange : C.danger, fontWeight: 800 }}>{v}%</span> }
           ]} data={qualityData} theme={C} />
           <ChartCard title="REG by Channel" height={220} theme={C}>
-            <BarChart data={qualityData.filter(c => !c.isTotal)} layout="vertical"><XAxis type="number" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><YAxis dataKey="channel" type="category" width={100} tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><Tooltip content={<Tip theme={C} />} /><Bar dataKey="reg" name="REG" fill={C.primary} radius={[0, 4, 4, 0]}>{qualityData.filter(c => !c.isTotal).map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}</Bar></BarChart>
+            <BarChart data={qualityData.filter(c => !c.isTotal)} layout="vertical"><XAxis type="number" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><YAxis dataKey="channel" type="category" width={mob ? 70 : 100} tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><Tooltip content={<Tip theme={C} />} /><Bar dataKey="reg" name="REG" fill={C.primary} radius={[0, 4, 4, 0]}>{qualityData.filter(c => !c.isTotal).map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}</Bar></BarChart>
           </ChartCard>
         </div>
       </Section>
 
       <Section title="Channel Performance" theme={C}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '1.5fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
           <Table cols={[
             { header: 'Channel', accessor: 'channel', format: v => <span style={{ fontWeight: 700 }}>{v}</span> },
             { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
@@ -827,7 +842,7 @@ const Monthly = ({ weeksData, theme }) => {
       </Section>
 
       <Section title="Product Performance" theme={C}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '1.5fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
           <Table cols={[
             { header: 'Product', accessor: 'product', format: v => <span style={{ fontWeight: 700 }}>{v}</span> },
             { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
@@ -835,7 +850,7 @@ const Monthly = ({ weeksData, theme }) => {
             { header: 'Avg Actives', accessor: 'actives', align: 'right', format: v => <b>{fmtNum(v)}</b> }
           ]} data={productData} compact theme={C} />
           <ChartCard title="GGR by Product" height={220} theme={C}>
-            <BarChart data={productData.slice(0, 6)} layout="vertical"><XAxis type="number" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} /><YAxis dataKey="product" type="category" width={80} tick={{ fill: C.textMuted, fontSize: 9, fontWeight: 700 }} /><Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} /><Bar dataKey="ggr" fill={C.primary} radius={[0, 4, 4, 0]}>{productData.map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}</Bar></BarChart>
+            <BarChart data={productData.slice(0, 6)} layout="vertical"><XAxis type="number" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} /><YAxis dataKey="product" type="category" width={mob ? 55 : 80} tick={{ fill: C.textMuted, fontSize: 9, fontWeight: 700 }} /><Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} /><Bar dataKey="ggr" fill={C.primary} radius={[0, 4, 4, 0]}>{productData.map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}</Bar></BarChart>
           </ChartCard>
         </div>
       </Section>
@@ -848,6 +863,8 @@ const Monthly = ({ weeksData, theme }) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 const Weekly = ({ data, prev, theme }) => {
   const C = theme
+  const ww = useWindowWidth()
+  const mob = ww < 768
   if (!data) return <div style={{ padding: '60px', textAlign: 'center' }}><p style={{ color: C.textMuted, fontSize: '16px' }}>Seleziona o carica una settimana</p></div>
 
   const regCh = prev ? calcChange(data.registrations, prev.registrations) : null
@@ -871,7 +888,7 @@ const Weekly = ({ data, prev, theme }) => {
         <div style={{ background: `linear-gradient(135deg, ${C.card} 0%, ${C.bg} 100%)`, borderRadius: '12px', padding: 'clamp(20px, 3vw, 32px)', border: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '24px' }}>
           <div>
             <p style={{ color: C.textMuted, fontSize: 'clamp(11px, 1.2vw, 14px)', fontWeight: 700, textTransform: 'uppercase', margin: '0 0 6px 0' }}>Weekly Active Users</p>
-            <p style={{ color: C.accent, fontSize: 'clamp(36px, 5vw, 56px)', fontWeight: 900, margin: 0 }}>{fmtNum(data.activeUsers)}</p>
+            <p style={{ color: C.accent, fontSize: mob ? '32px' : 'clamp(36px, 5vw, 56px)', fontWeight: 900, margin: 0 }}>{fmtNum(data.activeUsers)}</p>
             {actCh && <p style={{ color: parseFloat(actCh) >= 0 ? C.success : C.danger, fontSize: '14px', fontWeight: 700, margin: '8px 0 0 0' }}>{parseFloat(actCh) > 0 ? '▲' : '▼'} {Math.abs(parseFloat(actCh))}% vs prev</p>}
           </div>
           <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
@@ -885,12 +902,12 @@ const Weekly = ({ data, prev, theme }) => {
       </Section>
 
       <Section title="Acquisition" theme={C}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: 'clamp(16px, 2vw, 24px)', marginBottom: 'clamp(20px, 2.5vw, 28px)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : 'repeat(auto-fit, minmax(380px, 1fr))', gap: 'clamp(16px, 2vw, 24px)', marginBottom: 'clamp(20px, 2.5vw, 28px)' }}>
           <ChartCard title="Daily REG & FTDs" theme={C}>
             <AreaChart data={data.dailyStats || []}><defs><linearGradient id="dR" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.primary} stopOpacity={0.4} /><stop offset="95%" stopColor={C.primary} stopOpacity={0} /></linearGradient><linearGradient id="dF" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.success} stopOpacity={0.4} /><stop offset="95%" stopColor={C.success} stopOpacity={0} /></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="date" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><YAxis tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><Tooltip content={<Tip theme={C} />} /><Legend /><Area type="monotone" dataKey="registrations" name="REG" stroke={C.primary} fill="url(#dR)" strokeWidth={2} /><Area type="monotone" dataKey="ftds" name="FTDs" stroke={C.success} fill="url(#dF)" strokeWidth={2} /></AreaChart>
           </ChartCard>
           <ChartCard title="Top Sources (Cod Punto)" theme={C}>
-            <BarChart data={data.topSources || []} layout="vertical"><XAxis type="number" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><YAxis dataKey="name" type="category" width={100} tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><Tooltip content={<Tip theme={C} />} /><Bar dataKey="count" fill={C.success} radius={[0, 4, 4, 0]} /></BarChart>
+            <BarChart data={data.topSources || []} layout="vertical"><XAxis type="number" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><YAxis dataKey="name" type="category" width={mob ? 70 : 100} tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><Tooltip content={<Tip theme={C} />} /><Bar dataKey="count" fill={C.success} radius={[0, 4, 4, 0]} /></BarChart>
           </ChartCard>
         </div>
 
@@ -912,7 +929,7 @@ const Weekly = ({ data, prev, theme }) => {
       </Section>
 
       <Section title="Quality Acquisition" theme={C}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '1.5fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
           <Table cols={[
             { header: 'Channel', accessor: 'channel', format: (v, r) => <span style={{ fontWeight: r.isTotal ? 900 : 700, color: r.isTotal ? C.accent : C.text }}>{v}</span> },
             { header: 'REG', accessor: 'reg', align: 'right', format: v => <b>{fmtNum(v)}</b> },
@@ -922,13 +939,13 @@ const Weekly = ({ data, prev, theme }) => {
             { header: 'Avg Age', accessor: 'avgAge', align: 'center', format: v => <b>{v}</b> }
           ]} data={data.qualityAcquisition || []} theme={C} />
           <ChartCard title="Conversion by Channel" height={220} theme={C}>
-            <BarChart data={(data.qualityAcquisition || []).filter(c => !c.isTotal)} layout="vertical"><XAxis type="number" domain={[0, 80]} tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><YAxis dataKey="channel" type="category" width={100} tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><Tooltip content={<Tip theme={C} />} /><Bar dataKey="conv" name="Conv%" fill={C.primary} radius={[0, 4, 4, 0]}>{(data.qualityAcquisition || []).filter(c => !c.isTotal).map((e, i) => <Cell key={i} fill={e.conv >= 55 ? C.success : e.conv >= 45 ? C.orange : C.danger} />)}</Bar></BarChart>
+            <BarChart data={(data.qualityAcquisition || []).filter(c => !c.isTotal)} layout="vertical"><XAxis type="number" domain={[0, 80]} tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><YAxis dataKey="channel" type="category" width={mob ? 70 : 100} tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><Tooltip content={<Tip theme={C} />} /><Bar dataKey="conv" name="Conv%" fill={C.primary} radius={[0, 4, 4, 0]}>{(data.qualityAcquisition || []).filter(c => !c.isTotal).map((e, i) => <Cell key={i} fill={e.conv >= 55 ? C.success : e.conv >= 45 ? C.orange : C.danger} />)}</Bar></BarChart>
           </ChartCard>
         </div>
       </Section>
 
       <Section title="Channel Performance" theme={C}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '1.5fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
           <Table cols={[
             { header: 'Channel', accessor: 'channel', format: v => <span style={{ fontWeight: 700 }}>{v}</span> },
             { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
@@ -944,7 +961,7 @@ const Weekly = ({ data, prev, theme }) => {
       </Section>
 
       <Section title="Product Performance" theme={C}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '1.5fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
           <Table cols={[
             { header: 'Product', accessor: 'product', format: v => <span style={{ fontWeight: 700 }}>{v}</span> },
             { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
@@ -953,7 +970,7 @@ const Weekly = ({ data, prev, theme }) => {
             { header: 'Actives', accessor: 'actives', align: 'right', format: v => <b>{fmtNum(v)}</b> }
           ]} data={data.productPerformance || []} compact theme={C} />
           <ChartCard title="GGR by Product" height={220} theme={C}>
-            <BarChart data={(data.productPerformance || []).slice(0, 6)} layout="vertical"><XAxis type="number" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} /><YAxis dataKey="product" type="category" width={80} tick={{ fill: C.textMuted, fontSize: 9, fontWeight: 700 }} /><Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} /><Bar dataKey="ggr" fill={C.primary} radius={[0, 4, 4, 0]}>{(data.productPerformance || []).map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}</Bar></BarChart>
+            <BarChart data={(data.productPerformance || []).slice(0, 6)} layout="vertical"><XAxis type="number" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} /><YAxis dataKey="product" type="category" width={mob ? 55 : 80} tick={{ fill: C.textMuted, fontSize: 9, fontWeight: 700 }} /><Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} /><Bar dataKey="ggr" fill={C.primary} radius={[0, 4, 4, 0]}>{(data.productPerformance || []).map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}</Bar></BarChart>
           </ChartCard>
         </div>
       </Section>
@@ -966,7 +983,7 @@ const Weekly = ({ data, prev, theme }) => {
           <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}` }}><p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', margin: '0 0 8px 0' }}>Login / User</p><p style={{ color: C.text, fontSize: '28px', fontWeight: 900, margin: '0 0 8px 0' }}>{data.financialHealth?.loginPerUser || 0}</p><p style={{ color: C.textMuted, fontSize: '10px', margin: 0 }}>{fmtNum(data.financialHealth?._logins)} / {fmtNum(data.financialHealth?._actives)}</p></div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: 'clamp(16px, 2vw, 24px)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : 'repeat(auto-fit, minmax(380px, 1fr))', gap: 'clamp(16px, 2vw, 24px)' }}>
           <ChartCard title="Daily Cash Flow" theme={C}>
             <BarChart data={data.dailyStats || []}><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="date" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><YAxis tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} /><Tooltip content={<Tip theme={C} />} /><Legend /><Bar dataKey="deposits" name="Deposits" fill={C.success} radius={[3, 3, 0, 0]} /><Bar dataKey="withdrawals" name="Withdrawals" fill={C.danger} radius={[3, 3, 0, 0]} /></BarChart>
           </ChartCard>
@@ -998,6 +1015,8 @@ export default function Dashboard() {
   const [isDark, setIsDark] = useState(true)
   const [isAuth, setIsAuth] = useState(false)
   const [showTop, setShowTop] = useState(false)
+  const ww = useWindowWidth()
+  const mob = ww < 768
 
   const C = isDark ? THEMES.dark : THEMES.light
 
@@ -1043,26 +1062,38 @@ export default function Dashboard() {
   )
 
   return (
-    <div style={{ minHeight: '100vh', background: C.bg, fontFamily: "Oscine, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", color: C.text, transition: 'background 0.3s, color 0.3s' }}>
-      <header style={{ background: C.bg, padding: 'clamp(12px, 1.5vw, 16px) clamp(20px, 3vw, 48px)', position: 'sticky', top: 0, zIndex: 100, borderBottom: `1px solid ${C.border}` }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'clamp(12px, 2vw, 20px)' }}>
-            <img src="/logo.png" alt="DAZN Bet" style={{ height: '40px' }} />
-            <div>
+    <div style={{ minHeight: '100vh', background: C.bg, fontFamily: "Oscine, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", color: C.text, transition: 'background 0.3s, color 0.3s', overflowX: 'hidden' }}>
+      <style>{`
+        @font-face { font-family: Oscine; src: url(https://www.daznbet.it/external_css/DAZNBET/font/DAZN_Oscine_W_Rg.woff) format("woff"), url(https://www.daznbet.it/external_css/DAZNBET/font/DAZN_Oscine_W_Rg.woff2) format("woff2"); font-weight: 400; }
+        @font-face { font-family: Oscine; src: url(https://www.daznbet.it/external_css/DAZNBET/font/DAZN_Oscine_W_Bd.woff) format("woff"), url(https://www.daznbet.it/external_css/DAZNBET/font/DAZN_Oscine_W_Bd.woff2) format("woff2"); font-weight: 700; }
+        * { box-sizing: border-box; }
+        body { margin: 0; overflow-x: hidden; }
+        .recharts-wrapper { max-width: 100% !important; }
+        .recharts-surface { max-width: 100% !important; }
+        @media (max-width: 480px) {
+          table { font-size: 11px !important; }
+          th, td { padding: 6px 8px !important; }
+        }
+      `}</style>
+      <header style={{ background: C.bg, padding: mob ? '12px 16px' : 'clamp(12px, 1.5vw, 16px) clamp(20px, 3vw, 48px)', position: 'sticky', top: 0, zIndex: 100, borderBottom: `1px solid ${C.border}` }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <img src="/logo.png" alt="DAZN Bet" style={{ height: mob ? '30px' : '40px' }} />
+            {!mob && <div>
               <h1 style={{ color: C.text, fontSize: 'clamp(14px, 1.6vw, 18px)', fontWeight: 800, margin: 0 }}>Weekly Trading Report</h1>
               <p style={{ color: C.textMuted, fontSize: 'clamp(10px, 1vw, 12px)', margin: 0 }}>Italy 2026 <span style={{ marginLeft: '8px', fontSize: '10px', padding: '2px 6px', borderRadius: '4px', background: db.connected ? C.successDim : C.border, color: db.connected ? C.success : C.textMuted, fontWeight: 700 }}>{db.connected ? '● Cloud' : '● Local'}</span></p>
-            </div>
+            </div>}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{ display: 'flex', gap: '6px' }}>
-              {[{ id: 'weekly', label: '📊 Weekly' }, { id: 'monthly', label: '📅 Monthly' }].map(t => (
-                <button key={t.id} onClick={() => setTab(t.id)} style={{ background: tab === t.id ? C.primary : 'transparent', color: tab === t.id ? C.primaryText : C.textSec, border: `1px solid ${tab === t.id ? C.primary : C.border}`, borderRadius: '6px', padding: 'clamp(8px, 1vw, 10px) clamp(14px, 2vw, 20px)', fontSize: 'clamp(11px, 1.2vw, 13px)', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s' }}>{t.label}</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: mob ? '6px' : '12px', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: '4px' }}>
+              {[{ id: 'weekly', label: mob ? '📊' : '📊 Weekly' }, { id: 'monthly', label: mob ? '📅' : '📅 Monthly' }].map(t => (
+                <button key={t.id} onClick={() => setTab(t.id)} style={{ background: tab === t.id ? C.primary : 'transparent', color: tab === t.id ? C.primaryText : C.textSec, border: `1px solid ${tab === t.id ? C.primary : C.border}`, borderRadius: '6px', padding: mob ? '8px 12px' : 'clamp(8px, 1vw, 10px) clamp(14px, 2vw, 20px)', fontSize: mob ? '12px' : 'clamp(11px, 1.2vw, 13px)', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s' }}>{t.label}</button>
               ))}
             </div>
             <div style={{ width: '1px', height: '24px', background: C.border }} />
-            <button onClick={() => setTab('upload')} style={{ background: tab === 'upload' ? C.danger : 'transparent', color: tab === 'upload' ? '#FFF' : C.textMuted, border: `1px solid ${tab === 'upload' ? C.danger : C.border}`, borderRadius: '6px', padding: 'clamp(8px, 1vw, 10px) clamp(14px, 2vw, 20px)', fontSize: 'clamp(11px, 1.2vw, 13px)', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s' }}>🔒 Admin</button>
-            <button onClick={() => setIsDark(!isDark)} style={{ background: C.card, color: C.text, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '8px 12px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>{isDark ? '☀️' : '🌙'} {isDark ? 'Light' : 'Dark'}</button>
-            <button onClick={handleLogout} style={{ background: 'transparent', color: C.danger, border: `1px solid ${C.danger}`, borderRadius: '6px', padding: '8px 12px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', opacity: 0.7 }} title="Logout">🚪</button>
+            <button onClick={() => setTab('upload')} style={{ background: tab === 'upload' ? C.danger : 'transparent', color: tab === 'upload' ? '#FFF' : C.textMuted, border: `1px solid ${tab === 'upload' ? C.danger : C.border}`, borderRadius: '6px', padding: mob ? '8px 10px' : 'clamp(8px, 1vw, 10px) clamp(14px, 2vw, 20px)', fontSize: mob ? '12px' : 'clamp(11px, 1.2vw, 13px)', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s' }}>{mob ? '🔒' : '🔒 Admin'}</button>
+            <button onClick={() => setIsDark(!isDark)} style={{ background: C.card, color: C.text, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '8px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>{isDark ? '☀️' : '🌙'}</button>
+            <button onClick={handleLogout} style={{ background: 'transparent', color: C.danger, border: `1px solid ${C.danger}`, borderRadius: '6px', padding: '8px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', opacity: 0.7 }} title="Logout">🚪</button>
           </div>
           {tab === 'weekly' && weekNums.length > 0 && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
