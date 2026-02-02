@@ -294,11 +294,11 @@ const processData = (files, weekNum, dateRange) => {
   const chanPerf = []
   let totGgr = 0
 
-  // PVR: da SKIN_TOTAL escludendo VIVABET e DAZNBET
+  // PVR: da SKIN_TOTAL escludendo solo VIVABET e DAZNBET (include scommettendo)
   let pvrT = 0, pvrG = 0, pvrA = 0
   skinTotal.forEach(r => {
     const s = String(r["Skin"] || "").toUpperCase()
-    if (s && !s.includes("VIVABET") && !s.includes("DAZNBET") && !s.includes("SCOMMETTENDO") && !s.includes("NAN")) {
+    if (s && !s.includes("VIVABET") && !s.includes("DAZNBET") && !s.includes("NAN")) {
       pvrT += parseNum(r["Giocato"])
       pvrG += parseNum(r["rake"]) || parseNum(r["ggr"])
       pvrA += parseNum(r["conti attivi"])
@@ -958,7 +958,7 @@ const Weekly = ({ data, prev, allData, theme }) => {
       </Section>
 
       {/* CHANNEL PERFORMANCE */}
-      <Section title="Channel Performance" sub="Turnover, GGR, Revenue Share (include DAZN Direct e AFFILIATES)" theme={C}>
+      <Section title="Channel Performance" theme={C}>
         <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
           <Table cols={[
             { header: 'Channel', accessor: 'channel', format: v => <span style={{ fontWeight: 700 }}>{v}</span> },
