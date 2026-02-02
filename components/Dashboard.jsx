@@ -72,6 +72,56 @@ const fmtNum = v => (!v || isNaN(v)) ? '0' : v.toLocaleString('it-IT')
 const calcChange = (cur, prev) => (!prev || prev===0) ? null : ((cur-prev)/prev*100).toFixed(1)
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// DATE NORMALIZATION - Gestisce diversi formati di data
+// ═══════════════════════════════════════════════════════════════════════════════
+const normalizeDate = (dateVal) => {
+  if (!dateVal) return null
+  try {
+    let d
+    if (dateVal instanceof Date) {
+      d = dateVal
+    } else if (typeof dateVal === 'number') {
+      // Excel serial date number
+      d = new Date((dateVal - 25569) * 86400 * 1000)
+    } else if (typeof dateVal === 'string') {
+      // Try parsing string - gestisce formati comuni
+      if (dateVal.includes('/')) {
+        // DD/MM/YYYY or MM/DD/YYYY
+        const parts = dateVal.split(/[\s\/]/)
+        if (parts.length >= 3) {
+          const day = parseInt(parts[0])
+          const month = parseInt(parts[1]) - 1
+          const year = parseInt(parts[2])
+          d = new Date(year, month, day)
+        }
+      } else {
+        d = new Date(dateVal)
+      }
+    } else {
+      return null
+    }
+    if (!d || isNaN(d.getTime())) return null
+    // Return YYYY-MM-DD
+    const yyyy = d.getFullYear()
+    const mm = String(d.getMonth() + 1).padStart(2, '0')
+    const dd = String(d.getDate()).padStart(2, '0')
+    return `${yyyy}-${mm}-${dd}`
+  } catch {
+    return null
+  }
+}
+
+const formatDateLabel = (dateKey) => {
+  if (!dateKey) return ''
+  try {
+    const d = new Date(dateKey)
+    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+  } catch {
+    return dateKey
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // CHANNEL CLASSIFICATION - UPDATED LOGIC
 // ═══════════════════════════════════════════════════════════════════════════════
 const classifyChannel = row => {
@@ -80,27 +130,21 @@ const classifyChannel = row => {
   const puntoVendita = String(row["Punto vendita"] || "").toLowerCase().trim()
   const codPunto = String(row["Cod Punto"] || "").toUpperCase().trim()
   
-  // VIVABET/GLADIATORE: SKIN=VIVABET + Promoter='nsg social web srl'
   if (skin.includes("VIVABET")) {
     if (promoter.includes("nsg social web")) return "VIVABET/GLAD"
     return "Tipster Academy"
   }
   
-  // DAZNBET channels
   if (skin.includes("DAZNBET") || skin.includes("SCOMMETTENDO")) {
-    // DAZNBET Organic: PV = www.daznbet.it o www.scommettendo.it
     if (puntoVendita.includes("www.daznbet.it") || puntoVendita.includes("www.scommettendo.it")) {
       return "DAZNBET Organic"
     }
-    // DAZN Direct: Promoter=DAZN/Funpoints o Cod Punto=DAZN_Superpronostico
     if (promoter.includes("dazn") || promoter.includes("funpoints") || codPunto.includes("DAZN_SUPERPRONOSTICO")) {
       return "DAZN Direct"
     }
-    // AFFILIATES: resto DAZNBET
     return "AFFILIATES"
   }
   
-  // PVR: Non DAZNBET/VIVABET e non www.scommettendo.it
   if (!puntoVendita.includes("www.scommettendo.it")) {
     return "PVR"
   }
@@ -109,7 +153,7 @@ const classifyChannel = row => {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// DATA PROCESSOR - UPDATED
+// DATA PROCESSOR - UPDATED with Fixed Daily REG
 // ═══════════════════════════════════════════════════════════════════════════════
 const processData = (files, weekNum, dateRange) => {
   const ana = files.anagrafica || []
@@ -120,20 +164,23 @@ const processData = (files, weekNum, dateRange) => {
   const academyTotal = files.academyTotal || []
   const organicTotal = files.organicTotal || []
   
-  // REGISTRATIONS: count rows from Anagrafica (Data Creazione)
+  // REGISTRATIONS: count rows from Anagrafica
   const reg = ana.length
   
-  // ═══ DAILY REG from Anagrafica - Group by date ═══
-  const dailyRegMap = {}
+  // ═══════════════════════════════════════════════════════════════════════════
+  // DAILY REG from Anagrafica.xlsx - Conta righe per giorno (Data Creazione)
+  // ═══════════════════════════════════════════════════════════════════════════
+  const dailyRegCount = {}
   ana.forEach(r => {
-    if (r["Data Creazione"]) {
-      const dateObj = new Date(r["Data Creazione"])
-      const dateKey = dateObj.toISOString().split('T')[0] // YYYY-MM-DD
-      const dateLabel = dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
-      if (!dailyRegMap[dateKey]) dailyRegMap[dateKey] = { date: dateLabel, dateKey, registrations: 0 }
-      dailyRegMap[dateKey].registrations++
+    const dateKey = normalizeDate(r["Data Creazione"])
+    if (dateKey) {
+      dailyRegCount[dateKey] = (dailyRegCount[dateKey] || 0) + 1
     }
   })
+  
+  // Debug: log delle date trovate
+  console.log("Daily REG counts from Anagrafica:", dailyRegCount)
+  console.log("Total REG:", reg)
   
   // Channel classification
   const channelGroups = {}
@@ -142,7 +189,6 @@ const processData = (files, weekNum, dateRange) => {
     if (!channelGroups[ch]) channelGroups[ch] = { rows: [], ages: [], ftds: 0 }
     channelGroups[ch].rows.push(r)
     if (r["Nato il"]) channelGroups[ch].ages.push(r["Nato il"])
-    // FTD: check "Primo deposito" column
     if (r["Primo deposito"]) channelGroups[ch].ftds++
   })
   
@@ -182,16 +228,18 @@ const processData = (files, weekNum, dateRange) => {
   totalsRow.avgAge = totalsRow.reg > 0 ? Math.round(totalAgeSum / totalsRow.reg) : 0
   qualityAcq.push(totalsRow)
 
-  // Daily stats from Anagrafica2
+  // ═══════════════════════════════════════════════════════════════════════════
+  // DAILY STATS from Anagrafica2.xlsx + merge REG da Anagrafica
+  // ═══════════════════════════════════════════════════════════════════════════
   const daily = ana2.map(r => {
-    const d = r["Data"]
-    const dateObj = d ? new Date(d) : null
-    const dateKey = dateObj ? dateObj.toISOString().split('T')[0] : ''
-    const dateLabel = dateObj ? dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : ''
+    const dateKey = normalizeDate(r["Data"])
+    const dateLabel = formatDateLabel(dateKey)
+    const regFromAnagrafica = dateKey ? (dailyRegCount[dateKey] || 0) : 0
+    
     return {
       date: dateLabel,
       dateKey,
-      registrations: dailyRegMap[dateKey]?.registrations || 0, // From Anagrafica!
+      registrations: regFromAnagrafica, // ← REG dal file Anagrafica!
       ftds: parseNum(r["Primo deposito"]) || 0,
       deposits: parseNum(r["Importo depositi"]) || 0,
       withdrawals: parseNum(r["Importo prelievi processati"]) || 0,
@@ -200,9 +248,11 @@ const processData = (files, weekNum, dateRange) => {
       depositCount: parseNum(r["Depositi"]) || 0,
       uniqueDepositors: parseNum(r["Depositanti unici"]) || 0
     }
-  })
+  }).filter(d => d.date) // Rimuovi righe senza data valida
   
-  // Aggregated stats from Anagrafica2
+  console.log("Daily stats with REG:", daily)
+  
+  // Aggregated stats
   const ftds = daily.reduce((s, d) => s + d.ftds, 0)
   const totalDep = daily.reduce((s, d) => s + d.deposits, 0)
   const totalWit = daily.reduce((s, d) => s + d.withdrawals, 0)
@@ -227,7 +277,7 @@ const processData = (files, weekNum, dateRange) => {
     }
   })
 
-  // Products from Anagrafica_CATEGORIA (colonna rake per GGR)
+  // Products from Anagrafica_CATEGORIA
   const products = cat.map(r => ({
     product: r["Categoria"] || '',
     turnover: parseNum(r["Giocato"]),
@@ -240,7 +290,7 @@ const processData = (files, weekNum, dateRange) => {
   const chanPerf = []
   let totGgr = 0
   
-  // PVR: SKIN not VIVABET/DAZNBET
+  // PVR
   let pvrT = 0, pvrG = 0, pvrA = 0
   skinTotal.forEach(r => {
     const s = String(r["Skin"] || "").toUpperCase()
@@ -287,7 +337,6 @@ const processData = (files, weekNum, dateRange) => {
     totGgr += oG
   }
   
-  // Revenue Share
   chanPerf.forEach(c => { c.revShare = totGgr > 0 ? parseFloat((c.ggr / totGgr * 100).toFixed(1)) : 0 })
 
   // Demographics
@@ -309,12 +358,12 @@ const processData = (files, weekNum, dateRange) => {
   })
   const totAges = Object.values(ageGroups).reduce((a, b) => a + b, 0)
   
-  // Provinces (Top 8)
+  // Provinces
   const provCount = {}
   ana.forEach(r => { const p = r["Provincia di residenza"]; if (p) provCount[p] = (provCount[p] || 0) + 1 })
   const provinces = Object.entries(provCount).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name, count]) => ({ name, count }))
   
-  // Top Sources from Cod Punto (Top 5)
+  // Top Sources from Cod Punto
   const srcCount = {}
   ana.forEach(r => { const s = r["Cod Punto"]; if (s) srcCount[s] = (srcCount[s] || 0) + 1 })
   const sources = Object.entries(srcCount).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, count]) => ({ name: name.substring(0, 20), count }))
@@ -354,7 +403,6 @@ const processData = (files, weekNum, dateRange) => {
       customerValue: actives > 0 ? Math.round(ggr / actives) : 0,
       loginPerUser: actives > 0 ? parseFloat((totalLogins / actives).toFixed(1)) : 0,
       newPlayersRatio: actives > 0 ? parseFloat((ftds / actives * 100).toFixed(1)) : 0,
-      // Raw values for explanations
       _ggr: ggr,
       _bonus: totalBonus,
       _logins: totalLogins,
@@ -412,7 +460,7 @@ const KPI = ({ label, value, sub, change, delay = 0, cur = false, pct = false, i
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// CHART COMPONENTS with BOLD numbers
+// CHART COMPONENTS
 // ═══════════════════════════════════════════════════════════════════════════════
 const Tip = ({ active, payload, label, theme }) => {
   const C = theme || THEMES.dark
@@ -518,7 +566,7 @@ const UploadPage = ({ weeksData, onUpload, onDelete, theme }) => {
       await onUpload(proc)
       setMsg({ t: 'success', m: exists ? `Week ${week} aggiornata!` : `Week ${week} caricata!` })
       setWeek(''); setDates(''); setFiles({})
-    } catch { setMsg({ t: 'error', m: 'Errore elaborazione' }) }
+    } catch (err) { console.error(err); setMsg({ t: 'error', m: 'Errore elaborazione' }) }
     setLoading(false)
   }
 
@@ -672,7 +720,7 @@ const Monthly = ({ weeksData, theme }) => {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// WEEKLY REPORT - MAIN VIEW
+// WEEKLY REPORT
 // ═══════════════════════════════════════════════════════════════════════════════
 const Weekly = ({ data, prev, allData, theme }) => {
   const C = theme
@@ -697,7 +745,7 @@ const Weekly = ({ data, prev, allData, theme }) => {
           <KPI label="GWM" value={data.gwm} sub={prev ? `${(data.gwm - prev.gwm) >= 0 ? '+' : ''}${(data.gwm - prev.gwm).toFixed(1)}pp` : null} pct icon="📊" delay={250} theme={C} />
         </div>
 
-        {/* Weekly Actives Highlight + Top 3 Products */}
+        {/* Weekly Actives + Top 3 Products */}
         <div style={{ background: `linear-gradient(135deg, ${C.card} 0%, ${C.bg} 100%)`, borderRadius: '12px', padding: 'clamp(20px, 3vw, 32px)', border: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '24px' }}>
           <div>
             <p style={{ color: C.textMuted, fontSize: 'clamp(11px, 1.2vw, 14px)', fontWeight: 700, textTransform: 'uppercase', margin: '0 0 6px 0' }}>Weekly Active Users</p>
@@ -705,7 +753,6 @@ const Weekly = ({ data, prev, allData, theme }) => {
             {actCh && <p style={{ color: parseFloat(actCh) >= 0 ? C.success : C.danger, fontSize: '14px', fontWeight: 700, margin: '8px 0 0 0' }}>{parseFloat(actCh) > 0 ? '▲' : '▼'} {Math.abs(parseFloat(actCh))}% vs prev week</p>}
           </div>
           
-          {/* Top 3 Products Actives */}
           <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
             {(data.top3Products || []).map((prod, i) => (
               <div key={i} style={{ textAlign: 'center', minWidth: '80px' }}>
@@ -757,24 +804,16 @@ const Weekly = ({ data, prev, allData, theme }) => {
           </ChartCard>
         </div>
 
-        {/* Demographics Row */}
+        {/* Demographics */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 'clamp(16px, 2vw, 24px)' }}>
-          {/* Gender */}
           <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}`, textAlign: 'center' }}>
             <h4 style={{ color: C.textMuted, margin: '0 0 16px 0', fontSize: '11px', textTransform: 'uppercase', fontWeight: 700 }}>Gender Split</h4>
             <div style={{ display: 'flex', justifyContent: 'center', gap: '32px' }}>
-              <div>
-                <p style={{ color: C.blue, fontSize: '36px', fontWeight: 900, margin: 0 }}>{data.demographics?.male || 0}%</p>
-                <p style={{ color: C.textMuted, fontSize: '12px', fontWeight: 600 }}>Male</p>
-              </div>
-              <div>
-                <p style={{ color: C.purple, fontSize: '36px', fontWeight: 900, margin: 0 }}>{data.demographics?.female || 0}%</p>
-                <p style={{ color: C.textMuted, fontSize: '12px', fontWeight: 600 }}>Female</p>
-              </div>
+              <div><p style={{ color: C.blue, fontSize: '36px', fontWeight: 900, margin: 0 }}>{data.demographics?.male || 0}%</p><p style={{ color: C.textMuted, fontSize: '12px', fontWeight: 600 }}>Male</p></div>
+              <div><p style={{ color: C.purple, fontSize: '36px', fontWeight: 900, margin: 0 }}>{data.demographics?.female || 0}%</p><p style={{ color: C.textMuted, fontSize: '12px', fontWeight: 600 }}>Female</p></div>
             </div>
           </div>
 
-          {/* Age */}
           <ChartCard title="Age Distribution" height={140} theme={C}>
             <BarChart data={data.ageGroups || []}>
               <XAxis dataKey="range" tick={{ fill: C.textMuted, fontSize: 9, fontWeight: 700 }} />
@@ -786,7 +825,6 @@ const Weekly = ({ data, prev, allData, theme }) => {
             </BarChart>
           </ChartCard>
 
-          {/* Provinces */}
           <ChartCard title="Top Provinces" height={140} theme={C}>
             <BarChart data={(data.provinces || []).slice(0, 5)} layout="vertical">
               <XAxis type="number" hide />
@@ -799,7 +837,7 @@ const Weekly = ({ data, prev, allData, theme }) => {
       </Section>
 
       {/* QUALITY ACQUISITION */}
-      <Section title="Quality Acquisition" sub="Performance per canale di acquisizione (con riga TOTALI)" theme={C}>
+      <Section title="Quality Acquisition" sub="Performance per canale (con TOTALI)" theme={C}>
         <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
           <Table cols={[
             { header: 'Channel', accessor: 'channel', format: (v, r) => <span style={{ fontWeight: r.isTotal ? 900 : 700, color: r.isTotal ? C.primary : C.text }}>{v}</span> },
@@ -810,7 +848,7 @@ const Weekly = ({ data, prev, allData, theme }) => {
             { header: 'Avg Age', accessor: 'avgAge', align: 'center', format: v => <b>{v}</b> }
           ]} data={data.qualityAcquisition || []} theme={C} />
 
-          <ChartCard title="Conversion Rate by Channel" height={220} theme={C}>
+          <ChartCard title="Conversion by Channel" height={220} theme={C}>
             <BarChart data={(data.qualityAcquisition || []).filter(c => !c.isTotal)} layout="vertical">
               <XAxis type="number" domain={[0, 80]} tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} />
               <YAxis dataKey="channel" type="category" width={100} tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} />
@@ -824,7 +862,7 @@ const Weekly = ({ data, prev, allData, theme }) => {
       </Section>
 
       {/* CHANNEL PERFORMANCE */}
-      <Section title="Channel Performance" sub="Turnover, GGR e Revenue Share per canale" theme={C}>
+      <Section title="Channel Performance" sub="Turnover, GGR, Revenue Share" theme={C}>
         <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
           <Table cols={[
             { header: 'Channel', accessor: 'channel', format: v => <span style={{ fontWeight: 700 }}>{v}</span> },
@@ -848,7 +886,7 @@ const Weekly = ({ data, prev, allData, theme }) => {
       </Section>
 
       {/* PRODUCT PERFORMANCE */}
-      <Section title="Product Performance" sub="Performance per categoria di gioco" theme={C}>
+      <Section title="Product Performance" sub="Per categoria di gioco" theme={C}>
         <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
           <Table cols={[
             { header: 'Product', accessor: 'product', format: v => <span style={{ fontWeight: 700 }}>{v}</span> },
@@ -872,7 +910,7 @@ const Weekly = ({ data, prev, allData, theme }) => {
       </Section>
 
       {/* FINANCIAL HEALTH with Explanations */}
-      <Section title="Financial Health" sub="Indicatori finanziari e cash flow" theme={C}>
+      <Section title="Financial Health" sub="Indicatori finanziari" theme={C}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'clamp(12px, 1.5vw, 16px)', marginBottom: 'clamp(20px, 2.5vw, 28px)' }}>
           <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}` }}>
             <p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', margin: '0 0 8px 0' }}>Withdrawal Ratio</p>
@@ -918,7 +956,7 @@ const Weekly = ({ data, prev, allData, theme }) => {
             </BarChart>
           </ChartCard>
 
-          <ChartCard title="Daily Bonus Distribution" theme={C}>
+          <ChartCard title="Daily Bonus" theme={C}>
             <AreaChart data={data.dailyStats || []}>
               <defs>
                 <linearGradient id="bG" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.orange} stopOpacity={0.4} /><stop offset="95%" stopColor={C.orange} stopOpacity={0} /></linearGradient>
@@ -955,7 +993,7 @@ export default function Dashboard() {
   const [selected, setSelected] = useState(null)
   const [loading, setLoading] = useState(true)
   const [db, setDb] = useState({ connected: false })
-  const [isDark, setIsDark] = useState(true) // B&W Toggle
+  const [isDark, setIsDark] = useState(true)
 
   const C = isDark ? THEMES.dark : THEMES.light
 
@@ -1005,7 +1043,6 @@ export default function Dashboard() {
       {/* HEADER */}
       <header style={{ background: C.bg, padding: 'clamp(12px, 1.5vw, 16px) clamp(20px, 3vw, 48px)', position: 'sticky', top: 0, zIndex: 100, borderBottom: `1px solid ${C.border}` }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
-          {/* Logo & Title */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 'clamp(12px, 2vw, 20px)' }}>
             <img src="/logo.png" alt="DAZN Bet" style={{ height: '40px' }} />
             <div>
@@ -1019,9 +1056,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Navigation + Theme Toggle */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            {/* B&W Toggle */}
             <button onClick={() => setIsDark(!isDark)} style={{
               background: C.card,
               color: C.text,
@@ -1038,7 +1073,6 @@ export default function Dashboard() {
               {isDark ? '☀️' : '🌙'} {isDark ? 'Light' : 'Dark'}
             </button>
 
-            {/* Tabs */}
             <div style={{ display: 'flex', gap: '6px' }}>
               {[{ id: 'weekly', label: 'Weekly' }, { id: 'monthly', label: 'Monthly' }, { id: 'upload', label: 'Upload' }].map(t => (
                 <button key={t.id} onClick={() => setTab(t.id)} style={{
@@ -1058,7 +1092,6 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Week Selector */}
           {tab === 'weekly' && weekNums.length > 0 && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <select value={selected || ''} onChange={e => setSelected(Number(e.target.value))} style={{
@@ -1080,7 +1113,6 @@ export default function Dashboard() {
         </div>
       </header>
 
-      {/* CONTENT */}
       <main>
         {tab === 'weekly' && <Weekly data={current} prev={prev} allData={weeks} theme={C} />}
         {tab === 'monthly' && <Monthly weeksData={weeks} theme={C} />}
