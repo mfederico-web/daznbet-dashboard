@@ -399,49 +399,6 @@ const Section = ({ title, children, theme, id }) => {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// PDF EXPORT
-// ═══════════════════════════════════════════════════════════════════════════════
-const exportToPDF = async (elementId, filename, theme) => {
-  const C = theme
-  try {
-    const html2canvas = (await import('html2canvas')).default
-    const { jsPDF } = await import('jspdf')
-    
-    const element = document.getElementById(elementId)
-    if (!element) { alert('Elemento non trovato'); return }
-    
-    const canvas = await html2canvas(element, { scale: 2, backgroundColor: C.bg, useCORS: true, logging: false })
-    const imgData = canvas.toDataURL('image/png')
-    
-    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-    const pdfWidth = pdf.internal.pageSize.getWidth()
-    const pdfHeight = pdf.internal.pageSize.getHeight()
-    const imgWidth = canvas.width
-    const imgHeight = canvas.height
-    const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight)
-    const imgX = (pdfWidth - imgWidth * ratio) / 2
-    
-    let heightLeft = imgHeight * ratio
-    let position = 0
-    
-    pdf.addImage(imgData, 'PNG', imgX, position, imgWidth * ratio, imgHeight * ratio)
-    heightLeft -= pdfHeight
-    
-    while (heightLeft > 0) {
-      position = heightLeft - imgHeight * ratio
-      pdf.addPage()
-      pdf.addImage(imgData, 'PNG', imgX, position, imgWidth * ratio, imgHeight * ratio)
-      heightLeft -= pdfHeight
-    }
-    
-    pdf.save(filename)
-  } catch (err) {
-    console.error('PDF Export error:', err)
-    alert('Errore durante l\'esportazione PDF. Assicurati che html2canvas e jspdf siano installati.')
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
 // LOGIN COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
 const LoginGate = ({ onLogin, theme }) => {
@@ -745,9 +702,8 @@ const Monthly = ({ weeksData, theme }) => {
           </div>
         )}
 
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{ marginLeft: 'auto' }}>
           <span style={{ color: C.primary, fontSize: '14px', fontWeight: 800 }}>{periodLabel}</span>
-          <button onClick={() => exportToPDF('monthly-report', `DAZN_Monthly_${periodLabel.replace(/\s/g, '_')}.pdf`, C)} style={{ background: C.danger, color: '#fff', border: 'none', borderRadius: '6px', padding: '8px 16px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>📄 PDF</button>
         </div>
       </div>
 
@@ -872,11 +828,6 @@ const Weekly = ({ data, prev, theme }) => {
 
   return (
     <div id="weekly-report" style={{ padding: 'clamp(20px, 3vw, 48px)' }}>
-      {/* PDF Export Button */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
-        <button onClick={() => exportToPDF('weekly-report', `DAZN_Week${data.weekNumber}_2026.pdf`, C)} style={{ background: C.danger, color: '#fff', border: 'none', borderRadius: '6px', padding: '10px 20px', fontSize: '13px', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>📄 Esporta PDF</button>
-      </div>
-
       <Section title="Trading Summary" theme={C}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 'clamp(12px, 1.5vw, 16px)', marginBottom: 'clamp(20px, 2.5vw, 28px)' }}>
           <KPI label="Registrations" value={data.registrations} change={regCh} icon="👤" delay={0} theme={C} />
