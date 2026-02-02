@@ -1054,13 +1054,15 @@ export default function Dashboard() {
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <button onClick={() => setIsDark(!isDark)} style={{ background: C.card, color: C.text, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '8px 12px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>{isDark ? '☀️' : '🌙'} {isDark ? 'Light' : 'Dark'}</button>
-            <button onClick={handleLogout} style={{ background: 'transparent', color: C.danger, border: `1px solid ${C.danger}`, borderRadius: '6px', padding: '8px 12px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', opacity: 0.7 }} title="Logout">🚪</button>
             <div style={{ display: 'flex', gap: '6px' }}>
-              {[{ id: 'weekly', label: 'Weekly' }, { id: 'monthly', label: 'Monthly' }, { id: 'upload', label: 'Upload' }].map(t => (
+              {[{ id: 'weekly', label: '📊 Weekly' }, { id: 'monthly', label: '📅 Monthly' }].map(t => (
                 <button key={t.id} onClick={() => setTab(t.id)} style={{ background: tab === t.id ? C.primary : 'transparent', color: tab === t.id ? C.primaryText : C.textSec, border: `1px solid ${tab === t.id ? C.primary : C.border}`, borderRadius: '6px', padding: 'clamp(8px, 1vw, 10px) clamp(14px, 2vw, 20px)', fontSize: 'clamp(11px, 1.2vw, 13px)', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s' }}>{t.label}</button>
               ))}
             </div>
+            <div style={{ width: '1px', height: '24px', background: C.border }} />
+            <button onClick={() => setTab('upload')} style={{ background: tab === 'upload' ? C.danger : 'transparent', color: tab === 'upload' ? '#FFF' : C.textMuted, border: `1px solid ${tab === 'upload' ? C.danger : C.border}`, borderRadius: '6px', padding: 'clamp(8px, 1vw, 10px) clamp(14px, 2vw, 20px)', fontSize: 'clamp(11px, 1.2vw, 13px)', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s' }}>🔒 Admin</button>
+            <button onClick={() => setIsDark(!isDark)} style={{ background: C.card, color: C.text, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '8px 12px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>{isDark ? '☀️' : '🌙'} {isDark ? 'Light' : 'Dark'}</button>
+            <button onClick={handleLogout} style={{ background: 'transparent', color: C.danger, border: `1px solid ${C.danger}`, borderRadius: '6px', padding: '8px 12px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', opacity: 0.7 }} title="Logout">🚪</button>
           </div>
           {tab === 'weekly' && weekNums.length > 0 && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
