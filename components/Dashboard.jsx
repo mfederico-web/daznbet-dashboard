@@ -953,7 +953,7 @@ const Weekly = ({ data, prev, theme }) => {
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '24px' }}><img src="/logo.png" alt="DAZN Bet" style={{ height: '60px' }} /></div>
         <h2 style={{ color: C.accent, fontSize: 'clamp(28px, 4vw, 40px)', fontWeight: 900, margin: '0 0 8px 0' }}>Thank You</h2>
         <p style={{ color: C.text, fontSize: 'clamp(14px, 1.8vw, 18px)', margin: '0 0 4px 0', fontWeight: 600 }}>Weekly Trading Report • Week {data.weekNumber} 2026</p>
-        <p style={{ color: C.textMuted, fontSize: 'clamp(12px, 1.4vw, 16px)', margin: 0 }}>DAZN Bet Italy</p>
+        <p style={{ color: C.textMuted, fontSize: 'clamp(12px, 1.4vw, 16px)', margin: 0 }}>DAZN Bet Italy <span style={{ margin: '0 8px', opacity: 0.4 }}>•</span> <span style={{ fontStyle: 'italic', opacity: 0.7 }}>by Massimino Federico</span></p>
       </div>
     </div>
   )
