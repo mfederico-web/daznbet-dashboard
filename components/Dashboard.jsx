@@ -317,8 +317,8 @@ const processData = (files, weekNum, dateRange) => {
     weekNumber: weekNum, dateRange, registrations: reg, ftds, conversionRate: reg > 0 ? parseFloat((ftds / reg * 100).toFixed(1)) : 0,
     avgFirstDeposit: ftds > 0 ? Math.round(avgFirstDepSum / ftds) : 0, totalDeposits: totalDep, totalWithdrawals: totalWit, netDeposit: totalDep - totalWit,
     turnover, ggr, gwm: turnover > 0 ? parseFloat((ggr / turnover * 100).toFixed(1)) : 0, activeUsers: actives, top3Products, totalLogins, totalBonus,
-    demographics: { male: totGender > 0 ? Math.round(genderCount.M / totGender * 100) : 0, female: totGender > 0 ? Math.round(genderCount.F / totGender * 100) : 0 },
-    ageGroups: Object.entries(ageGroups).map(([range, count]) => ({ range, percent: totAges > 0 ? Math.round(count / totAges * 100) : 0 })),
+    demographics: { male: totGender > 0 ? Math.round(genderCount.M / totGender * 100) : 0, female: totGender > 0 ? Math.round(genderCount.F / totGender * 100) : 0, _maleCount: genderCount.M, _femaleCount: genderCount.F },
+    ageGroups: Object.entries(ageGroups).map(([range, count]) => ({ range, count, percent: totAges > 0 ? Math.round(count / totAges * 100) : 0 })),
     provinces, topSources: sources, dailyStats: daily, qualityAcquisition: qualityAcq.map(({ _activatedCount, _ageSum, _ageCount, ...rest }) => rest), channelPerformance: chanPerf, productPerformance: products,
     financialHealth: {
       withdrawalRatio: totalDep > 0 ? parseFloat((totalWit / totalDep * 100).toFixed(1)) : 0,
@@ -330,6 +330,33 @@ const processData = (files, weekNum, dateRange) => {
     }
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SVG ICONS (monochrome, theme-aware)
+// ═══════════════════════════════════════════════════════════════════════════════
+const ICON_PATHS = {
+  user: 'M12 12c2.7 0 5-2.3 5-5s-2.3-5-5-5-5 2.3-5 5 2.3 5 5 5zm0 2c-3.3 0-10 1.7-10 5v2h20v-2c0-3.3-6.7-5-10-5z',
+  card: 'M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H4V10h16v8zm0-10H4V6h16v2z',
+  wallet: 'M21 7H3c-1.1 0-2 .9-2 2v6c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V9c0-1.1-.9-2-2-2zm-1 8H4V9h16v6zm-3-3.5c-.8 0-1.5-.7-1.5-1.5s.7-1.5 1.5-1.5 1.5.7 1.5 1.5-.7 1.5-1.5 1.5zM21 4H3v2h18V4zM3 18h18v2H3v-2z',
+  activity: 'M22 12h-4l-3 9L9 3l-3 9H2',
+  trending: 'M16 6l2.3 2.3-5.6 5.6-4-4L2 16.6 3.4 18l5.3-5.3 4 4 7-7L22 12V6z',
+  chart: 'M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z',
+  users: 'M16 11c1.7 0 3-1.3 3-3s-1.3-3-3-3-3 1.3-3 3 1.3 3 3 3zm-8 0c1.7 0 3-1.3 3-3S9.7 5 8 5 5 6.3 5 8s1.3 3 3 3zm0 2c-2.3 0-7 1.2-7 3.5V19h14v-2.5c0-2.3-4.7-3.5-7-3.5zm8 0c-.3 0-.6 0-1 .1 1.2.8 2 2 2 3.4V19h6v-2.5c0-2.3-4.7-3.5-7-3.5z',
+  lock: 'M18 8h-1V6c0-2.8-2.2-5-5-5S7 3.2 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM12 17c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.7 1.4-3.1 3.1-3.1 1.7 0 3.1 1.4 3.1 3.1v2z',
+  logout: 'M17 7l-1.4 1.4L18.2 11H8v2h10.2l-2.6 2.6L17 17l5-5-5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z',
+  sun: 'M12 7c-2.8 0-5 2.2-5 5s2.2 5 5 5 5-2.2 5-5-2.2-5-5-5zM2 13h2c.6 0 1-.4 1-1s-.4-1-1-1H2c-.6 0-1 .4-1 1s.4 1 1 1zm18 0h2c.6 0 1-.4 1-1s-.4-1-1-1h-2c-.6 0-1 .4-1 1s.4 1 1 1zM11 2v2c0 .6.4 1 1 1s1-.4 1-1V2c0-.6-.4-1-1-1s-1 .4-1 1zm0 18v2c0 .6.4 1 1 1s1-.4 1-1v-2c0-.6-.4-1-1-1s-1 .4-1 1zM5.99 4.58a1 1 0 00-1.41 1.41l1.06 1.06a1 1 0 001.41-1.41L5.99 4.58zm12.37 12.37a1 1 0 00-1.41 1.41l1.06 1.06a1 1 0 001.41-1.41l-1.06-1.06zm1.06-12.37a1 1 0 00-1.41 0l-1.06 1.06a1 1 0 001.41 1.41l1.06-1.06a1 1 0 000-1.41zM7.05 18.36a1 1 0 00-1.41 0l-1.06 1.06a1 1 0 001.41 1.41l1.06-1.06a1 1 0 000-1.41z',
+  moon: 'M12 3a9 9 0 109 9c0-.5 0-.9-.1-1.4A5.5 5.5 0 0113.4 3.1c-.5-.1-.9-.1-1.4-.1z',
+  upload: 'M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5v-2z',
+  calendar: 'M19 3h-1V1h-2v2H8V1H6v2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM9 10H7v2h2v-2zm4 0h-2v2h2v-2zm4 0h-2v2h2v-2z',
+  box: 'M20.5 5.2l-8-3.2c-.3-.1-.7-.1-1 0l-8 3.2C3.2 5.3 3 5.6 3 6v12c0 .4.2.7.5.9l8 3.2c.2.1.3.1.5.1s.3 0 .5-.1l8-3.2c.3-.1.5-.5.5-.9V6c0-.4-.2-.7-.5-.8zM12 4l6.5 2.6L12 9.2 5.5 6.6 12 4zM5 7.8l6 2.4v9.5l-6-2.4V7.8zm8 11.9V10.2l6-2.4v9.5l-6 2.4z',
+  percent: 'M7.5 11C9.4 11 11 9.4 11 7.5S9.4 4 7.5 4 4 5.6 4 7.5 5.6 11 7.5 11zm0-5C8.3 6 9 6.7 9 7.5S8.3 9 7.5 9 6 8.3 6 7.5 6.7 6 7.5 6zM16.5 13c-1.9 0-3.5 1.6-3.5 3.5s1.6 3.5 3.5 3.5 3.5-1.6 3.5-3.5-1.6-3.5-3.5-3.5zm0 5c-.8 0-1.5-.7-1.5-1.5s.7-1.5 1.5-1.5 1.5.7 1.5 1.5-.7 1.5-1.5 1.5zM5.6 20L20 5.6 18.4 4 4 18.4 5.6 20z',
+}
+
+const Icon = ({ name, size = 16, color }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill={color} style={{ flexShrink: 0 }}>
+    <path d={ICON_PATHS[name] || ICON_PATHS.chart} />
+  </svg>
+)
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // UI COMPONENTS
@@ -354,7 +381,7 @@ const KPI = ({ label, value, sub, change, delay = 0, cur = false, pct = false, i
     <div style={{ background: C.card, borderRadius: '12px', padding: 'clamp(16px, 2vw, 24px)', border: `1px solid ${C.border}`, opacity: vis ? 1 : 0, transform: vis ? 'translateY(0)' : 'translateY(15px)', transition: 'all 0.4s ease' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
         <span style={{ color: C.textMuted, fontSize: 'clamp(10px, 1.1vw, 12px)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{label}</span>
-        {icon && <span style={{ fontSize: '16px', opacity: 0.5 }}>{icon}</span>}
+        {icon && <Icon name={icon} size={16} color={C.textMuted} />}
       </div>
       <p style={{ color: C.text, fontSize: 'clamp(24px, 3vw, 36px)', fontWeight: 800, margin: '0 0 4px 0', fontFamily: 'Oscine, system-ui' }}>{display}</p>
       {sub && <p style={{ color: C.textMuted, fontSize: 'clamp(10px, 1vw, 12px)', margin: 0 }}>{sub}</p>}
@@ -477,7 +504,7 @@ const UploadPage = ({ weeksData, onUpload, onDelete, onLogout, theme }) => {
   if (!uploadAuth) return (
     <div style={{ padding: 'clamp(40px, 5vw, 80px)', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
       <div style={{ background: C.card, borderRadius: '16px', padding: '40px', border: `1px solid ${C.border}`, maxWidth: '400px', width: '100%', textAlign: 'center' }}>
-        <div style={{ width: '60px', height: '60px', background: C.danger + '15', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px' }}><span style={{ fontSize: '28px' }}>🔐</span></div>
+        <div style={{ width: '60px', height: '60px', background: C.danger + '15', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px' }}><Icon name="lock" size={28} color={C.danger} /></div>
         <h2 style={{ color: C.text, fontSize: '24px', fontWeight: 800, margin: '0 0 8px 0' }}>Area Riservata</h2>
         <p style={{ color: C.textMuted, fontSize: '14px', margin: '0 0 32px 0' }}>Serve una password aggiuntiva per accedere all'upload</p>
         <input type="password" value={uploadPwd} onChange={e => setUploadPwd(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleUploadLogin()} placeholder="Password Upload" style={{ width: '100%', background: C.bg, border: `2px solid ${uploadError ? C.danger : C.border}`, borderRadius: '10px', padding: '14px 18px', color: C.text, fontSize: '16px', marginBottom: '16px', textAlign: 'center', letterSpacing: '4px', outline: 'none' }} />
@@ -570,12 +597,12 @@ const UploadPage = ({ weeksData, onUpload, onDelete, onLogout, theme }) => {
     <div style={{ padding: 'clamp(20px, 3vw, 48px)' }}>
       <Section title="Upload Week Data" theme={C}>
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
-          <button onClick={handleLogout} style={{ background: 'transparent', color: C.danger, border: `1px solid ${C.danger}`, borderRadius: '6px', padding: '8px 16px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>🚪 Logout</button>
+          <button onClick={handleLogout} style={{ background: 'transparent', color: C.danger, border: `1px solid ${C.danger}`, borderRadius: '6px', padding: '8px 16px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}><Icon name="logout" size={14} color={C.danger} /> Logout</button>
         </div>
         
         {/* UPLOAD MASSIVO */}
         <div style={{ background: C.primary + '10', border: `2px dashed ${C.primary}`, borderRadius: '12px', padding: '24px', marginBottom: '24px', textAlign: 'center' }}>
-          <h3 style={{ color: C.accent, margin: '0 0 8px 0', fontSize: '16px', fontWeight: 800 }}>📦 Upload Massivo</h3>
+          <h3 style={{ color: C.accent, margin: '0 0 8px 0', fontSize: '16px', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}><Icon name="upload" size={18} color={C.accent} /> Upload Massivo</h3>
           <p style={{ color: C.textMuted, fontSize: '13px', margin: '0 0 16px 0' }}>Seleziona tutti i 10 file Excel insieme - verranno riconosciuti automaticamente</p>
           <input ref={bulkInputRef} type="file" accept=".xlsx,.xls" multiple onChange={handleBulkUpload} style={{ display: 'none' }} />
           <button onClick={() => bulkInputRef.current?.click()} disabled={loading} style={{ background: C.primary, color: C.primaryText, border: 'none', borderRadius: '8px', padding: '12px 32px', fontSize: '14px', fontWeight: 800, cursor: 'pointer' }}>
@@ -601,7 +628,7 @@ const UploadPage = ({ weeksData, onUpload, onDelete, onLogout, theme }) => {
         </div>
 
         <details style={{ marginBottom: '24px' }}>
-          <summary style={{ color: C.textSec, fontSize: '13px', cursor: 'pointer', fontWeight: 700, marginBottom: '12px' }}>📁 Upload Singolo (clicca per espandere)</summary>
+          <summary style={{ color: C.textSec, fontSize: '13px', cursor: 'pointer', fontWeight: 700, marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}><Icon name="box" size={14} color={C.textSec} /> Upload Singolo (clicca per espandere)</summary>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px' }}>
             {FILES.map((f, i) => {
               const up = files[f.key]
@@ -719,6 +746,30 @@ const Monthly = ({ weeksData, theme }) => {
   weeks.forEach(w => (w.productPerformance || []).forEach(p => { if (!productAgg[p.product]) productAgg[p.product] = { product: p.product, turnover: 0, ggr: 0, actives: 0 }; productAgg[p.product].turnover += p.turnover || 0; productAgg[p.product].ggr += p.ggr || 0; productAgg[p.product].actives += p.actives || 0 }))
   const productData = Object.values(productAgg).map(p => ({ ...p, actives: Math.round(p.actives / weeks.length) })).sort((a, b) => b.ggr - a.ggr)
 
+  // Gender Split aggregation
+  let totalMale = 0, totalFemale = 0
+  weeks.forEach(w => {
+    const d = w.demographics
+    if (d) {
+      // Use raw counts if available, otherwise estimate from percentages
+      if (d._maleCount != null) { totalMale += d._maleCount; totalFemale += d._femaleCount }
+      else { totalMale += Math.round((d.male || 0) / 100 * (w.registrations || 0)); totalFemale += Math.round((d.female || 0) / 100 * (w.registrations || 0)) }
+    }
+  })
+  const totalGender = totalMale + totalFemale
+  const aggGender = { male: totalGender > 0 ? Math.round(totalMale / totalGender * 100) : 0, female: totalGender > 0 ? Math.round(totalFemale / totalGender * 100) : 0, _maleCount: totalMale, _femaleCount: totalFemale }
+
+  // Age Distribution aggregation
+  const ageAcc = { "18-24": 0, "25-34": 0, "35-44": 0, "45-54": 0, "55-64": 0, "65+": 0 }
+  weeks.forEach(w => {
+    (w.ageGroups || []).forEach(ag => {
+      if (ag.count != null) ageAcc[ag.range] = (ageAcc[ag.range] || 0) + ag.count
+      else ageAcc[ag.range] = (ageAcc[ag.range] || 0) + Math.round((ag.percent || 0) / 100 * (w.registrations || 0))
+    })
+  })
+  const totalAgeCount = Object.values(ageAcc).reduce((s, v) => s + v, 0)
+  const aggAge = Object.entries(ageAcc).map(([range, count]) => ({ range, count, percent: totalAgeCount > 0 ? Math.round(count / totalAgeCount * 100) : 0 }))
+
   const weekNums = allWeeks.map(w => w.weekNumber)
 
   return (
@@ -754,12 +805,12 @@ const Monthly = ({ weeksData, theme }) => {
 
       <Section title="Trading Summary" theme={C}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 'clamp(12px, 1.5vw, 16px)', marginBottom: 'clamp(24px, 3vw, 40px)' }}>
-          <KPI label="Total REG" value={tot.reg} icon="👤" delay={0} theme={C} />
-          <KPI label="Total FTDs" value={tot.ftds} sub={`Conv: ${(tot.ftds / tot.reg * 100).toFixed(1)}%`} icon="💳" delay={50} theme={C} />
-          <KPI label="Net Deposit" value={tot.dep - tot.wit} cur icon="💰" delay={100} theme={C} />
-          <KPI label="Turnover" value={tot.turn} cur icon="🎰" delay={150} theme={C} />
-          <KPI label="GGR" value={tot.ggr} sub={`GWM: ${(tot.ggr / tot.turn * 100).toFixed(1)}%`} cur icon="📈" delay={200} theme={C} />
-          <KPI label="Avg Actives" value={avgAct} icon="👥" delay={250} theme={C} />
+          <KPI label="Total REG" value={tot.reg} icon="user" delay={0} theme={C} />
+          <KPI label="Total FTDs" value={tot.ftds} sub={`Conv: ${(tot.ftds / tot.reg * 100).toFixed(1)}%`} icon="card" delay={50} theme={C} />
+          <KPI label="Net Deposit" value={tot.dep - tot.wit} cur icon="wallet" delay={100} theme={C} />
+          <KPI label="Turnover" value={tot.turn} cur icon="activity" delay={150} theme={C} />
+          <KPI label="GGR" value={tot.ggr} sub={`GWM: ${(tot.ggr / tot.turn * 100).toFixed(1)}%`} cur icon="trending" delay={200} theme={C} />
+          <KPI label="Avg Actives" value={avgAct} icon="users" delay={250} theme={C} />
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : 'repeat(auto-fit, minmax(380px, 1fr))', gap: 'clamp(16px, 2vw, 24px)', marginBottom: 'clamp(24px, 3vw, 40px)' }}>
@@ -854,6 +905,48 @@ const Monthly = ({ weeksData, theme }) => {
           </ChartCard>
         </div>
       </Section>
+
+      <Section title="Demographics" theme={C}>
+        <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '1fr 1.5fr', gap: 'clamp(16px, 2vw, 24px)' }}>
+          <div style={{ background: C.card, borderRadius: '12px', padding: 'clamp(20px, 3vw, 32px)', border: `1px solid ${C.border}` }}>
+            <h4 style={{ color: C.textMuted, margin: '0 0 24px 0', fontSize: '11px', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '1px' }}>Gender Split</h4>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '48px', marginBottom: '24px' }}>
+              <div style={{ textAlign: 'center' }}>
+                <p style={{ color: C.text, fontSize: 'clamp(32px, 4vw, 44px)', fontWeight: 900, margin: 0 }}>{aggGender.male}%</p>
+                <p style={{ color: C.textMuted, fontSize: '12px', fontWeight: 700, margin: '4px 0 0 0', textTransform: 'uppercase' }}>Male</p>
+                <p style={{ color: C.textMuted, fontSize: '11px', margin: '2px 0 0 0' }}>{fmtNum(totalMale)}</p>
+              </div>
+              <div style={{ width: '1px', background: C.border }} />
+              <div style={{ textAlign: 'center' }}>
+                <p style={{ color: C.text, fontSize: 'clamp(32px, 4vw, 44px)', fontWeight: 900, margin: 0 }}>{aggGender.female}%</p>
+                <p style={{ color: C.textMuted, fontSize: '12px', fontWeight: 700, margin: '4px 0 0 0', textTransform: 'uppercase' }}>Female</p>
+                <p style={{ color: C.textMuted, fontSize: '11px', margin: '2px 0 0 0' }}>{fmtNum(totalFemale)}</p>
+              </div>
+            </div>
+            {/* Mini bar */}
+            <div style={{ display: 'flex', height: '8px', borderRadius: '4px', overflow: 'hidden' }}>
+              <div style={{ width: `${aggGender.male}%`, background: C.text, transition: 'width 0.5s' }} />
+              <div style={{ width: `${aggGender.female}%`, background: C.textMuted, transition: 'width 0.5s' }} />
+            </div>
+          </div>
+
+          <div style={{ background: C.card, borderRadius: '12px', padding: 'clamp(20px, 3vw, 32px)', border: `1px solid ${C.border}` }}>
+            <h4 style={{ color: C.textMuted, margin: '0 0 24px 0', fontSize: '11px', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '1px' }}>Age Distribution</h4>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {aggAge.map((ag, i) => (
+                <div key={ag.range} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span style={{ color: C.textMuted, fontSize: '12px', fontWeight: 700, minWidth: '50px' }}>{ag.range}</span>
+                  <div style={{ flex: 1, height: '24px', background: C.bg, borderRadius: '4px', overflow: 'hidden', position: 'relative' }}>
+                    <div style={{ width: `${Math.max(ag.percent, 2)}%`, height: '100%', background: C.chart[i % C.chart.length], borderRadius: '4px', transition: 'width 0.5s' }} />
+                  </div>
+                  <span style={{ color: C.text, fontSize: '13px', fontWeight: 800, minWidth: '40px', textAlign: 'right' }}>{ag.percent}%</span>
+                  <span style={{ color: C.textMuted, fontSize: '11px', minWidth: '45px', textAlign: 'right' }}>{fmtNum(ag.count)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </Section>
     </div>
   )
 }
@@ -877,12 +970,12 @@ const Weekly = ({ data, prev, theme }) => {
     <div id="weekly-report" style={{ padding: 'clamp(20px, 3vw, 48px)' }}>
       <Section title="Trading Summary" theme={C}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 'clamp(12px, 1.5vw, 16px)', marginBottom: 'clamp(20px, 2.5vw, 28px)' }}>
-          <KPI label="Registrations" value={data.registrations} change={regCh} icon="👤" delay={0} theme={C} />
-          <KPI label="FTDs" value={data.ftds} sub={`Conv: ${data.conversionRate}% • Avg: €${data.avgFirstDeposit}`} change={ftdCh} icon="💳" delay={50} theme={C} />
-          <KPI label="Net Deposit" value={data.netDeposit} sub={`Dep ${fmtCurrency(data.totalDeposits)} - Wit ${fmtCurrency(data.totalWithdrawals)}`} cur icon="💰" delay={100} theme={C} />
-          <KPI label="Turnover" value={data.turnover} change={turnCh} cur icon="🎰" delay={150} theme={C} />
-          <KPI label="GGR" value={data.ggr} change={ggrCh} cur icon="📈" delay={200} theme={C} />
-          <KPI label="GWM" value={data.gwm} sub={prev ? `${(data.gwm - prev.gwm) >= 0 ? '+' : ''}${(data.gwm - prev.gwm).toFixed(1)}pp` : null} pct icon="📊" delay={250} theme={C} />
+          <KPI label="Registrations" value={data.registrations} change={regCh} icon="user" delay={0} theme={C} />
+          <KPI label="FTDs" value={data.ftds} sub={`Conv: ${data.conversionRate}% • Avg: €${data.avgFirstDeposit}`} change={ftdCh} icon="card" delay={50} theme={C} />
+          <KPI label="Net Deposit" value={data.netDeposit} sub={`Dep ${fmtCurrency(data.totalDeposits)} - Wit ${fmtCurrency(data.totalWithdrawals)}`} cur icon="wallet" delay={100} theme={C} />
+          <KPI label="Turnover" value={data.turnover} change={turnCh} cur icon="activity" delay={150} theme={C} />
+          <KPI label="GGR" value={data.ggr} change={ggrCh} cur icon="trending" delay={200} theme={C} />
+          <KPI label="GWM" value={data.gwm} sub={prev ? `${(data.gwm - prev.gwm) >= 0 ? '+' : ''}${(data.gwm - prev.gwm).toFixed(1)}pp` : null} pct icon="chart" delay={250} theme={C} />
         </div>
 
         <div style={{ background: `linear-gradient(135deg, ${C.card} 0%, ${C.bg} 100%)`, borderRadius: '12px', padding: 'clamp(20px, 3vw, 32px)', border: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '24px' }}>
@@ -915,8 +1008,9 @@ const Weekly = ({ data, prev, theme }) => {
           <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}`, textAlign: 'center' }}>
             <h4 style={{ color: C.textMuted, margin: '0 0 16px 0', fontSize: '11px', textTransform: 'uppercase', fontWeight: 700 }}>Gender Split</h4>
             <div style={{ display: 'flex', justifyContent: 'center', gap: '32px' }}>
-              <div><p style={{ color: C.blue, fontSize: '36px', fontWeight: 900, margin: 0 }}>{data.demographics?.male || 0}%</p><p style={{ color: C.textMuted, fontSize: '12px', fontWeight: 600 }}>Male</p></div>
-              <div><p style={{ color: C.purple, fontSize: '36px', fontWeight: 900, margin: 0 }}>{data.demographics?.female || 0}%</p><p style={{ color: C.textMuted, fontSize: '12px', fontWeight: 600 }}>Female</p></div>
+              <div><p style={{ color: C.text, fontSize: '36px', fontWeight: 900, margin: 0 }}>{data.demographics?.male || 0}%</p><p style={{ color: C.textMuted, fontSize: '12px', fontWeight: 600 }}>Male</p></div>
+              <div style={{ width: '1px', background: C.border }} />
+              <div><p style={{ color: C.text, fontSize: '36px', fontWeight: 900, margin: 0 }}>{data.demographics?.female || 0}%</p><p style={{ color: C.textMuted, fontSize: '12px', fontWeight: 600 }}>Female</p></div>
             </div>
           </div>
           <ChartCard title="Age Distribution" height={140} theme={C}>
@@ -1086,14 +1180,14 @@ export default function Dashboard() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: mob ? '6px' : '12px', flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', gap: '4px' }}>
-              {[{ id: 'weekly', label: mob ? '📊' : '📊 Weekly' }, { id: 'monthly', label: mob ? '📅' : '📅 Monthly' }].map(t => (
-                <button key={t.id} onClick={() => setTab(t.id)} style={{ background: tab === t.id ? C.primary : 'transparent', color: tab === t.id ? C.primaryText : C.textSec, border: `1px solid ${tab === t.id ? C.primary : C.border}`, borderRadius: '6px', padding: mob ? '8px 12px' : 'clamp(8px, 1vw, 10px) clamp(14px, 2vw, 20px)', fontSize: mob ? '12px' : 'clamp(11px, 1.2vw, 13px)', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s' }}>{t.label}</button>
+              {[{ id: 'weekly', icon: 'chart', label: 'Weekly' }, { id: 'monthly', icon: 'calendar', label: 'Monthly' }].map(t => (
+                <button key={t.id} onClick={() => setTab(t.id)} style={{ background: tab === t.id ? C.primary : 'transparent', color: tab === t.id ? C.primaryText : C.textSec, border: `1px solid ${tab === t.id ? C.primary : C.border}`, borderRadius: '6px', padding: mob ? '8px 12px' : 'clamp(8px, 1vw, 10px) clamp(14px, 2vw, 20px)', fontSize: mob ? '12px' : 'clamp(11px, 1.2vw, 13px)', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '6px' }}><Icon name={t.icon} size={14} color={tab === t.id ? C.primaryText : C.textSec} />{!mob && t.label}</button>
               ))}
             </div>
             <div style={{ width: '1px', height: '24px', background: C.border }} />
-            <button onClick={() => setTab('upload')} style={{ background: tab === 'upload' ? C.danger : 'transparent', color: tab === 'upload' ? '#FFF' : C.textMuted, border: `1px solid ${tab === 'upload' ? C.danger : C.border}`, borderRadius: '6px', padding: mob ? '8px 10px' : 'clamp(8px, 1vw, 10px) clamp(14px, 2vw, 20px)', fontSize: mob ? '12px' : 'clamp(11px, 1.2vw, 13px)', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s' }}>{mob ? '🔒' : '🔒 Admin'}</button>
-            <button onClick={() => setIsDark(!isDark)} style={{ background: C.card, color: C.text, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '8px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>{isDark ? '☀️' : '🌙'}</button>
-            <button onClick={handleLogout} style={{ background: 'transparent', color: C.danger, border: `1px solid ${C.danger}`, borderRadius: '6px', padding: '8px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', opacity: 0.7 }} title="Logout">🚪</button>
+            <button onClick={() => setTab('upload')} style={{ background: tab === 'upload' ? C.danger : 'transparent', color: tab === 'upload' ? '#FFF' : C.textMuted, border: `1px solid ${tab === 'upload' ? C.danger : C.border}`, borderRadius: '6px', padding: mob ? '8px 10px' : 'clamp(8px, 1vw, 10px) clamp(14px, 2vw, 20px)', fontSize: mob ? '12px' : 'clamp(11px, 1.2vw, 13px)', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '6px' }}><Icon name="lock" size={14} color={tab === 'upload' ? '#FFF' : C.textMuted} />{!mob && 'Admin'}</button>
+            <button onClick={() => setIsDark(!isDark)} style={{ background: C.card, color: C.text, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name={isDark ? 'sun' : 'moon'} size={16} color={C.text} /></button>
+            <button onClick={handleLogout} style={{ background: 'transparent', color: C.danger, border: `1px solid ${C.danger}`, borderRadius: '6px', padding: '8px', cursor: 'pointer', opacity: 0.7, display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Logout"><Icon name="logout" size={16} color={C.danger} /></button>
           </div>
           {tab === 'weekly' && weekNums.length > 0 && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
