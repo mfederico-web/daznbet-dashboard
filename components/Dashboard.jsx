@@ -55,34 +55,65 @@ const FILES = [
   { key: 'anagrafica2', name: 'Anagrafica2.xlsx', path: 'Statistica Conti' },
   { key: 'total', name: 'Anagrafica_TOTAL.xlsx', path: 'Stats Multilivello → GRID senza selezioni' },
   { key: 'categoria', name: 'Anagrafica_CATEGORIA.xlsx', path: 'Stats Multilivello → GRID Categoria' },
-  { key: 'daznbet', name: 'Anagrafica_DAZNBET.xlsx', path: 'Stats Multilivello → DAZNBET SKIN' },
+  { key: 'daznbet', name: 'Anagrafica_DAZNBET.xlsx', path: 'Stats Multilivello → DAZNBET SKIN per conto' },
   { key: 'organic', name: 'Anagrafica_ORGANIC.xlsx', path: 'DAZNBET SKIN, PV: www.daznbet.it → GRID Categoria' },
   { key: 'organicTotal', name: 'Anagrafica_ORGANIC_TOTAL.xlsx', path: 'DAZNBET SKIN, PV: www.daznbet.it' },
   { key: 'skin', name: 'Anagrafica_SKIN.xlsx', path: 'Stats Multilivello → GRID SKIN e Categoria' },
   { key: 'skinTotal', name: 'Anagrafica_SKIN_TOTAL.xlsx', path: 'Stats Multilivello → GRID SKIN' },
-  { key: 'academyTotal', name: 'Anagrafica_ACCADEMY_TOTAL.xlsx', path: 'VIVABET SKIN, Promoter: Academy' }
+  { key: 'academyTotal', name: 'Anagrafica_ACCADEMY_TOTAL.xlsx', path: 'VIVABET SKIN, Promoter: sbozza' }
 ]
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // UTILITIES
 // ═══════════════════════════════════════════════════════════════════════════════
-const parseNum = v => { if (typeof v === 'number') return v; if (typeof v === 'string') return parseFloat(v.replace(/[.]/g,'').replace(',','.').replace(/[^\d.-]/g,'')) || 0; return 0 }
-const fmtCurrency = (v, c=true) => { if (!v || isNaN(v)) return '€0'; if (c) { if (Math.abs(v)>=1e6) return `€${(v/1e6).toFixed(2)}M`; if (Math.abs(v)>=1e3) return `€${(v/1e3).toFixed(0)}K` } return `€${v.toLocaleString('it-IT')}` }
-const fmtNum = v => (!v || isNaN(v)) ? '0' : v.toLocaleString('it-IT')
-const calcChange = (cur, prev) => (!prev || prev===0) ? null : ((cur-prev)/prev*100).toFixed(1)
+const parseNum = v => {
+  if (v === null || v === undefined || v === '') return 0
+  if (typeof v === 'number') return v
+  if (typeof v === 'string') {
+    // Handle Italian format: 1.234,56 -> 1234.56
+    let cleaned = v.replace(/\s/g, '')
+    if (cleaned.includes(',') && cleaned.includes('.')) {
+      // Italian format with thousands separator
+      cleaned = cleaned.replace(/\./g, '').replace(',', '.')
+    } else if (cleaned.includes(',')) {
+      cleaned = cleaned.replace(',', '.')
+    }
+    return parseFloat(cleaned.replace(/[^\d.-]/g, '')) || 0
+  }
+  return 0
+}
 
-// Date normalization
+const fmtCurrency = (v, c = true) => {
+  if (!v || isNaN(v)) return '€0'
+  if (c) {
+    if (Math.abs(v) >= 1e6) return `€${(v / 1e6).toFixed(2)}M`
+    if (Math.abs(v) >= 1e3) return `€${(v / 1e3).toFixed(0)}K`
+  }
+  return `€${v.toLocaleString('it-IT', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+}
+
+const fmtNum = v => (!v || isNaN(v)) ? '0' : Math.round(v).toLocaleString('it-IT')
+const calcChange = (cur, prev) => (!prev || prev === 0) ? null : ((cur - prev) / prev * 100).toFixed(1)
+
+// Date normalization - handles Excel dates and various formats
 const normalizeDate = (dateVal) => {
   if (!dateVal) return null
   try {
     let d
-    if (dateVal instanceof Date) d = dateVal
-    else if (typeof dateVal === 'number') d = new Date((dateVal - 25569) * 86400 * 1000)
-    else if (typeof dateVal === 'string') {
+    if (dateVal instanceof Date) {
+      d = dateVal
+    } else if (typeof dateVal === 'number') {
+      // Excel serial date
+      d = new Date((dateVal - 25569) * 86400 * 1000)
+    } else if (typeof dateVal === 'string') {
       if (dateVal.includes('/')) {
         const parts = dateVal.split(/[\s\/]/)
-        if (parts.length >= 3) d = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]))
-      } else d = new Date(dateVal)
+        if (parts.length >= 3) {
+          d = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]))
+        }
+      } else {
+        d = new Date(dateVal)
+      }
     }
     if (!d || isNaN(d.getTime())) return null
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -91,36 +122,51 @@ const normalizeDate = (dateVal) => {
 
 const formatDateLabel = (dateKey) => {
   if (!dateKey) return ''
-  try { return new Date(dateKey).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) }
-  catch { return dateKey }
+  try {
+    const d = new Date(dateKey)
+    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+  } catch { return dateKey }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// CHANNEL CLASSIFICATION
+// CHANNEL CLASSIFICATION (for Quality Acquisition from Anagrafica.xlsx)
 // ═══════════════════════════════════════════════════════════════════════════════
 const classifyChannel = row => {
   const skin = String(row["Skin"] || "").toUpperCase().trim()
   const promoter = String(row["Promoter"] || "").toLowerCase().trim()
   const puntoVendita = String(row["Punto vendita"] || "").toLowerCase().trim()
   const codPunto = String(row["Cod Punto"] || "").toUpperCase().trim()
-  
+
+  // VIVABET-SKIN
   if (skin.includes("VIVABET")) {
     if (promoter.includes("nsg social web")) return "VIVABET/GLAD"
     return "Tipster Academy"
   }
-  
+
+  // DAZNBET-SKIN or SCOMMETTENDO-SKIN
   if (skin.includes("DAZNBET") || skin.includes("SCOMMETTENDO")) {
-    if (puntoVendita.includes("www.daznbet.it") || puntoVendita.includes("www.scommettendo.it")) return "DAZNBET Organic"
-    if (promoter.includes("dazn") || promoter.includes("funpoints") || codPunto.includes("DAZN_SUPERPRONOSTICO")) return "DAZN Direct"
+    // Organic: www.daznbet.it o www.scommettendo.it
+    if (puntoVendita.includes("www.daznbet.it") || puntoVendita.includes("www.scommettendo.it")) {
+      return "DAZNBET Organic"
+    }
+    // DAZN Direct: Promoter DAZN/Funpoints o Cod Punto DAZN_Superpronostico
+    if (promoter.includes("dazn") || promoter.includes("funpoints") || codPunto.includes("DAZN_SUPERPRONOSTICO")) {
+      return "DAZN Direct"
+    }
+    // AFFILIATES: tutto il resto DAZNBET
     return "AFFILIATES"
   }
-  
-  if (!puntoVendita.includes("www.scommettendo.it")) return "PVR"
+
+  // PVR: tutto il resto (non VIVABET, non DAZNBET, non www.scommettendo.it)
+  if (!puntoVendita.includes("www.scommettendo.it")) {
+    return "PVR"
+  }
+
   return "OTHER"
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// DATA PROCESSOR - Aggiornato con nuova mappatura v2
+// DATA PROCESSOR - Mappatura v3
 // ═══════════════════════════════════════════════════════════════════════════════
 const processData = (files, weekNum, dateRange) => {
   const ana = files.anagrafica || []
@@ -130,24 +176,46 @@ const processData = (files, weekNum, dateRange) => {
   const skinTotal = files.skinTotal || []
   const academyTotal = files.academyTotal || []
   const organicTotal = files.organicTotal || []
-  
+  const daznbet = files.daznbet || []
+
+  console.log("Processing files:", {
+    ana: ana.length,
+    ana2: ana2.length,
+    total: total.length,
+    cat: cat.length,
+    skinTotal: skinTotal.length,
+    academyTotal: academyTotal.length,
+    organicTotal: organicTotal.length,
+    daznbet: daznbet.length
+  })
+
   // ═══════════════════════════════════════════════════════════════════════════
-  // REG TOTALI da Anagrafica2.xlsx = Registrati AAMS + Registrazioni non attive
+  // TRADING SUMMARY - da Anagrafica2.xlsx
+  // REG = Registrati AAMS + Registrazioni non attive (somma tutte le righe)
   // ═══════════════════════════════════════════════════════════════════════════
   const reg = ana2.reduce((s, r) => {
     const regAams = parseNum(r["Registrati AAMS"]) || 0
     const regNonAttive = parseNum(r["Registrazioni non attive"]) || 0
     return s + regAams + regNonAttive
   }, 0)
-  
+
+  const ftds = ana2.reduce((s, r) => s + (parseNum(r["Primo deposito"]) || 0), 0)
+  const totalDep = ana2.reduce((s, r) => s + (parseNum(r["Importo depositi"]) || 0), 0)
+  const totalWit = ana2.reduce((s, r) => s + (parseNum(r["Importo prelievi processati"]) || 0), 0)
+  const totalBonus = ana2.reduce((s, r) => s + (parseNum(r["Importo bonus"]) || 0), 0)
+  const totalLogins = ana2.reduce((s, r) => s + (parseNum(r["Login"]) || 0), 0)
+  const avgFirstDepSum = ana2.reduce((s, r) => s + (parseNum(r["Importo primo deposito"]) || 0), 0)
+  const totalDepCount = ana2.reduce((s, r) => s + (parseNum(r["Depositi"]) || 0), 0)
+  const totalUniqueDep = ana2.reduce((s, r) => s + (parseNum(r["Depositanti unici"]) || 0), 0)
+
   // ═══════════════════════════════════════════════════════════════════════════
-  // DAILY STATS da Anagrafica2.xlsx (REG = Registrati AAMS + Registrazioni non attive per riga)
+  // STATISTICHE GIORNALIERE - da Anagrafica2.xlsx (una riga = un giorno)
   // ═══════════════════════════════════════════════════════════════════════════
   const daily = ana2.map(r => {
     const dateKey = normalizeDate(r["Data"])
     const regAams = parseNum(r["Registrati AAMS"]) || 0
     const regNonAttive = parseNum(r["Registrazioni non attive"]) || 0
-    
+
     return {
       date: formatDateLabel(dateKey),
       dateKey,
@@ -156,13 +224,29 @@ const processData = (files, weekNum, dateRange) => {
       deposits: parseNum(r["Importo depositi"]) || 0,
       withdrawals: parseNum(r["Importo prelievi processati"]) || 0,
       bonus: parseNum(r["Importo bonus"]) || 0,
-      logins: parseNum(r["Login"]) || 0,
-      depositCount: parseNum(r["Depositi"]) || 0,
-      uniqueDepositors: parseNum(r["Depositanti unici"]) || 0
+      logins: parseNum(r["Login"]) || 0
     }
-  }).filter(d => d.date).sort((a, b) => (a.dateKey || '').localeCompare(b.dateKey || ''))
-  
-  // Channel classification da Anagrafica.xlsx
+  }).filter(d => d.date && d.dateKey).sort((a, b) => (a.dateKey || '').localeCompare(b.dateKey || ''))
+
+  console.log("Daily stats:", daily)
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // TOTALS da Anagrafica_TOTAL.xlsx (prima riga)
+  // ═══════════════════════════════════════════════════════════════════════════
+  const totRow = total[0] || {}
+  const turnover = parseNum(totRow["Giocato"]) || 0
+  const ggr = parseNum(totRow["rake"]) || parseNum(totRow["ggr"]) || 0
+  const actives = parseNum(totRow["conti attivi"]) || 0
+
+  // TOP 3 PRODUCTS
+  const top3Products = ['Scommesse', 'Casino', 'Casino Live'].map(prodName => {
+    const row = cat.find(r => String(r["Categoria"] || "").toLowerCase().includes(prodName.toLowerCase()))
+    return { name: prodName, actives: row ? parseNum(row["conti attivi"]) : 0 }
+  })
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // QUALITY ACQUISITION - da Anagrafica.xlsx (classificazione canali)
+  // ═══════════════════════════════════════════════════════════════════════════
   const channelGroups = {}
   ana.forEach(r => {
     const ch = classifyChannel(r)
@@ -171,8 +255,7 @@ const processData = (files, weekNum, dateRange) => {
     if (r["Nato il"]) channelGroups[ch].ages.push(r["Nato il"])
     if (r["Primo deposito"]) channelGroups[ch].ftds++
   })
-  
-  // Quality Acquisition + TOTALI
+
   const qualityAcq = Object.entries(channelGroups).map(([ch, d]) => {
     const r = d.rows.length
     const f = d.ftds
@@ -181,9 +264,17 @@ const processData = (files, weekNum, dateRange) => {
       const bd = new Date(x)
       return (new Date() - bd) / (365.25 * 24 * 60 * 60 * 1000)
     }).reduce((a, b) => a + b, 0) / d.ages.length) : 0
-    return { channel: ch, reg: r, ftds: f, conv: r > 0 ? parseFloat((f / r * 100).toFixed(1)) : 0, activated: r > 0 ? Math.round(act / r * 100) : 0, avgAge }
+    return {
+      channel: ch,
+      reg: r,
+      ftds: f,
+      conv: r > 0 ? parseFloat((f / r * 100).toFixed(1)) : 0,
+      activated: r > 0 ? Math.round(act / r * 100) : 0,
+      avgAge
+    }
   }).filter(c => c.channel !== "OTHER").sort((a, b) => b.reg - a.reg)
 
+  // Riga TOTALI
   const totalsRow = {
     channel: 'TOTALI',
     reg: qualityAcq.reduce((s, c) => s + c.reg, 0),
@@ -197,76 +288,128 @@ const processData = (files, weekNum, dateRange) => {
   totalsRow.avgAge = totalsRow.reg > 0 ? Math.round(totalAgeSum / totalsRow.reg) : 0
   qualityAcq.push(totalsRow)
 
-  // Aggregated stats da ana2
-  const ftds = ana2.reduce((s, r) => s + (parseNum(r["Primo deposito"]) || 0), 0)
-  const totalDep = ana2.reduce((s, r) => s + (parseNum(r["Importo depositi"]) || 0), 0)
-  const totalWit = ana2.reduce((s, r) => s + (parseNum(r["Importo prelievi processati"]) || 0), 0)
-  const totalBonus = ana2.reduce((s, r) => s + (parseNum(r["Importo bonus"]) || 0), 0)
-  const totalLogins = ana2.reduce((s, r) => s + (parseNum(r["Login"]) || 0), 0)
-  const totalDepCount = ana2.reduce((s, r) => s + (parseNum(r["Depositi"]) || 0), 0)
-  const totalUniqueDep = ana2.reduce((s, r) => s + (parseNum(r["Depositanti unici"]) || 0), 0)
-  const avgFirstDepSum = ana2.reduce((s, r) => s + (parseNum(r["Importo primo deposito"]) || 0), 0)
-  
-  // TOTALS da Anagrafica_TOTAL (prima riga)
-  const totRow = total[0] || {}
-  const turnover = parseNum(totRow["Giocato"]) || 0
-  const ggr = parseNum(totRow["rake"]) || parseNum(totRow["ggr"]) || 0
-  const actives = parseNum(totRow["conti attivi"]) || 0
+  // ═══════════════════════════════════════════════════════════════════════════
+  // CHANNEL PERFORMANCE - da vari file secondo mappatura v3
+  // ═══════════════════════════════════════════════════════════════════════════
+  const chanPerf = []
+  let totGgr = 0
 
-  // TOP 3 PRODUCTS da Anagrafica_CATEGORIA
-  const top3Products = ['Scommesse', 'Casino', 'Casino Live'].map(prodName => {
-    const row = cat.find(r => String(r["Categoria"] || "").toLowerCase().includes(prodName.toLowerCase()))
-    return { name: prodName, actives: row ? parseNum(row["conti attivi"]) : 0 }
+  // PVR: da SKIN_TOTAL escludendo VIVABET e DAZNBET
+  let pvrT = 0, pvrG = 0, pvrA = 0
+  skinTotal.forEach(r => {
+    const s = String(r["Skin"] || "").toUpperCase()
+    if (s && !s.includes("VIVABET") && !s.includes("DAZNBET") && !s.includes("SCOMMETTENDO") && !s.includes("NAN")) {
+      pvrT += parseNum(r["Giocato"])
+      pvrG += parseNum(r["rake"]) || parseNum(r["ggr"])
+      pvrA += parseNum(r["conti attivi"])
+    }
+  })
+  if (pvrT > 0 || pvrA > 0) {
+    chanPerf.push({ channel: 'PVR', turnover: pvrT, ggr: pvrG, gwm: pvrT > 0 ? parseFloat((pvrG / pvrT * 100).toFixed(1)) : 0, actives: pvrA })
+    totGgr += pvrG
+  }
+
+  // VIVABET totale da SKIN_TOTAL
+  const vivRow = skinTotal.find(r => String(r["Skin"] || "").toUpperCase().includes("VIVABET"))
+  // Academy da ACCADEMY_TOTAL (prima riga)
+  const acadRow = academyTotal[0]
+
+  if (vivRow) {
+    const vT = parseNum(vivRow["Giocato"])
+    const vG = parseNum(vivRow["rake"]) || parseNum(vivRow["ggr"])
+    const vA = parseNum(vivRow["conti attivi"])
+
+    const aT = acadRow ? parseNum(acadRow["Giocato"]) : 0
+    const aG = acadRow ? parseNum(acadRow["rake"]) : 0
+    const aA = acadRow ? parseNum(acadRow["conti attivi"]) : 0
+
+    // VIVABET/GLAD = VIVABET totale - Academy
+    const gladT = vT - aT
+    const gladG = vG - aG
+    const gladA = vA - aA
+
+    if (gladT > 0 || gladA > 0) {
+      chanPerf.push({ channel: 'VIVABET/GLAD', turnover: gladT, ggr: gladG, gwm: gladT > 0 ? parseFloat((gladG / gladT * 100).toFixed(1)) : 0, actives: gladA })
+      totGgr += gladG
+    }
+
+    // Tipster Academy
+    if (aT > 0 || aA > 0) {
+      chanPerf.push({ channel: 'Tipster Academy', turnover: aT, ggr: aG, gwm: aT > 0 ? parseFloat((aG / aT * 100).toFixed(1)) : 0, actives: aA })
+      totGgr += aG
+    }
+  }
+
+  // DAZNBET Organic da ORGANIC_TOTAL (prima riga)
+  const orgRow = organicTotal[0]
+  if (orgRow) {
+    const oT = parseNum(orgRow["Giocato"])
+    const oG = parseNum(orgRow["rake"]) || parseNum(orgRow["ggr"])
+    const oA = parseNum(orgRow["conti attivi"])
+    if (oT > 0 || oA > 0) {
+      chanPerf.push({ channel: 'DAZNBET Organic', turnover: oT, ggr: oG, gwm: oT > 0 ? parseFloat((oG / oT * 100).toFixed(1)) : 0, actives: oA })
+      totGgr += oG
+    }
+  }
+
+  // DAZN Direct da Anagrafica_DAZNBET: Cod liv 1 che inizia con "DAZN_"
+  let ddT = 0, ddG = 0, ddA = 0
+  daznbet.forEach(r => {
+    const codLiv1 = String(r["Cod liv 1"] || "")
+    if (codLiv1.startsWith("DAZN_")) {
+      ddT += parseNum(r["Giocato"])
+      ddG += parseNum(r["ggr"]) || parseNum(r["rake"])
+      ddA += 1 // conta conti
+    }
+  })
+  if (ddT > 0 || ddA > 0) {
+    chanPerf.push({ channel: 'DAZN Direct', turnover: ddT, ggr: ddG, gwm: ddT > 0 ? parseFloat((ddG / ddT * 100).toFixed(1)) : 0, actives: ddA })
+    totGgr += ddG
+  }
+
+  // AFFILIATES da Anagrafica_DAZNBET: escludi DAZNBET e tutti quelli che iniziano con DAZN_
+  let affT = 0, affG = 0, affA = 0
+  daznbet.forEach(r => {
+    const codLiv1 = String(r["Cod liv 1"] || "")
+    if (codLiv1 && codLiv1 !== "DAZNBET" && !codLiv1.startsWith("DAZN_") && codLiv1.toLowerCase() !== "nan") {
+      affT += parseNum(r["Giocato"])
+      affG += parseNum(r["ggr"]) || parseNum(r["rake"])
+      affA += 1
+    }
+  })
+  if (affT > 0 || affA > 0) {
+    chanPerf.push({ channel: 'AFFILIATES', turnover: affT, ggr: affG, gwm: affT > 0 ? parseFloat((affG / affT * 100).toFixed(1)) : 0, actives: affA })
+    totGgr += affG
+  }
+
+  // Calcola Revenue Share
+  chanPerf.forEach(c => {
+    c.revShare = totGgr > 0 ? parseFloat((c.ggr / totGgr * 100).toFixed(1)) : 0
   })
 
-  // Products da Anagrafica_CATEGORIA
+  console.log("Channel Performance:", chanPerf)
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PRODUCTS da Anagrafica_CATEGORIA
+  // ═══════════════════════════════════════════════════════════════════════════
   const products = cat.map(r => ({
     product: r["Categoria"] || '',
     turnover: parseNum(r["Giocato"]),
     ggr: parseNum(r["rake"]) || parseNum(r["ggr"]),
     actives: parseNum(r["conti attivi"]),
     payout: parseNum(r["Giocato"]) > 0 ? parseFloat((parseNum(r["vinto"]) / parseNum(r["Giocato"]) * 100).toFixed(1)) : null
-  })).filter(p => p.product)
+  })).filter(p => p.product && !String(p.product).includes('.'))
 
-  // Channel Performance da SKIN files
-  const chanPerf = []
-  let totGgr = 0
-  
-  // PVR
-  let pvrT = 0, pvrG = 0, pvrA = 0
-  skinTotal.forEach(r => {
-    const s = String(r["Skin"] || "").toUpperCase()
-    if (s && !s.includes("VIVABET") && !s.includes("DAZNBET") && !s.includes("SCOMMETTENDO")) {
-      pvrT += parseNum(r["Giocato"]); pvrG += parseNum(r["rake"]) || parseNum(r["ggr"]); pvrA += parseNum(r["conti attivi"])
-    }
-  })
-  if (pvrT > 0 || pvrA > 0) { chanPerf.push({ channel: 'PVR', turnover: pvrT, ggr: pvrG, gwm: pvrT > 0 ? parseFloat((pvrG / pvrT * 100).toFixed(1)) : 0, actives: pvrA }); totGgr += pvrG }
-  
-  // VIVABET
-  const vivRow = skinTotal.find(r => String(r["Skin"] || "").toUpperCase().includes("VIVABET"))
-  const acadRow = academyTotal[0]
-  if (vivRow) {
-    const vT = parseNum(vivRow["Giocato"]), vG = parseNum(vivRow["rake"]) || parseNum(vivRow["ggr"]), vA = parseNum(vivRow["conti attivi"])
-    const aT = acadRow ? parseNum(acadRow["Giocato"]) : 0, aG = acadRow ? (parseNum(acadRow["rake"]) || parseNum(acadRow["ggr"])) : 0, aA = acadRow ? parseNum(acadRow["conti attivi"]) : 0
-    const gladT = vT - aT, gladG = vG - aG, gladA = vA - aA
-    if (gladT > 0 || gladA > 0) { chanPerf.push({ channel: 'VIVABET/GLAD', turnover: gladT, ggr: gladG, gwm: gladT > 0 ? parseFloat((gladG / gladT * 100).toFixed(1)) : 0, actives: gladA }); totGgr += gladG }
-    if (aT > 0 || aA > 0) { chanPerf.push({ channel: 'Tipster Academy', turnover: aT, ggr: aG, gwm: aT > 0 ? parseFloat((aG / aT * 100).toFixed(1)) : 0, actives: aA }); totGgr += aG }
-  }
-  
-  // DAZNBET Organic
-  const orgRow = organicTotal[0]
-  if (orgRow) {
-    const oT = parseNum(orgRow["Giocato"]), oG = parseNum(orgRow["rake"]) || parseNum(orgRow["ggr"]), oA = parseNum(orgRow["conti attivi"])
-    chanPerf.push({ channel: 'DAZNBET Organic', turnover: oT, ggr: oG, gwm: oT > 0 ? parseFloat((oG / oT * 100).toFixed(1)) : 0, actives: oA }); totGgr += oG
-  }
-  
-  chanPerf.forEach(c => { c.revShare = totGgr > 0 ? parseFloat((c.ggr / totGgr * 100).toFixed(1)) : 0 })
-
-  // Demographics da Anagrafica
+  // ═══════════════════════════════════════════════════════════════════════════
+  // DEMOGRAPHICS da Anagrafica.xlsx
+  // ═══════════════════════════════════════════════════════════════════════════
   const genderCount = { M: 0, F: 0 }
-  ana.forEach(r => { const g = String(r["Sesso"] || "").toUpperCase(); if (g === "M" || g === "F") genderCount[g]++ })
+  ana.forEach(r => {
+    const g = String(r["Sesso"] || "").toUpperCase()
+    if (g === "M" || g === "F") genderCount[g]++
+  })
   const totGender = genderCount.M + genderCount.F
-  
+
   const ageGroups = { "18-24": 0, "25-34": 0, "35-44": 0, "45-54": 0, "55-64": 0, "65+": 0 }
   ana.forEach(r => {
     if (r["Nato il"]) {
@@ -280,16 +423,22 @@ const processData = (files, weekNum, dateRange) => {
     }
   })
   const totAges = Object.values(ageGroups).reduce((a, b) => a + b, 0)
-  
-  // Provinces
+
+  // Top Provinces
   const provCount = {}
-  ana.forEach(r => { const p = r["Provincia di residenza"]; if (p) provCount[p] = (provCount[p] || 0) + 1 })
+  ana.forEach(r => {
+    const p = r["Provincia di residenza"]
+    if (p) provCount[p] = (provCount[p] || 0) + 1
+  })
   const provinces = Object.entries(provCount).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name, count]) => ({ name, count }))
-  
+
   // Top Sources
   const srcCount = {}
-  ana.forEach(r => { const s = r["Cod Punto"]; if (s) srcCount[s] = (srcCount[s] || 0) + 1 })
-  const sources = Object.entries(srcCount).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, count]) => ({ name: name.substring(0, 20), count }))
+  ana.forEach(r => {
+    const s = r["Cod Punto"]
+    if (s) srcCount[s] = (srcCount[s] || 0) + 1
+  })
+  const sources = Object.entries(srcCount).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, count]) => ({ name: String(name).substring(0, 20), count }))
 
   return {
     weekNumber: weekNum,
@@ -308,8 +457,14 @@ const processData = (files, weekNum, dateRange) => {
     top3Products,
     totalLogins,
     totalBonus,
-    demographics: { male: totGender > 0 ? Math.round(genderCount.M / totGender * 100) : 0, female: totGender > 0 ? Math.round(genderCount.F / totGender * 100) : 0 },
-    ageGroups: Object.entries(ageGroups).map(([range, count]) => ({ range, percent: totAges > 0 ? Math.round(count / totAges * 100) : 0 })),
+    demographics: {
+      male: totGender > 0 ? Math.round(genderCount.M / totGender * 100) : 0,
+      female: totGender > 0 ? Math.round(genderCount.F / totGender * 100) : 0
+    },
+    ageGroups: Object.entries(ageGroups).map(([range, count]) => ({
+      range,
+      percent: totAges > 0 ? Math.round(count / totAges * 100) : 0
+    })),
     provinces,
     topSources: sources,
     dailyStats: daily,
@@ -336,17 +491,21 @@ const KPI = ({ label, value, sub, change, delay = 0, cur = false, pct = false, i
   const [vis, setVis] = useState(false)
   const [anim, setAnim] = useState(0)
   const numVal = typeof value === 'number' ? value : parseFloat(String(value).replace(/[^0-9.-]/g, '')) || 0
-  
+
   useEffect(() => { setTimeout(() => setVis(true), delay) }, [delay])
   useEffect(() => {
     if (!vis) return
     const start = Date.now(), dur = 1000
-    const tick = () => { const p = Math.min((Date.now() - start) / dur, 1); setAnim(numVal * (1 - Math.pow(1 - p, 3))); if (p < 1) requestAnimationFrame(tick) }
+    const tick = () => {
+      const p = Math.min((Date.now() - start) / dur, 1)
+      setAnim(numVal * (1 - Math.pow(1 - p, 3)))
+      if (p < 1) requestAnimationFrame(tick)
+    }
     requestAnimationFrame(tick)
   }, [vis, numVal])
 
   const display = cur ? fmtCurrency(anim) : pct ? `${anim.toFixed(1)}%` : fmtNum(Math.round(anim))
-  
+
   return (
     <div style={{ background: C.card, borderRadius: '12px', padding: 'clamp(16px, 2vw, 24px)', border: `1px solid ${C.border}`, opacity: vis ? 1 : 0, transform: vis ? 'translateY(0)' : 'translateY(15px)', transition: 'all 0.4s ease' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
@@ -368,7 +527,11 @@ const Tip = ({ active, payload, label, theme }) => {
   return active && payload?.length ? (
     <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '8px', padding: '10px 14px' }}>
       <p style={{ color: C.text, margin: '0 0 6px 0', fontWeight: 700, fontSize: '13px' }}>{label}</p>
-      {payload.map((e, i) => <p key={i} style={{ color: e.color, margin: '2px 0', fontSize: '12px' }}>{e.name}: <b style={{ fontWeight: 800 }}>{typeof e.value === 'number' && e.value > 1000 ? fmtNum(e.value) : e.value}</b></p>)}
+      {payload.map((e, i) => (
+        <p key={i} style={{ color: e.color, margin: '2px 0', fontSize: '12px' }}>
+          {e.name}: <b style={{ fontWeight: 800 }}>{typeof e.value === 'number' && e.value > 1000 ? fmtNum(e.value) : e.value}</b>
+        </p>
+      ))}
     </div>
   ) : null
 }
@@ -393,13 +556,22 @@ const Table = ({ cols, data, compact = false, theme }) => {
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: compact ? '12px' : 'clamp(12px, 1.2vw, 14px)' }}>
         <thead>
           <tr style={{ background: C.bg }}>
-            {cols.map((c, i) => <th key={i} style={{ padding: compact ? '10px 12px' : 'clamp(10px, 1.4vw, 14px) clamp(12px, 1.5vw, 18px)', textAlign: c.align || 'left', color: C.primary, fontWeight: 700, fontSize: compact ? '10px' : 'clamp(10px, 1vw, 12px)', textTransform: 'uppercase', letterSpacing: '0.3px', borderBottom: `2px solid ${C.primary}` }}>{c.header}</th>)}
+            {cols.map((c, i) => (
+              <th key={i} style={{ padding: compact ? '10px 12px' : 'clamp(10px, 1.4vw, 14px) clamp(12px, 1.5vw, 18px)', textAlign: c.align || 'left', color: C.primary, fontWeight: 700, fontSize: compact ? '10px' : 'clamp(10px, 1vw, 12px)', textTransform: 'uppercase', letterSpacing: '0.3px', borderBottom: `2px solid ${C.primary}` }}>{c.header}</th>
+            ))}
           </tr>
         </thead>
         <tbody>
           {data.map((r, ri) => (
             <tr key={ri} style={{ background: r.isTotal ? C.primary + '15' : ri % 2 === 0 ? C.card : C.bg }}>
-              {cols.map((c, ci) => { const v = c.accessor ? r[c.accessor] : ''; return <td key={ci} style={{ padding: compact ? '8px 12px' : 'clamp(10px, 1.3vw, 12px) clamp(12px, 1.5vw, 18px)', textAlign: c.align || 'left', color: r.isTotal ? C.primary : C.text, fontWeight: r.isTotal ? 800 : 400, borderBottom: `1px solid ${C.border}` }}>{c.format ? c.format(v, r) : v}</td> })}
+              {cols.map((c, ci) => {
+                const v = c.accessor ? r[c.accessor] : ''
+                return (
+                  <td key={ci} style={{ padding: compact ? '8px 12px' : 'clamp(10px, 1.3vw, 12px) clamp(12px, 1.5vw, 18px)', textAlign: c.align || 'left', color: r.isTotal ? C.primary : C.text, fontWeight: r.isTotal ? 800 : 400, borderBottom: `1px solid ${C.border}` }}>
+                    {c.format ? c.format(v, r) : v}
+                  </td>
+                )
+              })}
             </tr>
           ))}
         </tbody>
@@ -436,7 +608,7 @@ const UploadPage = ({ weeksData, onUpload, onDelete, theme }) => {
   const [loading, setLoading] = useState(false)
   const [msg, setMsg] = useState(null)
   const exists = week && weeksData[parseInt(week)]
-  
+
   const formatDateRange = () => {
     if (!dateFrom || !dateTo) return ''
     const from = new Date(dateFrom), to = new Date(dateTo)
@@ -452,14 +624,25 @@ const UploadPage = ({ weeksData, onUpload, onDelete, theme }) => {
 
   const readFile = async f => new Promise((res, rej) => {
     const r = new FileReader()
-    r.onload = e => { try { const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array', cellDates: true }); res(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]])) } catch (err) { rej(err) } }
+    r.onload = e => {
+      try {
+        const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array', cellDates: true })
+        res(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]))
+      } catch (err) { rej(err) }
+    }
     r.onerror = rej
     r.readAsArrayBuffer(f)
   })
 
   const handleFile = async (e, key) => {
     const f = e.target.files[0]
-    if (f) { try { const d = await readFile(f); setFiles(p => ({ ...p, [key]: { name: f.name, data: d, rows: d.length } })); setMsg(null) } catch { setMsg({ t: 'error', m: 'Errore lettura file' }) } }
+    if (f) {
+      try {
+        const d = await readFile(f)
+        setFiles(p => ({ ...p, [key]: { name: f.name, data: d, rows: d.length } }))
+        setMsg(null)
+      } catch { setMsg({ t: 'error', m: 'Errore lettura file' }) }
+    }
   }
 
   const handleUpload = async () => {
@@ -468,12 +651,17 @@ const UploadPage = ({ weeksData, onUpload, onDelete, theme }) => {
     if (missing.length) { setMsg({ t: 'error', m: `Mancano ${missing.length} file` }); return }
     setLoading(true)
     try {
-      const fd = {}; Object.entries(files).forEach(([k, v]) => fd[k] = v.data)
+      const fd = {}
+      Object.entries(files).forEach(([k, v]) => fd[k] = v.data)
       const proc = processData(fd, parseInt(week), dates)
+      console.log("Processed data:", proc)
       await onUpload(proc)
       setMsg({ t: 'success', m: exists ? `Week ${week} aggiornata!` : `Week ${week} caricata!` })
       setWeek(''); setDateFrom(''); setDateTo(''); setFiles({})
-    } catch (err) { console.error(err); setMsg({ t: 'error', m: 'Errore elaborazione' }) }
+    } catch (err) {
+      console.error(err)
+      setMsg({ t: 'error', m: 'Errore elaborazione' })
+    }
     setLoading(false)
   }
 
@@ -520,7 +708,11 @@ const UploadPage = ({ weeksData, onUpload, onDelete, theme }) => {
           })}
         </div>
 
-        {msg && <div style={{ background: msg.t === 'success' ? C.successDim : C.dangerDim, border: `1px solid ${msg.t === 'success' ? C.success : C.danger}`, borderRadius: '8px', padding: '12px', marginBottom: '16px' }}><p style={{ color: msg.t === 'success' ? C.success : C.danger, margin: 0, fontWeight: 700, fontSize: '13px' }}>{msg.m}</p></div>}
+        {msg && (
+          <div style={{ background: msg.t === 'success' ? C.successDim : C.dangerDim, border: `1px solid ${msg.t === 'success' ? C.success : C.danger}`, borderRadius: '8px', padding: '12px', marginBottom: '16px' }}>
+            <p style={{ color: msg.t === 'success' ? C.success : C.danger, margin: 0, fontWeight: 700, fontSize: '13px' }}>{msg.m}</p>
+          </div>
+        )}
 
         <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginBottom: '40px' }}>
           <button onClick={handleUpload} disabled={loading || uploadedCount < 10} style={{ background: uploadedCount >= 10 ? C.primary : C.border, color: C.bg, border: 'none', borderRadius: '8px', padding: '14px 32px', fontSize: '14px', fontWeight: 800, cursor: uploadedCount >= 10 ? 'pointer' : 'not-allowed' }}>
@@ -568,7 +760,14 @@ const Monthly = ({ weeksData, theme }) => {
   const weeks = Object.values(weeksData).sort((a, b) => a.weekNumber - b.weekNumber)
   if (!weeks.length) return <div style={{ padding: '60px', textAlign: 'center' }}><p style={{ color: C.textMuted, fontSize: '16px' }}>Nessun dato disponibile</p></div>
 
-  const tot = { reg: weeks.reduce((s, w) => s + (w.registrations || 0), 0), ftds: weeks.reduce((s, w) => s + (w.ftds || 0), 0), dep: weeks.reduce((s, w) => s + (w.totalDeposits || 0), 0), wit: weeks.reduce((s, w) => s + (w.totalWithdrawals || 0), 0), turn: weeks.reduce((s, w) => s + (w.turnover || 0), 0), ggr: weeks.reduce((s, w) => s + (w.ggr || 0), 0) }
+  const tot = {
+    reg: weeks.reduce((s, w) => s + (w.registrations || 0), 0),
+    ftds: weeks.reduce((s, w) => s + (w.ftds || 0), 0),
+    dep: weeks.reduce((s, w) => s + (w.totalDeposits || 0), 0),
+    wit: weeks.reduce((s, w) => s + (w.totalWithdrawals || 0), 0),
+    turn: weeks.reduce((s, w) => s + (w.turnover || 0), 0),
+    ggr: weeks.reduce((s, w) => s + (w.ggr || 0), 0)
+  }
   const avgAct = Math.round(weeks.reduce((s, w) => s + (w.activeUsers || 0), 0) / weeks.length)
   const trend = weeks.map(w => ({ week: `W${w.weekNumber}`, REG: w.registrations, FTDs: w.ftds, GGR: Math.round(w.ggr / 1000), Actives: w.activeUsers }))
 
@@ -718,7 +917,9 @@ const Weekly = ({ data, prev, allData, theme }) => {
               <XAxis dataKey="range" tick={{ fill: C.textMuted, fontSize: 9, fontWeight: 700 }} />
               <YAxis hide />
               <Tooltip content={<Tip theme={C} />} />
-              <Bar dataKey="percent" fill={C.primary} radius={[4, 4, 0, 0]} animationDuration={800}>{(data.ageGroups || []).map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}</Bar>
+              <Bar dataKey="percent" fill={C.primary} radius={[4, 4, 0, 0]} animationDuration={800}>
+                {(data.ageGroups || []).map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}
+              </Bar>
             </BarChart>
           </ChartCard>
           <ChartCard title="Top Provinces" height={140} theme={C}>
@@ -748,14 +949,16 @@ const Weekly = ({ data, prev, allData, theme }) => {
               <XAxis type="number" domain={[0, 80]} tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} />
               <YAxis dataKey="channel" type="category" width={100} tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} />
               <Tooltip content={<Tip theme={C} />} />
-              <Bar dataKey="conv" name="Conv%" fill={C.primary} radius={[0, 4, 4, 0]} animationDuration={1000}>{(data.qualityAcquisition || []).filter(c => !c.isTotal).map((e, i) => <Cell key={i} fill={e.conv >= 55 ? C.success : e.conv >= 45 ? C.orange : C.danger} />)}</Bar>
+              <Bar dataKey="conv" name="Conv%" fill={C.primary} radius={[0, 4, 4, 0]} animationDuration={1000}>
+                {(data.qualityAcquisition || []).filter(c => !c.isTotal).map((e, i) => <Cell key={i} fill={e.conv >= 55 ? C.success : e.conv >= 45 ? C.orange : C.danger} />)}
+              </Bar>
             </BarChart>
           </ChartCard>
         </div>
       </Section>
 
       {/* CHANNEL PERFORMANCE */}
-      <Section title="Channel Performance" sub="Turnover, GGR, Revenue Share" theme={C}>
+      <Section title="Channel Performance" sub="Turnover, GGR, Revenue Share (include DAZN Direct e AFFILIATES)" theme={C}>
         <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
           <Table cols={[
             { header: 'Channel', accessor: 'channel', format: v => <span style={{ fontWeight: 700 }}>{v}</span> },
@@ -767,7 +970,9 @@ const Weekly = ({ data, prev, allData, theme }) => {
           ]} data={data.channelPerformance || []} theme={C} />
           <ChartCard title="Revenue Share" height={220} theme={C}>
             <PieChart>
-              <Pie data={(data.channelPerformance || []).filter(c => c.revShare > 0)} cx="50%" cy="50%" innerRadius={50} outerRadius={85} paddingAngle={2} dataKey="revShare" nameKey="channel" animationDuration={1000}>{(data.channelPerformance || []).map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}</Pie>
+              <Pie data={(data.channelPerformance || []).filter(c => c.revShare > 0)} cx="50%" cy="50%" innerRadius={50} outerRadius={85} paddingAngle={2} dataKey="revShare" nameKey="channel" animationDuration={1000}>
+                {(data.channelPerformance || []).map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}
+              </Pie>
               <Tooltip content={<Tip theme={C} />} />
               <Legend />
             </PieChart>
@@ -790,7 +995,9 @@ const Weekly = ({ data, prev, allData, theme }) => {
               <XAxis type="number" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} />
               <YAxis dataKey="product" type="category" width={80} tick={{ fill: C.textMuted, fontSize: 9, fontWeight: 700 }} />
               <Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} />
-              <Bar dataKey="ggr" fill={C.primary} radius={[0, 4, 4, 0]} animationDuration={1000}>{(data.productPerformance || []).map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}</Bar>
+              <Bar dataKey="ggr" fill={C.primary} radius={[0, 4, 4, 0]} animationDuration={1000}>
+                {(data.productPerformance || []).map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}
+              </Bar>
             </BarChart>
           </ChartCard>
         </div>
@@ -802,27 +1009,27 @@ const Weekly = ({ data, prev, allData, theme }) => {
           <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}` }}>
             <p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', margin: '0 0 8px 0' }}>Withdrawal Ratio</p>
             <p style={{ color: C.text, fontSize: '28px', fontWeight: 900, margin: '0 0 8px 0' }}>{data.financialHealth?.withdrawalRatio || 0}%</p>
-            <p style={{ color: C.textMuted, fontSize: '10px', margin: 0, lineHeight: 1.4 }}>Prelievi / Depositi × 100<br/><span style={{ color: C.textSec }}>{fmtCurrency(data.totalWithdrawals)} / {fmtCurrency(data.totalDeposits)}</span></p>
+            <p style={{ color: C.textMuted, fontSize: '10px', margin: 0, lineHeight: 1.4 }}>Prelievi / Depositi × 100<br /><span style={{ color: C.textSec }}>{fmtCurrency(data.totalWithdrawals)} / {fmtCurrency(data.totalDeposits)}</span></p>
           </div>
           <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}` }}>
             <p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', margin: '0 0 8px 0' }}>Bonus ROI</p>
             <p style={{ color: C.text, fontSize: '28px', fontWeight: 900, margin: '0 0 8px 0' }}>{data.financialHealth?.bonusROI || 0}x</p>
-            <p style={{ color: C.textMuted, fontSize: '10px', margin: 0, lineHeight: 1.4 }}>GGR / Bonus erogati<br/><span style={{ color: C.textSec }}>{fmtCurrency(data.financialHealth?._ggr)} / {fmtCurrency(data.financialHealth?._bonus)}</span></p>
+            <p style={{ color: C.textMuted, fontSize: '10px', margin: 0, lineHeight: 1.4 }}>GGR / Bonus erogati<br /><span style={{ color: C.textSec }}>{fmtCurrency(data.financialHealth?._ggr)} / {fmtCurrency(data.financialHealth?._bonus)}</span></p>
           </div>
           <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}` }}>
             <p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', margin: '0 0 8px 0' }}>Customer Value</p>
             <p style={{ color: C.text, fontSize: '28px', fontWeight: 900, margin: '0 0 8px 0' }}>{fmtCurrency(data.financialHealth?.customerValue || 0)}</p>
-            <p style={{ color: C.textMuted, fontSize: '10px', margin: 0, lineHeight: 1.4 }}>GGR / Utenti attivi<br/><span style={{ color: C.textSec }}>{fmtCurrency(data.financialHealth?._ggr)} / {fmtNum(data.financialHealth?._actives)}</span></p>
+            <p style={{ color: C.textMuted, fontSize: '10px', margin: 0, lineHeight: 1.4 }}>GGR / Utenti attivi<br /><span style={{ color: C.textSec }}>{fmtCurrency(data.financialHealth?._ggr)} / {fmtNum(data.financialHealth?._actives)}</span></p>
           </div>
           <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}` }}>
             <p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', margin: '0 0 8px 0' }}>Login / User</p>
             <p style={{ color: C.text, fontSize: '28px', fontWeight: 900, margin: '0 0 8px 0' }}>{data.financialHealth?.loginPerUser || 0}</p>
-            <p style={{ color: C.textMuted, fontSize: '10px', margin: 0, lineHeight: 1.4 }}>Login totali / Utenti attivi<br/><span style={{ color: C.textSec }}>{fmtNum(data.financialHealth?._logins)} / {fmtNum(data.financialHealth?._actives)}</span></p>
+            <p style={{ color: C.textMuted, fontSize: '10px', margin: 0, lineHeight: 1.4 }}>Login totali / Utenti attivi<br /><span style={{ color: C.textSec }}>{fmtNum(data.financialHealth?._logins)} / {fmtNum(data.financialHealth?._actives)}</span></p>
           </div>
           <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}` }}>
             <p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', margin: '0 0 8px 0' }}>Deposit Frequency</p>
             <p style={{ color: C.text, fontSize: '28px', fontWeight: 900, margin: '0 0 8px 0' }}>{data.financialHealth?.depositFrequency || 0}</p>
-            <p style={{ color: C.textMuted, fontSize: '10px', margin: 0, lineHeight: 1.4 }}>Depositi / Depositanti unici<br/><span style={{ color: C.textSec }}>Media depositi per utente</span></p>
+            <p style={{ color: C.textMuted, fontSize: '10px', margin: 0, lineHeight: 1.4 }}>Depositi / Depositanti unici<br /><span style={{ color: C.textSec }}>Media depositi per utente</span></p>
           </div>
         </div>
 
@@ -878,16 +1085,33 @@ export default function Dashboard() {
   useEffect(() => {
     (async () => {
       try {
-        const c = await checkConnection(); setDb(c)
+        const c = await checkConnection()
+        setDb(c)
         const r = await loadAllWeeksData()
-        if (r.data && Object.keys(r.data).length) { setWeeks(r.data); setSelected(Math.max(...Object.keys(r.data).map(Number))) }
+        if (r.data && Object.keys(r.data).length) {
+          setWeeks(r.data)
+          setSelected(Math.max(...Object.keys(r.data).map(Number)))
+        }
       } catch (e) { console.error(e) }
       setLoading(false)
     })()
   }, [])
 
-  const handleUpload = async d => { const u = { ...weeks, [d.weekNumber]: d }; setWeeks(u); setSelected(d.weekNumber); await saveWeekData(d); setTab('weekly') }
-  const handleDelete = async n => { if (!confirm(`Eliminare Week ${n}?`)) return; const { [n]: _, ...rest } = weeks; setWeeks(rest); await deleteWeekData(n); setSelected(Object.keys(rest).length ? Math.max(...Object.keys(rest).map(Number)) : null) }
+  const handleUpload = async d => {
+    const u = { ...weeks, [d.weekNumber]: d }
+    setWeeks(u)
+    setSelected(d.weekNumber)
+    await saveWeekData(d)
+    setTab('weekly')
+  }
+
+  const handleDelete = async n => {
+    if (!confirm(`Eliminare Week ${n}?`)) return
+    const { [n]: _, ...rest } = weeks
+    setWeeks(rest)
+    await deleteWeekData(n)
+    setSelected(Object.keys(rest).length ? Math.max(...Object.keys(rest).map(Number)) : null)
+  }
 
   const weekNums = Object.keys(weeks).map(Number).sort((a, b) => b - a)
   const current = selected ? weeks[selected] : null
@@ -924,7 +1148,9 @@ export default function Dashboard() {
           </div>
           {tab === 'weekly' && weekNums.length > 0 && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <select value={selected || ''} onChange={e => setSelected(Number(e.target.value))} style={{ background: C.bg, color: C.text, border: `1px solid ${C.primary}`, borderRadius: '6px', padding: '8px 14px', fontSize: '13px', fontWeight: 700, cursor: 'pointer', minWidth: '100px' }}>{weekNums.map(w => <option key={w} value={w}>Week {w}</option>)}</select>
+              <select value={selected || ''} onChange={e => setSelected(Number(e.target.value))} style={{ background: C.bg, color: C.text, border: `1px solid ${C.primary}`, borderRadius: '6px', padding: '8px 14px', fontSize: '13px', fontWeight: 700, cursor: 'pointer', minWidth: '100px' }}>
+                {weekNums.map(w => <option key={w} value={w}>Week {w}</option>)}
+              </select>
               {current && <span style={{ color: C.textMuted, fontSize: '12px', fontWeight: 600 }}>{current.dateRange}</span>}
             </div>
           )}
