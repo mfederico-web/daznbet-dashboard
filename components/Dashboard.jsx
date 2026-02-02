@@ -53,7 +53,8 @@ const THEMES = {
   }
 }
 
-const UPLOAD_PASSWORD = 'dazn2025'
+const DASHBOARD_PASSWORD = 'daznbet2026'
+const UPLOAD_PASSWORD = 'soloperpochi2026'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // FILE REQUIREMENTS
@@ -417,7 +418,7 @@ const LoginGate = ({ onLogin, theme }) => {
   const [error, setError] = useState(false)
 
   const handleLogin = () => {
-    if (pwd === UPLOAD_PASSWORD) { onLogin(true); localStorage.setItem('dazn_dashboard_auth', 'true') }
+    if (pwd === DASHBOARD_PASSWORD) { onLogin(true); localStorage.setItem('dazn_dashboard_auth', 'true') }
     else { setError(true); setTimeout(() => setError(false), 2000) }
   }
 
@@ -440,6 +441,9 @@ const LoginGate = ({ onLogin, theme }) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 const UploadPage = ({ weeksData, onUpload, onDelete, onLogout, theme }) => {
   const C = theme
+  const [uploadAuth, setUploadAuth] = useState(false)
+  const [uploadPwd, setUploadPwd] = useState('')
+  const [uploadError, setUploadError] = useState(false)
   const [week, setWeek] = useState('')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
@@ -448,6 +452,26 @@ const UploadPage = ({ weeksData, onUpload, onDelete, onLogout, theme }) => {
   const [msg, setMsg] = useState(null)
   const bulkInputRef = useRef(null)
   const exists = week && weeksData[parseInt(week)]
+
+  useEffect(() => { if (localStorage.getItem('dazn_upload_auth') === 'true') setUploadAuth(true) }, [])
+
+  const handleUploadLogin = () => {
+    if (uploadPwd === UPLOAD_PASSWORD) { setUploadAuth(true); localStorage.setItem('dazn_upload_auth', 'true') }
+    else { setUploadError(true); setTimeout(() => setUploadError(false), 2000) }
+  }
+
+  if (!uploadAuth) return (
+    <div style={{ padding: 'clamp(40px, 5vw, 80px)', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
+      <div style={{ background: C.card, borderRadius: '16px', padding: '40px', border: `1px solid ${C.border}`, maxWidth: '400px', width: '100%', textAlign: 'center' }}>
+        <div style={{ width: '60px', height: '60px', background: C.danger + '15', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px' }}><span style={{ fontSize: '28px' }}>🔐</span></div>
+        <h2 style={{ color: C.text, fontSize: '24px', fontWeight: 800, margin: '0 0 8px 0' }}>Area Riservata</h2>
+        <p style={{ color: C.textMuted, fontSize: '14px', margin: '0 0 32px 0' }}>Serve una password aggiuntiva per accedere all'upload</p>
+        <input type="password" value={uploadPwd} onChange={e => setUploadPwd(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleUploadLogin()} placeholder="Password Upload" style={{ width: '100%', background: C.bg, border: `2px solid ${uploadError ? C.danger : C.border}`, borderRadius: '10px', padding: '14px 18px', color: C.text, fontSize: '16px', marginBottom: '16px', textAlign: 'center', letterSpacing: '4px', outline: 'none' }} />
+        {uploadError && <p style={{ color: C.danger, fontSize: '13px', margin: '0 0 16px 0', fontWeight: 700 }}>Password errata</p>}
+        <button onClick={handleUploadLogin} style={{ width: '100%', background: C.primary, color: C.primaryText, border: 'none', borderRadius: '10px', padding: '14px', fontSize: '16px', fontWeight: 800, cursor: 'pointer' }}>Accedi all'Upload</button>
+      </div>
+    </div>
+  )
 
   const formatDateRange = () => {
     if (!dateFrom || !dateTo) return ''
@@ -525,7 +549,7 @@ const UploadPage = ({ weeksData, onUpload, onDelete, onLogout, theme }) => {
     setLoading(false)
   }
 
-  const handleLogout = () => { onLogout() }
+  const handleLogout = () => { localStorage.removeItem('dazn_upload_auth'); onLogout() }
   const uploadedCount = Object.keys(files).length
 
   return (
@@ -988,7 +1012,7 @@ export default function Dashboard() {
     })()
   }, [isAuth])
 
-  const handleLogout = () => { localStorage.removeItem('dazn_dashboard_auth'); setIsAuth(false) }
+  const handleLogout = () => { localStorage.removeItem('dazn_dashboard_auth'); localStorage.removeItem('dazn_upload_auth'); setIsAuth(false) }
   const handleUpload = async d => { const u = { ...weeks, [d.weekNumber]: d }; setWeeks(u); setSelected(d.weekNumber); await saveWeekData(d); setTab('weekly') }
   const handleDelete = async n => { if (!confirm(`Eliminare Week ${n}?`)) return; const { [n]: _, ...rest } = weeks; setWeeks(rest); await deleteWeekData(n); setSelected(Object.keys(rest).length ? Math.max(...Object.keys(rest).map(Number)) : null) }
 
