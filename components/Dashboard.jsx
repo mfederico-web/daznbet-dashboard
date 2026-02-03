@@ -700,6 +700,7 @@ const Monthly = ({ weeksData, theme }) => {
   const [selectedMonth, setSelectedMonth] = useState('')
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo] = useState('')
+  const [qaChannel, setQaChannel] = useState('ALL')
 
   if (!allWeeks.length) return <div style={{ padding: '60px', textAlign: 'center' }}><p style={{ color: C.textMuted, fontSize: '16px' }}>Nessun dato disponibile</p></div>
 
@@ -739,6 +740,21 @@ const Monthly = ({ weeksData, theme }) => {
   const qualityTotals = { channel: 'TOTALI', isTotal: true, reg: qualityData.reduce((s, c) => s + c.reg, 0), ftds: qualityData.reduce((s, c) => s + c.ftds, 0), conv: 0 }
   qualityTotals.conv = qualityTotals.reg > 0 ? parseFloat((qualityTotals.ftds / qualityTotals.reg * 100).toFixed(1)) : 0
   qualityData.push(qualityTotals)
+
+  // Channel comparison across weeks (max 10)
+  const qaWeeks = weeks.slice(-10)
+  const qaChannelList = qualityData.filter(c => !c.isTotal).map(c => c.channel)
+  const qaCompareData = qaWeeks.map(w => {
+    const qa = w.qualityAcquisition || []
+    if (qaChannel === 'ALL') {
+      const totRow = qa.find(c => c.isTotal)
+      const regSum = totRow ? (totRow.reg || 0) : qa.filter(c => !c.isTotal).reduce((s, c) => s + (c.reg || 0), 0)
+      const ftdSum = totRow ? (totRow.ftds || 0) : qa.filter(c => !c.isTotal).reduce((s, c) => s + (c.ftds || 0), 0)
+      return { week: `W${w.weekNumber}`, REG: regSum, FTDs: ftdSum }
+    }
+    const ch = qa.find(c => c.channel === qaChannel)
+    return { week: `W${w.weekNumber}`, REG: ch ? (ch.reg || 0) : 0, FTDs: ch ? (ch.ftds || 0) : 0 }
+  })
 
   const channelAgg = {}
   weeks.forEach(w => (w.channelPerformance || []).forEach(ch => { if (!channelAgg[ch.channel]) channelAgg[ch.channel] = { channel: ch.channel, turnover: 0, ggr: 0, actives: 0 }; channelAgg[ch.channel].turnover += ch.turnover || 0; channelAgg[ch.channel].ggr += ch.ggr || 0; channelAgg[ch.channel].actives += ch.actives || 0 }))
@@ -875,9 +891,26 @@ const Monthly = ({ weeksData, theme }) => {
             { header: 'FTDs', accessor: 'ftds', align: 'right', format: v => <b>{fmtNum(v)}</b> },
             { header: 'Conv%', accessor: 'conv', align: 'center', format: (v, r) => <span style={{ color: r.isTotal ? C.accent : v >= 55 ? C.success : v >= 45 ? C.orange : C.danger, fontWeight: 800 }}>{v}%</span> }
           ]} data={qualityData} theme={C} />
-          <ChartCard title="REG by Channel" height={220} theme={C}>
-            <BarChart data={qualityData.filter(c => !c.isTotal)} layout="vertical"><XAxis type="number" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><YAxis dataKey="channel" type="category" width={mob ? 70 : 100} tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><Tooltip content={<Tip theme={C} />} /><Bar dataKey="reg" name="REG" fill={C.primary} radius={[0, 4, 4, 0]}>{qualityData.filter(c => !c.isTotal).map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}</Bar></BarChart>
-          </ChartCard>
+          <div style={{ background: C.card, borderRadius: '12px', padding: 'clamp(16px, 2vw, 24px)', border: `1px solid ${C.border}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
+              <h4 style={{ color: C.textSec, margin: 0, fontSize: 'clamp(11px, 1.2vw, 13px)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>REG & FTDs per Week</h4>
+              <select value={qaChannel} onChange={e => setQaChannel(e.target.value)} style={{ background: C.bg, color: C.text, border: `1px solid ${C.primary}`, borderRadius: '6px', padding: '6px 12px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>
+                <option value="ALL">Tutti i Canali</option>
+                {qaChannelList.map(ch => <option key={ch} value={ch}>{ch}</option>)}
+              </select>
+            </div>
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart data={qaCompareData} barGap={2} barCategoryGap="20%">
+                <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
+                <XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} />
+                <YAxis tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} />
+                <Tooltip content={<Tip theme={C} />} />
+                <Legend />
+                <Bar dataKey="REG" fill={C.primary} radius={[4, 4, 0, 0]} />
+                <Bar dataKey="FTDs" fill={C.success} radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
       </Section>
 
