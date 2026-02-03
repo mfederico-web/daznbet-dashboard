@@ -739,16 +739,21 @@ const UploadPage = ({ weeksData, casinoWeeksData, onUpload, onCasinoUpload, onDe
   return (
     <div style={{ padding: 'clamp(20px, 3vw, 48px)' }}>
       <Section title="Upload Week Data" theme={C}>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+          <div style={{ display: 'flex', gap: '4px' }}>
+            {[{ id: 'main', label: 'Dashboard Principale', icon: 'chart' }, { id: 'casino', label: 'Casino', icon: 'casino' }].map(s => (
+              <button key={s.id} onClick={() => { setUploadSection(s.id); setMsg(null) }} style={{ background: uploadSection === s.id ? C.primary : 'transparent', color: uploadSection === s.id ? C.primaryText : C.textSec, border: `1px solid ${uploadSection === s.id ? C.primary : C.border}`, borderRadius: '6px', padding: '8px 16px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}><Icon name={s.icon} size={14} color={uploadSection === s.id ? C.primaryText : C.textSec} />{!mob && s.label}</button>
+            ))}
+          </div>
           <button onClick={handleLogout} style={{ background: 'transparent', color: C.danger, border: `1px solid ${C.danger}`, borderRadius: '6px', padding: '8px 16px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}><Icon name="logout" size={14} color={C.danger} /> Logout</button>
         </div>
         
         {/* UPLOAD MASSIVO */}
         <div style={{ background: C.primary + '10', border: `2px dashed ${C.primary}`, borderRadius: '12px', padding: '24px', marginBottom: '24px', textAlign: 'center' }}>
-          <h3 style={{ color: C.accent, margin: '0 0 8px 0', fontSize: '16px', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}><Icon name="upload" size={18} color={C.accent} /> Upload Massivo</h3>
-          <p style={{ color: C.textMuted, fontSize: '13px', margin: '0 0 16px 0' }}>Seleziona tutti i 10 file Excel insieme - verranno riconosciuti automaticamente</p>
-          <input ref={bulkInputRef} type="file" accept=".xlsx,.xls" multiple onChange={handleBulkUpload} style={{ display: 'none' }} />
-          <button onClick={() => bulkInputRef.current?.click()} disabled={loading} style={{ background: C.primary, color: C.primaryText, border: 'none', borderRadius: '8px', padding: '12px 32px', fontSize: '14px', fontWeight: 800, cursor: 'pointer' }}>
+          <h3 style={{ color: C.accent, margin: '0 0 8px 0', fontSize: '16px', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}><Icon name="upload" size={18} color={C.accent} /> Upload Massivo {!isMain && '(Casino)'}</h3>
+          <p style={{ color: C.textMuted, fontSize: '13px', margin: '0 0 16px 0' }}>Seleziona tutti i {totalRequired} file Excel insieme - verranno riconosciuti automaticamente</p>
+          <input ref={isMain ? bulkInputRef : casinoBulkRef} type="file" accept=".xlsx,.xls" multiple onChange={handleBulkUpload} style={{ display: 'none' }} />
+          <button onClick={() => (isMain ? bulkInputRef : casinoBulkRef).current?.click()} disabled={loading} style={{ background: C.primary, color: C.primaryText, border: 'none', borderRadius: '8px', padding: '12px 32px', fontSize: '14px', fontWeight: 800, cursor: 'pointer' }}>
             {loading ? 'Elaborazione...' : 'Seleziona Tutti i File'}
           </button>
         </div>
@@ -773,8 +778,8 @@ const UploadPage = ({ weeksData, casinoWeeksData, onUpload, onCasinoUpload, onDe
         <details style={{ marginBottom: '24px' }}>
           <summary style={{ color: C.textSec, fontSize: '13px', cursor: 'pointer', fontWeight: 700, marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}><Icon name="box" size={14} color={C.textSec} /> Upload Singolo (clicca per espandere)</summary>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px' }}>
-            {FILES.map((f, i) => {
-              const up = files[f.key]
+            {curFILES.map((f, i) => {
+              const up = curFiles[f.key]
               return (
                 <div key={f.key} style={{ background: C.card, borderRadius: '10px', padding: '14px', border: `1px solid ${up ? C.success : C.border}` }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
