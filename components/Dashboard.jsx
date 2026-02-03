@@ -484,6 +484,8 @@ const LoginGate = ({ onLogin, theme }) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 const UploadPage = ({ weeksData, onUpload, onDelete, onLogout, theme }) => {
   const C = theme
+  const ww = useWindowWidth()
+  const mob = ww < 768
   const [uploadAuth, setUploadAuth] = useState(false)
   const [uploadPwd, setUploadPwd] = useState('')
   const [uploadError, setUploadError] = useState(false)
