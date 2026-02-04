@@ -93,7 +93,8 @@ const CASINO_FILES = [
   { key: 'casinoSkinTotal', name: 'Anagrafica_SKIN_TOTALCASINO.xlsx', path: 'SKIN Total Casino' },
   { key: 'casinoAcademyTotal', name: 'Anagrafica_ACCADEMY_TOTALCASINO.xlsx', path: 'Academy Total Casino' },
   { key: 'casinoOrganicTotal', name: 'Anagrafica_ORGANIC_TOTALCASINO.xlsx', path: 'Organic Total Casino' },
-  { key: 'casinoDaznbet', name: 'Anagrafica_DAZNBETCASINO.xlsx', path: 'DAZNBET Casino' }
+  { key: 'casinoDaznbet', name: 'Anagrafica_DAZNBETCASINO.xlsx', path: 'DAZNBET Casino' },
+  { key: 'casinoSessioni', name: 'SessioniCasino.xlsx', path: 'Report Sessioni Casino (ticket-level)' }
 ]
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -447,11 +448,92 @@ const processCasinoData = (files, weekNum, dateRange) => {
     c.revShare = totChGgr > 0 ? parseFloat((c.ggr / totChGgr * 100).toFixed(1)) : 0
   })
 
+  // Process Sessions if uploaded
+  const sessionData = files.casinoSessioni ? processSessionData(files.casinoSessioni) : null
+
   return {
     weekNumber: weekNum, dateRange, turnover, ggr, activeUsers: actives, betBonus, numTicket, arpu, avgAge,
     gwm: turnover > 0 ? parseFloat((ggr / turnover * 100).toFixed(1)) : 0,
-    ageGroups: ageData, categories, providers, games, channelPerformance: chanPerf
+    ageGroups: ageData, categories, providers, games, channelPerformance: chanPerf, sessionData
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SESSION DATA PROCESSOR (from SessioniCasino.xlsx)
+// ═══════════════════════════════════════════════════════════════════════════════
+const processSessionData = (rows) => {
+  if (!rows || rows.length === 0) return null
+  const ONLINE = ['DAZNBET-SKIN', 'VIVABET-SKIN']
+  const DAYS = ['Lun','Mar','Mer','Gio','Ven','Sab','Dom']
+  const BLOCKS = ['00-04','04-08','08-12','12-16','16-20','20-24']
+
+  const makeSeg = () => ({
+    tk: 0, g: 0, ggr: 0, acc: new Set(),
+    h: Array.from({length:24}, () => ({t:0,g:0,r:0})),
+    d: Array.from({length:7}, () => ({t:0,g:0,r:0})),
+    dur: [0,0,0,0,0,0,0,0], durS: 0, durN: 0,
+    hm: Array.from({length:7}, () => Array(6).fill(0)),
+    pr: {}
+  })
+  const S = { gen: makeSeg(), onl: makeSeg(), pvr: makeSeg() }
+  let minD = null, maxD = null
+
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i]
+    const sd = r['Data vendita']
+    if (!sd || !(sd instanceof Date) || isNaN(sd.getTime())) continue
+    const ed = r['Data fine']
+    const pr = String(r['Cod promoter'] || '').trim()
+    const gi = parseFloat(r['Giocato']) || 0
+    const gr = parseFloat(r['GGR']) || 0
+    const ac = String(r['Id conto'] || '')
+    if (!minD || sd < minD) minD = sd
+    if (!maxD || sd > maxD) maxD = sd
+    const hr = sd.getHours()
+    const dw = sd.getDay()
+    const di = dw === 0 ? 6 : dw - 1
+    const bi = Math.min(Math.floor(hr / 4), 5)
+    let dm = null
+    if (ed instanceof Date && !isNaN(ed.getTime())) { dm = (ed - sd) / 60000; if (dm < 0) dm = null }
+    const isO = ONLINE.includes(pr)
+    const tgts = [S.gen, isO ? S.onl : S.pvr]
+    for (let j = 0; j < 2; j++) {
+      const s = tgts[j]; s.tk++; s.g += gi; s.ggr += gr
+      if (ac) s.acc.add(ac)
+      s.h[hr].t++; s.h[hr].g += gi; s.h[hr].r += gr
+      s.d[di].t++; s.d[di].g += gi; s.d[di].r += gr
+      s.hm[di][bi]++
+      if (dm !== null && dm >= 0) {
+        s.durS += dm; s.durN++
+        s.dur[dm<1?0:dm<5?1:dm<15?2:dm<30?3:dm<60?4:dm<120?5:dm<240?6:7]++
+      }
+      if (pr) s.pr[pr] = (s.pr[pr] || 0) + 1
+    }
+  }
+
+  const fin = (s) => {
+    const acc = s.acc.size
+    const avg = s.durN > 0 ? Math.round(s.durS / s.durN * 10) / 10 : 0
+    const gwm = s.g > 0 ? Math.round(s.ggr / s.g * 1000) / 10 : 0
+    const tb = [{n:'Notte',r:'00-06',t:0,g:0,rr:0},{n:'Mattina',r:'06-12',t:0,g:0,rr:0},{n:'Pomeriggio',r:'12-18',t:0,g:0,rr:0},{n:'Sera',r:'18-24',t:0,g:0,rr:0}]
+    s.h.forEach((h,i) => { const x = i<6?0:i<12?1:i<18?2:3; tb[x].t+=h.t; tb[x].g+=h.g; tb[x].rr+=h.r })
+    const tbT = tb.reduce((a,b)=>a+b.t,0)
+    const timeBlocks = tb.map(b => ({name:b.n,range:b.r,tickets:b.t,giocato:Math.round(b.g),ggr:Math.round(b.rr),percent:tbT>0?Math.round(b.t/tbT*1000)/10:0}))
+    const hourly = s.h.map((h,i) => ({hour:String(i).padStart(2,'0')+':00',tickets:h.t,giocato:Math.round(h.g),ggr:Math.round(h.r),pct:s.tk>0?Math.round(h.t/s.tk*1000)/10:0}))
+    const daily = s.d.map((d,i) => ({day:DAYS[i],tickets:d.t,giocato:Math.round(d.g),ggr:Math.round(d.r),pct:s.tk>0?Math.round(d.t/s.tk*1000)/10:0}))
+    const DL = ['<1m','1-5m','5-15m','15-30m','30-60m','1-2h','2-4h','4h+']
+    const duration = DL.map((l,i) => ({range:l,count:s.dur[i],percent:s.durN>0?Math.round(s.dur[i]/s.durN*1000)/10:0}))
+    const heatmap = DAYS.map((dy,di) => ({day:dy,blocks:BLOCKS.map((bl,bi) => ({block:bl,tickets:s.hm[di][bi],pct:s.tk>0?Math.round(s.hm[di][bi]/s.tk*1000)/10:0}))}))
+    const promoters = Object.entries(s.pr).map(([n,c])=>({name:n,count:c,pct:s.tk>0?Math.round(c/s.tk*1000)/10:0})).sort((a,b)=>b.count-a.count)
+    const pH = hourly.reduce((b,h)=>h.tickets>b.tickets?h:b,hourly[0])
+    const gH = hourly.reduce((b,h)=>h.ggr>b.ggr?h:b,hourly[0])
+    const tD = daily.reduce((b,d)=>d.tickets>b.tickets?d:b,daily[0])
+    return { tickets:s.tk, giocato:Math.round(s.g), ggr:Math.round(s.ggr), accounts:acc, gwm, avgDuration:avg, hourly, daily, timeBlocks, duration, heatmap, promoters,
+      insights:{peakHour:pH.hour,peakHourPct:pH.pct,bestGgrHour:gH.hour,bestGgrAmount:gH.ggr,topDay:tD.day,topDayPct:tD.pct}
+    }
+  }
+  const df = d => d ? `${d.getDate().toString().padStart(2,'0')} ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()]} ${d.getFullYear()}` : ''
+  return { period: `${df(minD)} - ${df(maxD)}`, totalRows: rows.length, segments: { generale: fin(S.gen), online: fin(S.onl), pvr: fin(S.pvr) } }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -475,6 +557,9 @@ const ICON_PATHS = {
   percent: 'M7.5 11C9.4 11 11 9.4 11 7.5S9.4 4 7.5 4 4 5.6 4 7.5 5.6 11 7.5 11zm0-5C8.3 6 9 6.7 9 7.5S8.3 9 7.5 9 6 8.3 6 7.5 6.7 6 7.5 6zM16.5 13c-1.9 0-3.5 1.6-3.5 3.5s1.6 3.5 3.5 3.5 3.5-1.6 3.5-3.5-1.6-3.5-3.5-3.5zm0 5c-.8 0-1.5-.7-1.5-1.5s.7-1.5 1.5-1.5 1.5.7 1.5 1.5-.7 1.5-1.5 1.5zM5.6 20L20 5.6 18.4 4 4 18.4 5.6 20z',
   casino: 'M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM7.5 8C8.3 8 9 7.3 9 6.5S8.3 5 7.5 5 6 5.7 6 6.5 6.7 8 7.5 8zm0 11c-.8 0-1.5-.7-1.5-1.5S6.7 16 7.5 16s1.5.7 1.5 1.5S8.3 19 7.5 19zm4.5-5.5c-.8 0-1.5-.7-1.5-1.5s.7-1.5 1.5-1.5 1.5.7 1.5 1.5-.7 1.5-1.5 1.5zm4.5 5.5c-.8 0-1.5-.7-1.5-1.5s.7-1.5 1.5-1.5 1.5.7 1.5 1.5-.7 1.5-1.5 1.5zm0-11c-.8 0-1.5-.7-1.5-1.5S15.7 5 16.5 5s1.5.7 1.5 1.5S17.3 8 16.5 8z',
   sport: 'M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm1 17.9V17h-2v2.9c-3.5-.4-6.4-3.2-6.9-6.7L7 13v-2l-2.9.2C4.5 7.6 7.4 4.7 11 4.1V7h2V4.1c3.6.5 6.5 3.4 7 7L17 11v2l2.9-.2c-.4 3.5-3.3 6.4-6.9 6.8v.3z',
+  clock: 'M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm0 18c-4.4 0-8-3.6-8-8s3.6-8 8-8 8 3.6 8 8-3.6 8-8 8zm.5-13H11v6l5.2 3.2.8-1.3-4.5-2.7V7z',
+  store: 'M20 4H4v2h16V4zm1 10v-2l-1-5H4l-1 5v2h1v6h10v-6h4v6h2v-6h1zm-9 4H6v-4h6v4z',
+  globe: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z',
 }
 
 const Icon = ({ name, size = 16, color }) => (
@@ -693,6 +778,7 @@ const UploadPage = ({ weeksData, casinoWeeksData, onUpload, onCasinoUpload, onDe
     if (fname.includes('accademy_totalcasino') || fname.includes('academy_totalcasino')) return 'casinoAcademyTotal'
     if (fname.includes('organic_totalcasino')) return 'casinoOrganicTotal'
     if (fname.includes('daznbetcasino')) return 'casinoDaznbet'
+    if (fname.includes('sessionicasino') || fname.includes('sessioni_casino')) return 'casinoSessioni'
     return null
   }
 
@@ -1286,6 +1372,213 @@ const Weekly = ({ data, prev, theme }) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // CASINO SECTION
 // ═══════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
+// CASINO SESSIONS COMPONENT (dynamic from uploaded SessioniCasino.xlsx)
+// ═══════════════════════════════════════════════════════════════════════════════
+const CasinoSessions = ({ sessionData, theme }) => {
+  const C = theme
+  const ww = useWindowWidth()
+  const mob = ww < 768
+  const [seg, setSeg] = useState('generale')
+
+  if (!sessionData) return (
+    <div style={{ padding: '60px 20px', textAlign: 'center' }}>
+      <Icon name="clock" size={40} color={C.textMuted} />
+      <h3 style={{ color: C.text, margin: '16px 0 8px', fontWeight: 800 }}>No Session Data</h3>
+      <p style={{ color: C.textMuted, fontSize: '13px', maxWidth: 400, margin: '0 auto' }}>Upload <b>SessioniCasino.xlsx</b> in the Admin area to enable session analysis.</p>
+    </div>
+  )
+
+  const data = sessionData.segments[seg]
+  if (!data) return null
+
+  const segOpts = [
+    { k: 'generale', label: 'Generale', icon: 'casino', sub: `${fmtNum(sessionData.segments.generale.tickets)} tickets` },
+    { k: 'online', label: 'Online', icon: 'globe', sub: 'DAZNBET + VIVABET' },
+    { k: 'pvr', label: 'PVR / Retail', icon: 'store', sub: 'All other SKIN' }
+  ]
+
+  const ins = data.insights
+  const insCards = [
+    { label: 'Peak Hour', value: ins.peakHour, sub: `${ins.peakHourPct}% of tickets`, color: C.primary },
+    { label: 'Best GGR Hour', value: ins.bestGgrHour, sub: `€${fmtNum(ins.bestGgrAmount)}`, color: C.success },
+    { label: 'Top Day', value: ins.topDay, sub: `${ins.topDayPct}% of tickets`, color: C.accent }
+  ]
+
+  return (
+    <div style={{ padding: 'clamp(20px, 3vw, 48px)' }}>
+      {/* Period & Segment Selector */}
+      <div style={{ marginBottom: '24px' }}>
+        <p style={{ color: C.textMuted, fontSize: '11px', fontWeight: 700, margin: '0 0 12px', textTransform: 'uppercase', letterSpacing: '1px' }}>Period: {sessionData.period} — {fmtNum(sessionData.totalRows)} records</p>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          {segOpts.map(o => (
+            <button key={o.k} onClick={() => setSeg(o.k)} style={{
+              display: 'flex', alignItems: 'center', gap: '8px', background: seg === o.k ? C.primary : C.card,
+              color: seg === o.k ? C.primaryText : C.text, border: `1px solid ${seg === o.k ? C.primary : C.border}`,
+              borderRadius: '8px', padding: '10px 16px', cursor: 'pointer', transition: 'all .2s'
+            }}>
+              <Icon name={o.icon} size={16} color={seg === o.k ? C.primaryText : C.textMuted} />
+              <div style={{ textAlign: 'left' }}>
+                <div style={{ fontWeight: 800, fontSize: '13px' }}>{o.label}</div>
+                <div style={{ fontSize: '10px', opacity: .7 }}>{o.sub}</div>
+              </div>
+            </button>
+          ))}
+        </div>
+        {/* Promoter badges */}
+        {data.promoters.length > 0 && (
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '12px' }}>
+            {data.promoters.slice(0, 8).map(p => (
+              <span key={p.name} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: '20px', padding: '4px 10px', fontSize: '10px', fontWeight: 700, color: C.textSec }}>{p.name.replace('-SKIN', '')} <span style={{ color: C.primary }}>{p.pct}%</span></span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* KPI Overview */}
+      <Section title="Session Overview" theme={C}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px', marginBottom: '20px' }}>
+          <KPI label="Tickets" value={data.tickets} icon="activity" theme={C} />
+          <KPI label="Unique Accounts" value={data.accounts} icon="users" theme={C} />
+          <KPI label="Giocato" value={data.giocato} cur icon="wallet" theme={C} />
+          <KPI label="GGR" value={data.ggr} cur icon="trending" sub={`GWM: ${data.gwm}%`} theme={C} />
+          <KPI label="Avg Duration" value={`${data.avgDuration}m`} icon="clock" theme={C} />
+          <KPI label="Ticket/Account" value={data.accounts > 0 ? Math.round(data.tickets / data.accounts) : 0} icon="card" theme={C} />
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : 'repeat(3, 1fr)', gap: '12px' }}>
+          {insCards.map(c => (
+            <div key={c.label} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '10px', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ width: 8, height: 40, borderRadius: 4, background: c.color }} />
+              <div><p style={{ margin: 0, fontSize: '10px', fontWeight: 700, color: C.textMuted, textTransform: 'uppercase' }}>{c.label}</p><p style={{ margin: '2px 0 0', fontSize: '20px', fontWeight: 900, color: C.text }}>{c.value}</p><p style={{ margin: 0, fontSize: '11px', color: C.textSec }}>{c.sub}</p></div>
+            </div>
+          ))}
+        </div>
+      </Section>
+
+      {/* Hourly Distribution */}
+      <Section title="Distribuzione Oraria" theme={C}>
+        <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '2fr 1fr', gap: '16px' }}>
+          <ChartCard title="Ticket & GGR per Ora" height={260} theme={C}>
+            <ComposedChart data={data.hourly}><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="hour" tick={{ fill: C.textMuted, fontSize: 9, fontWeight: 700 }} interval={mob ? 3 : 1} /><YAxis yAxisId="l" tick={{ fill: C.textMuted, fontSize: 9 }} /><YAxis yAxisId="r" orientation="right" tick={{ fill: C.textMuted, fontSize: 9 }} tickFormatter={v => `€${(v/1000).toFixed(0)}K`} /><Tooltip content={<Tip theme={C} />} /><Legend /><Bar yAxisId="l" dataKey="tickets" name="Tickets" fill={C.primary} radius={[2,2,0,0]} opacity={.8} /><Line yAxisId="r" type="monotone" dataKey="ggr" name="GGR" stroke={C.success} strokeWidth={2} dot={false} /></ComposedChart>
+          </ChartCard>
+          <div>
+            <ChartCard title="Time Blocks" height={180} theme={C}>
+              <PieChart><Pie data={data.timeBlocks} cx="50%" cy="50%" innerRadius={35} outerRadius={65} paddingAngle={3} dataKey="tickets" nameKey="name">{data.timeBlocks.map((_,i)=><Cell key={i} fill={C.chart[i%C.chart.length]} />)}</Pie><Tooltip content={<Tip theme={C} />} /><Legend wrapperStyle={{fontSize:'10px'}} /></PieChart>
+            </ChartCard>
+            <div style={{ marginTop: '12px' }}>
+              {data.timeBlocks.map(b => (
+                <div key={b.name} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 8px', borderBottom: `1px solid ${C.border}`, fontSize: '11px' }}>
+                  <span style={{ fontWeight: 700, color: C.text }}>{b.name} <span style={{ color: C.textMuted, fontWeight: 400 }}>{b.range}</span></span>
+                  <span style={{ fontWeight: 800, color: C.primary }}>{b.percent}%</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </Section>
+
+      {/* Daily Distribution */}
+      <Section title="Distribuzione Giornaliera" theme={C}>
+        <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '1fr 1fr', gap: '16px' }}>
+          <ChartCard title="Tickets per Day" height={220} theme={C}>
+            <BarChart data={data.daily}><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="day" tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} /><YAxis tick={{ fill: C.textMuted, fontSize: 10 }} /><Tooltip content={<Tip theme={C} />} /><Bar dataKey="tickets" fill={C.primary} radius={[4,4,0,0]}>{data.daily.map((_,i)=><Cell key={i} fill={C.chart[i%C.chart.length]} />)}</Bar></BarChart>
+          </ChartCard>
+          <ChartCard title="GGR per Day" height={220} theme={C}>
+            <BarChart data={data.daily}><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="day" tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} /><YAxis tick={{ fill: C.textMuted, fontSize: 10 }} tickFormatter={v => `€${(v/1000).toFixed(0)}K`} /><Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} /><Bar dataKey="ggr" fill={C.success} radius={[4,4,0,0]}>{data.daily.map((_,i)=><Cell key={i} fill={C.chart[i%C.chart.length]} />)}</Bar></BarChart>
+          </ChartCard>
+        </div>
+      </Section>
+
+      {/* Duration */}
+      <Section title="Durata Sessioni" theme={C}>
+        <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '1.5fr 1fr', gap: '16px' }}>
+          <ChartCard title="Duration Distribution" height={220} theme={C}>
+            <BarChart data={data.duration}><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="range" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><YAxis tick={{ fill: C.textMuted, fontSize: 10 }} /><Tooltip content={<Tip theme={C} />} /><Bar dataKey="count" fill={C.accent} radius={[4,4,0,0]}>{data.duration.map((_,i)=><Cell key={i} fill={C.chart[i%C.chart.length]} />)}</Bar></BarChart>
+          </ChartCard>
+          <div style={{ background: C.card, borderRadius: '12px', padding: '16px', border: `1px solid ${C.border}` }}>
+            <p style={{ fontSize: '11px', fontWeight: 800, color: C.textMuted, margin: '0 0 12px', textTransform: 'uppercase' }}>Breakdown</p>
+            {data.duration.map(d => (
+              <div key={d.range} style={{ marginBottom: '8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '3px' }}>
+                  <span style={{ fontWeight: 700, color: C.text }}>{d.range}</span>
+                  <span style={{ fontWeight: 800, color: C.primary }}>{d.percent}% <span style={{ color: C.textMuted, fontWeight: 400 }}>({fmtNum(d.count)})</span></span>
+                </div>
+                <div style={{ height: 4, background: C.bg, borderRadius: 2 }}><div style={{ height: 4, borderRadius: 2, background: C.primary, width: `${d.percent}%`, transition: 'width .5s' }} /></div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </Section>
+
+      {/* Heatmap */}
+      <Section title="Heatmap Giorno × Fascia Oraria" theme={C}>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
+            <thead><tr>
+              <th style={{ padding: '8px', textAlign: 'left', fontWeight: 800, color: C.textMuted, borderBottom: `2px solid ${C.border}` }}></th>
+              {['00-04','04-08','08-12','12-16','16-20','20-24'].map(b => <th key={b} style={{ padding: '8px', textAlign: 'center', fontWeight: 800, color: C.textMuted, borderBottom: `2px solid ${C.border}` }}>{b}</th>)}
+              <th style={{ padding: '8px', textAlign: 'center', fontWeight: 800, color: C.textMuted, borderBottom: `2px solid ${C.border}` }}>Total</th>
+            </tr></thead>
+            <tbody>{data.heatmap.map(row => {
+              const maxPct = Math.max(...data.heatmap.flatMap(r => r.blocks.map(b => b.pct)))
+              const rowTotal = row.blocks.reduce((s, b) => s + b.tickets, 0)
+              return (
+                <tr key={row.day}>
+                  <td style={{ padding: '8px', fontWeight: 800, color: C.text }}>{row.day}</td>
+                  {row.blocks.map(b => {
+                    const intensity = maxPct > 0 ? b.pct / maxPct : 0
+                    const isDark = C.bg.includes('0a0a')
+                    const bgColor = isDark
+                      ? `rgba(247, 255, 26, ${intensity * 0.7})`
+                      : `rgba(0, 0, 0, ${intensity * 0.6})`
+                    const txtColor = intensity > 0.5 ? (isDark ? '#000' : '#fff') : C.text
+                    return <td key={b.block} style={{ padding: '8px 6px', textAlign: 'center', fontWeight: 700, background: bgColor, color: txtColor, borderRadius: '4px' }}>{b.pct}%</td>
+                  })}
+                  <td style={{ padding: '8px', textAlign: 'center', fontWeight: 800, color: C.primary }}>{fmtNum(rowTotal)}</td>
+                </tr>
+              )
+            })}</tbody>
+          </table>
+        </div>
+      </Section>
+
+      {/* Online vs PVR comparison (only in Generale view) */}
+      {seg === 'generale' && sessionData.segments.online.tickets > 0 && sessionData.segments.pvr.tickets > 0 && (
+        <Section title="Online vs PVR / Retail" theme={C}>
+          <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '1fr 1fr', gap: '16px' }}>
+            {[{k:'online',label:'Online',icon:'globe',d:sessionData.segments.online},{k:'pvr',label:'PVR / Retail',icon:'store',d:sessionData.segments.pvr}].map(s => (
+              <div key={s.k} style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}` }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+                  <Icon name={s.icon} size={18} color={C.primary} />
+                  <h4 style={{ margin: 0, color: C.text, fontWeight: 800, fontSize: '14px' }}>{s.label}</h4>
+                  <span style={{ marginLeft: 'auto', background: C.primary+'22', color: C.primary, padding: '2px 8px', borderRadius: '12px', fontSize: '10px', fontWeight: 800 }}>{(s.d.tickets / data.tickets * 100).toFixed(1)}%</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '16px' }}>
+                  {[{l:'Tickets',v:fmtNum(s.d.tickets)},{l:'Accounts',v:fmtNum(s.d.accounts)},{l:'GGR',v:fmtCurrency(s.d.ggr)},{l:'GWM',v:`${s.d.gwm}%`},{l:'Avg Duration',v:`${s.d.avgDuration}m`},{l:'Peak',v:s.d.insights.peakHour}].map(m => (
+                    <div key={m.l}><p style={{ margin: 0, fontSize: '9px', fontWeight: 700, color: C.textMuted, textTransform: 'uppercase' }}>{m.l}</p><p style={{ margin: '2px 0 0', fontSize: '16px', fontWeight: 900, color: C.text }}>{m.v}</p></div>
+                  ))}
+                </div>
+                {/* Mini sparkline hourly */}
+                <div style={{ height: 50, display: 'flex', alignItems: 'flex-end', gap: 1 }}>
+                  {s.d.hourly.map((h, i) => {
+                    const maxT = Math.max(...s.d.hourly.map(x => x.tickets))
+                    return <div key={i} style={{ flex: 1, background: C.primary, opacity: .6, borderRadius: '2px 2px 0 0', height: maxT > 0 ? `${(h.tickets / maxT) * 100}%` : '2px', transition: 'height .3s' }} title={`${h.hour}: ${h.tickets} tickets`} />
+                  })}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px' }}>
+                  <span style={{ fontSize: '9px', color: C.textMuted }}>00:00</span>
+                  <span style={{ fontSize: '9px', color: C.textMuted }}>12:00</span>
+                  <span style={{ fontSize: '9px', color: C.textMuted }}>23:00</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
+    </div>
+  )
+}
+
 const CasinoSection = ({ weeksData, theme }) => {
   const C = theme
   const ww = useWindowWidth()
@@ -1296,6 +1589,7 @@ const CasinoSection = ({ weeksData, theme }) => {
   useEffect(() => { if (weekNums.length && !selected) setSelected(weekNums[0]) }, [weekNums.length])
   const current = selected ? weeksData[selected] : null
   const prev = selected && weeksData[selected - 1] ? weeksData[selected - 1] : null
+  const hasAnySessions = weekNums.some(w => weeksData[w]?.sessionData)
 
   if (!weekNums.length) return (
     <div style={{ padding: '80px 20px', textAlign: 'center' }}>
@@ -1309,21 +1603,21 @@ const CasinoSection = ({ weeksData, theme }) => {
     <div>
       <div style={{ padding: mob ? '12px 16px' : '16px clamp(20px, 3vw, 48px)', display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap', borderBottom: `1px solid ${C.border}` }}>
         <div style={{ display: 'flex', gap: '4px' }}>
-          {['weekly', 'monthly'].map(v => (
-            <button key={v} onClick={() => setView(v)} style={{ background: view === v ? C.primary : 'transparent', color: view === v ? C.primaryText : C.textSec, border: `1px solid ${view === v ? C.primary : C.border}`, borderRadius: '6px', padding: '8px 16px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>{v === 'weekly' ? 'Weekly' : 'Monthly'}</button>
+          {['weekly', 'monthly', ...(hasAnySessions ? ['sessions'] : [])].map(v => (
+            <button key={v} onClick={() => setView(v)} style={{ background: view === v ? C.primary : 'transparent', color: view === v ? C.primaryText : C.textSec, border: `1px solid ${view === v ? C.primary : C.border}`, borderRadius: '6px', padding: '8px 16px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>{v === 'weekly' ? 'Weekly' : v === 'monthly' ? 'Monthly' : 'Sessions'}</button>
           ))}
         </div>
-        {view === 'weekly' && (
+        {(view === 'weekly' || view === 'sessions') && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <select value={selected || ''} onChange={e => setSelected(Number(e.target.value))} style={{ background: C.bg, color: C.text, border: `1px solid ${C.primary}`, borderRadius: '6px', padding: '8px 14px', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}>
-              {weekNums.map(w => <option key={w} value={w}>Week {w}</option>)}
+              {weekNums.map(w => <option key={w} value={w}>Week {w}{view === 'sessions' && weeksData[w]?.sessionData ? ' ✓' : view === 'sessions' ? ' —' : ''}</option>)}
             </select>
             {current && <span style={{ color: C.textMuted, fontSize: '12px', fontWeight: 600 }}>{current.dateRange}</span>}
           </div>
         )}
         <span style={{ marginLeft: 'auto', color: C.accent, fontSize: '12px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px' }}>Casino</span>
       </div>
-      {view === 'weekly' ? <CasinoWeekly data={current} prev={prev} theme={C} /> : <CasinoMonthly weeksData={weeksData} theme={C} />}
+      {view === 'weekly' ? <CasinoWeekly data={current} prev={prev} theme={C} /> : view === 'monthly' ? <CasinoMonthly weeksData={weeksData} theme={C} /> : <CasinoSessions sessionData={current?.sessionData} theme={C} />}
     </div>
   )
 }
