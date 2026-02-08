@@ -557,9 +557,9 @@ const processSportData = (files, weekNum, dateRange) => {
   const totalRows = files.sportTotal || []
   
   // Online (15125) vs Retail (4528, 4218) from Sport_Total
-  let onlineRaw = { turnover: 0, ggr: 0, tickets: 0, turnoverLive: 0, ticketsLive: 0, vinto: 0, betBonus: 0 }
-  let retail4528 = { turnover: 0, ggr: 0, tickets: 0, turnoverLive: 0, ticketsLive: 0, vinto: 0 }
-  let retail4218 = { turnover: 0, ggr: 0, tickets: 0, turnoverLive: 0, ticketsLive: 0, vinto: 0 }
+  let onlineRaw = { turnover: 0, ggr: 0, tickets: 0, turnoverLive: 0, ticketsLive: 0, vinto: 0, vintoLive: 0, ggrLive: 0, betBonus: 0 }
+  let retail4528 = { turnover: 0, ggr: 0, tickets: 0, turnoverLive: 0, ticketsLive: 0, vinto: 0, vintoLive: 0, ggrLive: 0 }
+  let retail4218 = { turnover: 0, ggr: 0, tickets: 0, turnoverLive: 0, ticketsLive: 0, vinto: 0, vintoLive: 0, ggrLive: 0 }
   
   for (const row of totalRows) {
     const idCn = String(row['Id_cn'] || row['id_cn'] || '')
@@ -571,20 +571,23 @@ const processSportData = (files, weekNum, dateRange) => {
       turnoverLive: parseNum(row['Giocato live']),
       ticketsLive: parseNum(row['Biglietti live']),
       vinto: parseNum(row['Vinto']),
+      vintoLive: parseNum(row['Vinto live']),
+      ggrLive: parseNum(row['Netto live']),
       betBonus: parseNum(row['Bet bonus'])
     }
     if (idCn === '15125') {
       onlineRaw.turnover += data.turnover; onlineRaw.ggr += data.ggr; onlineRaw.tickets += data.tickets
       onlineRaw.turnoverLive += data.turnoverLive; onlineRaw.ticketsLive += data.ticketsLive
-      onlineRaw.vinto += data.vinto; onlineRaw.betBonus += data.betBonus
+      onlineRaw.vinto += data.vinto; onlineRaw.vintoLive += data.vintoLive; onlineRaw.ggrLive += data.ggrLive
+      onlineRaw.betBonus += data.betBonus
     } else if (idCn === '4528') {
       retail4528.turnover += data.turnover; retail4528.ggr += data.ggr; retail4528.tickets += data.tickets
       retail4528.turnoverLive += data.turnoverLive; retail4528.ticketsLive += data.ticketsLive
-      retail4528.vinto += data.vinto
+      retail4528.vinto += data.vinto; retail4528.vintoLive += data.vintoLive; retail4528.ggrLive += data.ggrLive
     } else if (idCn === '4218') {
       retail4218.turnover += data.turnover; retail4218.ggr += data.ggr; retail4218.tickets += data.tickets
       retail4218.turnoverLive += data.turnoverLive; retail4218.ticketsLive += data.ticketsLive
-      retail4218.vinto += data.vinto
+      retail4218.vinto += data.vinto; retail4218.vintoLive += data.vintoLive; retail4218.ggrLive += data.ggrLive
     }
   }
   
@@ -593,7 +596,9 @@ const processSportData = (files, weekNum, dateRange) => {
     ggr: retail4528.ggr + retail4218.ggr,
     tickets: retail4528.tickets + retail4218.tickets,
     turnoverLive: retail4528.turnoverLive + retail4218.turnoverLive,
-    ticketsLive: retail4528.ticketsLive + retail4218.ticketsLive
+    ticketsLive: retail4528.ticketsLive + retail4218.ticketsLive,
+    vintoLive: retail4528.vintoLive + retail4218.vintoLive,
+    ggrLive: retail4528.ggrLive + retail4218.ggrLive
   }
   
   const totals = {
@@ -603,6 +608,8 @@ const processSportData = (files, weekNum, dateRange) => {
     turnoverLive: onlineRaw.turnoverLive + retailTot.turnoverLive,
     ticketsLive: onlineRaw.ticketsLive + retailTot.ticketsLive,
     vinto: onlineRaw.vinto + retail4528.vinto + retail4218.vinto,
+    vintoLive: onlineRaw.vintoLive + retailTot.vintoLive,
+    ggrLive: onlineRaw.ggrLive + retailTot.ggrLive,
     betBonus: onlineRaw.betBonus
   }
   
@@ -701,8 +708,15 @@ const processSportData = (files, weekNum, dateRange) => {
   online.pct = totals.turnover > 0 ? Math.round(online.turnover / totals.turnover * 1000) / 10 : 0
   const retail = { ...retailTot, pct: totals.turnover > 0 ? Math.round(retailTot.turnover / totals.turnover * 1000) / 10 : 0 }
   
+  // Pre-Match vs Live breakdown with GGR and Payout
   const turnoverPreMatch = totals.turnover - totals.turnoverLive
   const ticketsPreMatch = totals.tickets - totals.ticketsLive
+  const ggrPreMatch = totals.ggr - totals.ggrLive
+  const vintoPreMatch = totals.vinto - totals.vintoLive
+  const payoutLive = totals.turnoverLive > 0 ? Math.round(totals.vintoLive / totals.turnoverLive * 1000) / 10 : 0
+  const payoutPreMatch = turnoverPreMatch > 0 ? Math.round(vintoPreMatch / turnoverPreMatch * 1000) / 10 : 0
+  const gwmLive = totals.turnoverLive > 0 ? Math.round(totals.ggrLive / totals.turnoverLive * 1000) / 10 : 0
+  const gwmPreMatch = turnoverPreMatch > 0 ? Math.round(ggrPreMatch / turnoverPreMatch * 1000) / 10 : 0
   
   // ═══════════════════════════════════════════════════════════════════════════
   // SPORT_Total_età.xlsx - per-account with age
@@ -875,9 +889,23 @@ const processSportData = (files, weekNum, dateRange) => {
     // Online vs Retail
     online,
     retail,
-    // Pre-match vs Live
-    preMatch: { turnover: turnoverPreMatch, tickets: ticketsPreMatch, pct: totals.turnover > 0 ? Math.round(turnoverPreMatch / totals.turnover * 1000) / 10 : 0 },
-    live: { turnover: totals.turnoverLive, tickets: totals.ticketsLive, pct: livePct },
+    // Pre-match vs Live (now with GGR and Payout)
+    preMatch: { 
+      turnover: turnoverPreMatch, 
+      tickets: ticketsPreMatch, 
+      ggr: ggrPreMatch,
+      payout: payoutPreMatch,
+      gwm: gwmPreMatch,
+      pct: totals.turnover > 0 ? Math.round(turnoverPreMatch / totals.turnover * 1000) / 10 : 0 
+    },
+    live: { 
+      turnover: totals.turnoverLive, 
+      tickets: totals.ticketsLive, 
+      ggr: totals.ggrLive,
+      payout: payoutLive,
+      gwm: gwmLive,
+      pct: totals.turnover > 0 ? Math.round(totals.turnoverLive / totals.turnover * 1000) / 10 : 0 
+    },
     // Breakdowns
     topSports,
     topManifestazioni,
@@ -2514,13 +2542,16 @@ const SportWeekly = ({ data, prev, theme }) => {
               </div>
             </div>
             <Table cols={[
-              { header: 'Type', accessor: 'tipo', format: v => <span style={{ fontWeight: 700 }}>{v}</span> },
+              { header: 'Type', accessor: 'tipo', format: v => <span style={{ fontWeight: 700, color: v === 'Live' ? C.danger : C.success }}>{v}</span> },
               { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
+              { header: 'GGR', accessor: 'ggr', align: 'right', format: v => <span style={{ color: v >= 0 ? C.success : C.danger, fontWeight: 700 }}>{fmtCurrency(v)}</span> },
+              { header: 'GWM%', accessor: 'gwm', align: 'center', format: v => <span style={{ fontWeight: 700 }}>{v}%</span> },
+              { header: 'Payout%', accessor: 'payout', align: 'center', format: v => <span style={{ color: C.orange, fontWeight: 700 }}>{v}%</span> },
               { header: 'Tickets', accessor: 'tickets', align: 'right', format: v => fmtNum(v) },
               { header: '%', accessor: 'pct', align: 'center', format: v => <span style={{ color: C.accent, fontWeight: 800 }}>{v}%</span> }
             ]} data={[
-              { tipo: 'Pre-Match', turnover: data.preMatch?.turnover, tickets: data.preMatch?.tickets, pct: data.preMatch?.pct },
-              { tipo: 'Live', turnover: data.live?.turnover, tickets: data.live?.tickets, pct: data.live?.pct }
+              { tipo: 'Pre-Match', turnover: data.preMatch?.turnover, ggr: data.preMatch?.ggr, gwm: data.preMatch?.gwm, payout: data.preMatch?.payout, tickets: data.preMatch?.tickets, pct: data.preMatch?.pct },
+              { tipo: 'Live', turnover: data.live?.turnover, ggr: data.live?.ggr, gwm: data.live?.gwm, payout: data.live?.payout, tickets: data.live?.tickets, pct: data.live?.pct }
             ]} theme={C} />
           </div>
           {/* Channel Pie Chart */}
@@ -2716,7 +2747,11 @@ const SportMonthly = ({ weeksData, theme }) => {
     onlineTurnover: weeks.reduce((s, w) => s + (w.online?.turnover || 0), 0),
     retailTurnover: weeks.reduce((s, w) => s + (w.retail?.turnover || 0), 0),
     liveTurnover: weeks.reduce((s, w) => s + (w.live?.turnover || 0), 0),
-    preMatchTurnover: weeks.reduce((s, w) => s + (w.preMatch?.turnover || 0), 0)
+    liveGgr: weeks.reduce((s, w) => s + (w.live?.ggr || 0), 0),
+    liveTickets: weeks.reduce((s, w) => s + (w.live?.tickets || 0), 0),
+    preMatchTurnover: weeks.reduce((s, w) => s + (w.preMatch?.turnover || 0), 0),
+    preMatchGgr: weeks.reduce((s, w) => s + (w.preMatch?.ggr || 0), 0),
+    preMatchTickets: weeks.reduce((s, w) => s + (w.preMatch?.tickets || 0), 0)
   }
   
   // Averages
@@ -2738,6 +2773,12 @@ const SportMonthly = ({ weeksData, theme }) => {
   const retailPct = totals.turnover > 0 ? Math.round(totals.retailTurnover / totals.turnover * 1000) / 10 : 0
   const totalLivePct = totals.turnover > 0 ? Math.round(totals.liveTurnover / totals.turnover * 1000) / 10 : 0
   const preMatchPct = totals.turnover > 0 ? Math.round(totals.preMatchTurnover / totals.turnover * 1000) / 10 : 0
+  
+  // GWM and Payout for Pre-Match vs Live
+  const liveGwm = totals.liveTurnover > 0 ? Math.round(totals.liveGgr / totals.liveTurnover * 1000) / 10 : 0
+  const preMatchGwm = totals.preMatchTurnover > 0 ? Math.round(totals.preMatchGgr / totals.preMatchTurnover * 1000) / 10 : 0
+  const livePayout = totals.liveTurnover > 0 ? Math.round((totals.liveTurnover - totals.liveGgr) / totals.liveTurnover * 1000) / 10 : 0
+  const preMatchPayout = totals.preMatchTurnover > 0 ? Math.round((totals.preMatchTurnover - totals.preMatchGgr) / totals.preMatchTurnover * 1000) / 10 : 0
   
   // Trend data (filtered weeks)
   const trendData = weeks.map(w => ({ 
@@ -2951,16 +2992,18 @@ const SportMonthly = ({ weeksData, theme }) => {
                 <span style={{ color: '#FFF', fontSize: '11px', fontWeight: 800 }}>{totalLivePct}%</span>
               </div>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-              <div style={{ background: C.bg, borderRadius: '8px', padding: '12px', border: `2px solid ${C.success}` }}>
-                <p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 600, margin: '0 0 4px 0' }}>PRE-MATCH</p>
-                <p style={{ color: C.text, fontSize: '18px', fontWeight: 800, margin: 0 }}>{fmtCurrency(totals.preMatchTurnover)}</p>
-              </div>
-              <div style={{ background: C.bg, borderRadius: '8px', padding: '12px', border: `2px solid ${C.danger}` }}>
-                <p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 600, margin: '0 0 4px 0' }}>LIVE</p>
-                <p style={{ color: C.text, fontSize: '18px', fontWeight: 800, margin: 0 }}>{fmtCurrency(totals.liveTurnover)}</p>
-              </div>
-            </div>
+            <Table cols={[
+              { header: 'Type', accessor: 'tipo', format: v => <span style={{ fontWeight: 700, color: v === 'Live' ? C.danger : C.success }}>{v}</span> },
+              { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
+              { header: 'GGR', accessor: 'ggr', align: 'right', format: v => <span style={{ color: v >= 0 ? C.success : C.danger, fontWeight: 700 }}>{fmtCurrency(v)}</span> },
+              { header: 'GWM%', accessor: 'gwm', align: 'center', format: v => <span style={{ fontWeight: 700 }}>{v}%</span> },
+              { header: 'Payout%', accessor: 'payout', align: 'center', format: v => <span style={{ color: C.orange, fontWeight: 700 }}>{v}%</span> },
+              { header: 'Tickets', accessor: 'tickets', align: 'right', format: v => fmtNum(v) },
+              { header: '%', accessor: 'pct', align: 'center', format: v => <span style={{ color: C.accent, fontWeight: 800 }}>{v}%</span> }
+            ]} data={[
+              { tipo: 'Pre-Match', turnover: totals.preMatchTurnover, ggr: totals.preMatchGgr, gwm: preMatchGwm, payout: preMatchPayout, tickets: totals.preMatchTickets, pct: preMatchPct },
+              { tipo: 'Live', turnover: totals.liveTurnover, ggr: totals.liveGgr, gwm: liveGwm, payout: livePayout, tickets: totals.liveTickets, pct: totalLivePct }
+            ]} theme={C} />
           </div>
           <ChartCard title="By Channel" height={320} theme={C}>
             <PieChart>
