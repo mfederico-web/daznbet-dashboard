@@ -1936,7 +1936,7 @@ const CasinoSessions = ({ sessionData, theme }) => {
     { label: 'Peak Hour', value: ins.peakHour, sub: `${ins.peakHourPct}% of tickets`, color: C.primary },
     { label: 'Best GGR Hour', value: ins.bestGgrHour, sub: `€${fmtNum(ins.bestGgrAmount)}`, color: C.success },
     { label: 'Top Day', value: ins.topDay, sub: `${ins.topDayPct}% of tickets`, color: C.accent },
-    { label: 'Median Duration', value: `${data.medianDuration} min`, sub: 'per session', color: C.blue }
+    { label: 'Median Duration', value: `${data.medianDuration ?? data.avgDuration ?? 0} min`, sub: 'per session', color: C.blue }
   ]
 
   return (
@@ -1976,7 +1976,7 @@ const CasinoSessions = ({ sessionData, theme }) => {
           <KPI label="Unique Accounts" value={data.accounts} icon="users" theme={C} />
           <KPI label="Turnover" value={data.giocato} cur icon="wallet" theme={C} />
           <KPI label="GGR" value={data.ggr} cur icon="trending" sub={`GWM: ${data.gwm}%`} theme={C} />
-          <KPI label="Median Duration (min)" value={data.medianDuration} icon="clock" theme={C} />
+          <KPI label="Median Duration (min)" value={data.medianDuration ?? data.avgDuration ?? 0} icon="clock" theme={C} />
           <KPI label="Ticket/Account" value={data.accounts > 0 ? Math.round(data.tickets / data.accounts) : 0} icon="card" theme={C} />
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr 1fr' : 'repeat(4, 1fr)', gap: '12px' }}>
@@ -2088,7 +2088,7 @@ const CasinoSessions = ({ sessionData, theme }) => {
                   <span style={{ marginLeft: 'auto', background: C.primary+'22', color: C.primary, padding: '2px 8px', borderRadius: '12px', fontSize: '10px', fontWeight: 800 }}>{(s.d.tickets / data.tickets * 100).toFixed(1)}%</span>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '16px' }}>
-                  {[{l:'Tickets',v:fmtNum(s.d.tickets)},{l:'Accounts',v:fmtNum(s.d.accounts)},{l:'GGR',v:fmtCurrency(s.d.ggr)},{l:'GWM',v:`${s.d.gwm}%`},{l:'Median Duration',v:`${s.d.medianDuration} min`},{l:'Peak Hour',v:s.d.insights.peakHour}].map(m => (
+                  {[{l:'Tickets',v:fmtNum(s.d.tickets)},{l:'Accounts',v:fmtNum(s.d.accounts)},{l:'GGR',v:fmtCurrency(s.d.ggr)},{l:'GWM',v:`${s.d.gwm}%`},{l:'Median Duration',v:`${s.d.medianDuration ?? s.d.avgDuration ?? 0} min`},{l:'Peak Hour',v:s.d.insights.peakHour}].map(m => (
                     <div key={m.l}><p style={{ margin: 0, fontSize: '9px', fontWeight: 700, color: C.textMuted, textTransform: 'uppercase' }}>{m.l}</p><p style={{ margin: '2px 0 0', fontSize: '16px', fontWeight: 900, color: C.text }}>{m.v}</p></div>
                   ))}
                 </div>
@@ -2427,7 +2427,8 @@ const CasinoMonthly = ({ weeksData, theme }) => {
           aggSes.accounts += s.accounts || 0
           aggSes.giocato += s.giocato || 0
           aggSes.ggr += s.ggr || 0
-          if (s.medianDuration > 0) { aggSes.durSum += s.medianDuration * s.tickets; aggSes.durCount += s.tickets }
+          const dur = s.medianDuration ?? s.avgDuration ?? 0
+          if (dur > 0) { aggSes.durSum += dur * s.tickets; aggSes.durCount += s.tickets }
           s.hourly?.forEach((h, i) => { aggSes.hourly[i] += h.tickets || 0 })
           s.daily?.forEach((d, i) => { aggSes.daily[i] += d.tickets || 0 })
         })
@@ -2850,16 +2851,18 @@ const SportMonthly = ({ weeksData, theme }) => {
   
   // Averages
   const totalActives = weeks.reduce((s, w) => s + (w.activeUsers || 0), 0)
+  const avgActives = Math.round(totalActives / n)
+  const arpu = avgActives > 0 ? Math.round(totals.ggr / avgActives) : 0  // GGR / Avg Actives for period
   const avgs = {
-    actives: Math.round(totalActives / n),
+    actives: avgActives,
     age: Math.round(weeks.reduce((s, w) => s + (w.avgAge || 0), 0) / n * 10) / 10,
-    arpu: Math.round(weeks.reduce((s, w) => s + (w.arpu || 0), 0) / n * 100) / 100,
+    arpu: arpu,
     avgTicket: Math.round(weeks.reduce((s, w) => s + (w.avgTicket || 0), 0) / n * 100) / 100,
     payout: Math.round(weeks.reduce((s, w) => s + (w.payout || 0), 0) / n * 10) / 10,
     gwm: totals.turnover > 0 ? Math.round(totals.ggr / totals.turnover * 1000) / 10 : 0,
     calcioPct: Math.round(weeks.reduce((s, w) => s + (w.calcioPct || 0), 0) / n * 10) / 10,
     livePct: Math.round(weeks.reduce((s, w) => s + (w.live?.pct || 0), 0) / n * 10) / 10,
-    ticketsPerUser: totalActives > 0 ? Math.round(totals.tickets / totalActives * 10) / 10 : 0
+    ticketsPerUser: avgActives > 0 ? Math.round(totals.tickets / avgActives * 10) / 10 : 0
   }
   
   // Calculated metrics
@@ -2983,7 +2986,7 @@ const SportMonthly = ({ weeksData, theme }) => {
           <KPI label="Total GGR" value={totals.ggr} sub={`GWM: ${avgs.gwm}%`} cur icon="trending" theme={C} />
           <KPI label="Total Tickets" value={totals.tickets} icon="box" theme={C} />
           <KPI label="Avg Actives/Week" value={avgs.actives} icon="users" theme={C} />
-          <KPI label="Avg ARPU" value={avgs.arpu} cur icon="wallet" theme={C} />
+          <KPI label="ARPU Sport" value={avgs.arpu} cur icon="wallet" theme={C} />
           <KPI label="Avg Ticket" value={avgs.avgTicket} cur icon="card" theme={C} />
           <KPI label="Avg Payout" value={`${avgs.payout}%`} icon="percent" theme={C} />
           <KPI label="Total Bet Bonus" value={totals.betBonus} cur icon="gift" theme={C} />
