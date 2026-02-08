@@ -477,7 +477,7 @@ const processCasinoData = (files, weekNum, dateRange) => {
 const processSessionData = (rows) => {
   if (!rows || rows.length === 0) return null
   const ONLINE = ['DAZNBET-SKIN', 'VIVABET-SKIN']
-  const DAYS = ['Lun','Mar','Mer','Gio','Ven','Sab','Dom']
+  const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
   const BLOCKS = ['00-04','04-08','08-12','12-16','16-20','20-24']
 
   const makeSeg = () => ({
@@ -528,7 +528,7 @@ const processSessionData = (rows) => {
     const acc = s.acc.size
     const avg = s.durN > 0 ? Math.round(s.durS / s.durN * 10) / 10 : 0
     const gwm = s.g > 0 ? Math.round(s.ggr / s.g * 1000) / 10 : 0
-    const tb = [{n:'Notte',r:'00-06',t:0,g:0,rr:0},{n:'Mattina',r:'06-12',t:0,g:0,rr:0},{n:'Pomeriggio',r:'12-18',t:0,g:0,rr:0},{n:'Sera',r:'18-24',t:0,g:0,rr:0}]
+    const tb = [{n:'Night',r:'00-06',t:0,g:0,rr:0},{n:'Morning',r:'06-12',t:0,g:0,rr:0},{n:'Afternoon',r:'12-18',t:0,g:0,rr:0},{n:'Evening',r:'18-24',t:0,g:0,rr:0}]
     s.h.forEach((h,i) => { const x = i<6?0:i<12?1:i<18?2:3; tb[x].t+=h.t; tb[x].g+=h.g; tb[x].rr+=h.r })
     const tbT = tb.reduce((a,b)=>a+b.t,0)
     const timeBlocks = tb.map(b => ({name:b.n,range:b.r,tickets:b.t,giocato:Math.round(b.g),ggr:Math.round(b.rr),percent:tbT>0?Math.round(b.t/tbT*1000)/10:0}))
@@ -1914,7 +1914,7 @@ const CasinoSessions = ({ sessionData, theme }) => {
   if (!data) return null
 
   const segOpts = [
-    { k: 'generale', label: 'Generale', icon: 'casino', sub: `${fmtNum(sessionData.segments.generale.tickets)} tickets` },
+    { k: 'generale', label: 'All Channels', icon: 'casino', sub: `${fmtNum(sessionData.segments.generale.tickets)} tickets` },
     { k: 'online', label: 'Online', icon: 'globe', sub: 'DAZNBET + VIVABET' },
     { k: 'pvr', label: 'PVR / Retail', icon: 'store', sub: 'All other SKIN' }
   ]
@@ -1923,7 +1923,8 @@ const CasinoSessions = ({ sessionData, theme }) => {
   const insCards = [
     { label: 'Peak Hour', value: ins.peakHour, sub: `${ins.peakHourPct}% of tickets`, color: C.primary },
     { label: 'Best GGR Hour', value: ins.bestGgrHour, sub: `€${fmtNum(ins.bestGgrAmount)}`, color: C.success },
-    { label: 'Top Day', value: ins.topDay, sub: `${ins.topDayPct}% of tickets`, color: C.accent }
+    { label: 'Top Day', value: ins.topDay, sub: `${ins.topDayPct}% of tickets`, color: C.accent },
+    { label: 'Avg Duration', value: `${data.avgDuration} min`, sub: 'per session', color: C.blue }
   ]
 
   return (
@@ -1963,10 +1964,10 @@ const CasinoSessions = ({ sessionData, theme }) => {
           <KPI label="Unique Accounts" value={data.accounts} icon="users" theme={C} />
           <KPI label="Turnover" value={data.giocato} cur icon="wallet" theme={C} />
           <KPI label="GGR" value={data.ggr} cur icon="trending" sub={`GWM: ${data.gwm}%`} theme={C} />
-          <KPI label="Avg Duration" value={`${data.avgDuration}m`} icon="clock" theme={C} />
+          <KPI label="Avg Duration (min)" value={data.avgDuration} icon="clock" theme={C} />
           <KPI label="Ticket/Account" value={data.accounts > 0 ? Math.round(data.tickets / data.accounts) : 0} icon="card" theme={C} />
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : 'repeat(3, 1fr)', gap: '12px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr 1fr' : 'repeat(4, 1fr)', gap: '12px' }}>
           {insCards.map(c => (
             <div key={c.label} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '10px', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
               <div style={{ width: 8, height: 40, borderRadius: 4, background: c.color }} />
@@ -1979,7 +1980,7 @@ const CasinoSessions = ({ sessionData, theme }) => {
       {/* Hourly Distribution */}
       <Section title="Hourly Distribution" theme={C}>
         <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '2fr 1fr', gap: '16px' }}>
-          <ChartCard title="Ticket & GGR per Ora" height={260} theme={C}>
+          <ChartCard title="Tickets & GGR by Hour" height={260} theme={C}>
             <ComposedChart data={data.hourly}><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="hour" tick={{ fill: C.textMuted, fontSize: 9, fontWeight: 700 }} interval={mob ? 3 : 1} /><YAxis yAxisId="l" tick={{ fill: C.textMuted, fontSize: 9 }} /><YAxis yAxisId="r" orientation="right" tick={{ fill: C.textMuted, fontSize: 9 }} tickFormatter={v => `€${(v/1000).toFixed(0)}K`} /><Tooltip content={<Tip theme={C} />} /><Legend /><Bar yAxisId="l" dataKey="tickets" name="Tickets" fill={C.primary} radius={[2,2,0,0]} opacity={.8} /><Line yAxisId="r" type="monotone" dataKey="ggr" name="GGR" stroke={C.success} strokeWidth={2} dot={false} /></ComposedChart>
           </ChartCard>
           <div>
@@ -2011,7 +2012,7 @@ const CasinoSessions = ({ sessionData, theme }) => {
       </Section>
 
       {/* Duration */}
-      <Section title="Durata Sessioni" theme={C}>
+      <Section title="Session Duration" theme={C}>
         <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '1.5fr 1fr', gap: '16px' }}>
           <ChartCard title="Duration Distribution" height={220} theme={C}>
             <BarChart data={data.duration}><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="range" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><YAxis tick={{ fill: C.textMuted, fontSize: 10 }} /><Tooltip content={<Tip theme={C} />} /><Bar dataKey="count" fill={C.accent} radius={[4,4,0,0]}>{data.duration.map((_,i)=><Cell key={i} fill={C.chart[i%C.chart.length]} />)}</Bar></BarChart>
@@ -2032,7 +2033,7 @@ const CasinoSessions = ({ sessionData, theme }) => {
       </Section>
 
       {/* Heatmap */}
-      <Section title="Day × Hour Heatmap" theme={C}>
+      <Section title="Day × Hour Heatmap (% of Total Tickets)" theme={C}>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
             <thead><tr>
@@ -2075,7 +2076,7 @@ const CasinoSessions = ({ sessionData, theme }) => {
                   <span style={{ marginLeft: 'auto', background: C.primary+'22', color: C.primary, padding: '2px 8px', borderRadius: '12px', fontSize: '10px', fontWeight: 800 }}>{(s.d.tickets / data.tickets * 100).toFixed(1)}%</span>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '16px' }}>
-                  {[{l:'Tickets',v:fmtNum(s.d.tickets)},{l:'Accounts',v:fmtNum(s.d.accounts)},{l:'GGR',v:fmtCurrency(s.d.ggr)},{l:'GWM',v:`${s.d.gwm}%`},{l:'Avg Duration',v:`${s.d.avgDuration}m`},{l:'Peak',v:s.d.insights.peakHour}].map(m => (
+                  {[{l:'Tickets',v:fmtNum(s.d.tickets)},{l:'Accounts',v:fmtNum(s.d.accounts)},{l:'GGR',v:fmtCurrency(s.d.ggr)},{l:'GWM',v:`${s.d.gwm}%`},{l:'Avg Duration',v:`${s.d.avgDuration} min`},{l:'Peak Hour',v:s.d.insights.peakHour}].map(m => (
                     <div key={m.l}><p style={{ margin: 0, fontSize: '9px', fontWeight: 700, color: C.textMuted, textTransform: 'uppercase' }}>{m.l}</p><p style={{ margin: '2px 0 0', fontSize: '16px', fontWeight: 900, color: C.text }}>{m.v}</p></div>
                   ))}
                 </div>
@@ -2400,6 +2401,69 @@ const CasinoMonthly = ({ weeksData, theme }) => {
           </div>
         </Section>
       )}
+
+      {/* Session Analytics - Aggregated from weeks with sessionData */}
+      {(() => {
+        const weeksWithSessions = weeks.filter(w => w.sessionData?.segments?.generale)
+        if (!weeksWithSessions.length) return null
+        
+        // Aggregate session data across all weeks in period
+        const aggSes = { tickets: 0, accounts: 0, giocato: 0, ggr: 0, durSum: 0, durCount: 0, hourly: Array(24).fill(0), daily: Array(7).fill(0) }
+        weeksWithSessions.forEach(w => {
+          const s = w.sessionData.segments.generale
+          aggSes.tickets += s.tickets || 0
+          aggSes.accounts += s.accounts || 0
+          aggSes.giocato += s.giocato || 0
+          aggSes.ggr += s.ggr || 0
+          if (s.avgDuration > 0) { aggSes.durSum += s.avgDuration * s.tickets; aggSes.durCount += s.tickets }
+          s.hourly?.forEach((h, i) => { aggSes.hourly[i] += h.tickets || 0 })
+          s.daily?.forEach((d, i) => { aggSes.daily[i] += d.tickets || 0 })
+        })
+        
+        const avgDur = aggSes.durCount > 0 ? Math.round(aggSes.durSum / aggSes.durCount * 10) / 10 : 0
+        const gwm = aggSes.giocato > 0 ? Math.round(aggSes.ggr / aggSes.giocato * 1000) / 10 : 0
+        const peakHourIdx = aggSes.hourly.indexOf(Math.max(...aggSes.hourly))
+        const peakHour = `${String(peakHourIdx).padStart(2,'0')}:00`
+        const peakHourPct = aggSes.tickets > 0 ? Math.round(aggSes.hourly[peakHourIdx] / aggSes.tickets * 1000) / 10 : 0
+        const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
+        const topDayIdx = aggSes.daily.indexOf(Math.max(...aggSes.daily))
+        const topDay = DAYS[topDayIdx]
+        const topDayPct = aggSes.tickets > 0 ? Math.round(aggSes.daily[topDayIdx] / aggSes.tickets * 1000) / 10 : 0
+        
+        // Find best GGR hour (need to aggregate hourly GGR)
+        const hourlyGgr = Array(24).fill(0)
+        weeksWithSessions.forEach(w => { w.sessionData.segments.generale.hourly?.forEach((h, i) => { hourlyGgr[i] += h.ggr || 0 }) })
+        const bestGgrHourIdx = hourlyGgr.indexOf(Math.max(...hourlyGgr))
+        const bestGgrHour = `${String(bestGgrHourIdx).padStart(2,'0')}:00`
+        const bestGgrAmount = hourlyGgr[bestGgrHourIdx]
+        
+        const sesKpis = [
+          { label: 'Peak Hour', value: peakHour, sub: `${peakHourPct}% of tickets`, color: C.primary },
+          { label: 'Best GGR Hour', value: bestGgrHour, sub: `€${fmtNum(Math.round(bestGgrAmount))}`, color: C.success },
+          { label: 'Top Day', value: topDay, sub: `${topDayPct}% of tickets`, color: C.accent },
+          { label: 'Avg Duration', value: `${avgDur} min`, sub: 'per session', color: C.blue }
+        ]
+        
+        return (
+          <Section title={`Session Analytics (${weeksWithSessions.length} week${weeksWithSessions.length > 1 ? 's' : ''} with data)`} theme={C}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px', marginBottom: '20px' }}>
+              <KPI label="Total Tickets" value={aggSes.tickets} icon="activity" theme={C} />
+              <KPI label="Total Accounts" value={aggSes.accounts} icon="users" theme={C} />
+              <KPI label="Total Turnover" value={aggSes.giocato} cur icon="wallet" theme={C} />
+              <KPI label="Total GGR" value={aggSes.ggr} cur icon="trending" sub={`GWM: ${gwm}%`} theme={C} />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr 1fr' : 'repeat(4, 1fr)', gap: '12px' }}>
+              {sesKpis.map(c => (
+                <div key={c.label} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '10px', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{ width: 8, height: 40, borderRadius: 4, background: c.color }} />
+                  <div><p style={{ margin: 0, fontSize: '10px', fontWeight: 700, color: C.textMuted, textTransform: 'uppercase' }}>{c.label}</p><p style={{ margin: '2px 0 0', fontSize: '20px', fontWeight: 900, color: C.text }}>{c.value}</p><p style={{ margin: 0, fontSize: '11px', color: C.textSec }}>{c.sub}</p></div>
+                </div>
+              ))}
+            </div>
+            <p style={{ marginTop: '16px', fontSize: '11px', color: C.textMuted, fontStyle: 'italic' }}>Aggregated from weeks: {weeksWithSessions.map(w => `W${w.weekNumber}`).join(', ')}</p>
+          </Section>
+        )
+      })()}
     </div>
   )
 }
