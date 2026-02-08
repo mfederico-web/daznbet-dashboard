@@ -627,9 +627,21 @@ const processSportData = (files, weekNum, dateRange) => {
     }
   }
   
-  // PVR (Retail - concessioni 4528, 4218)
+  // PVR = Scommettendo + Altri B2B (excluding vivabet and daznbet)
+  const pvrSkins = ['scommettendo s.r.l', 'sirplay-skin', 'gs24-skin', 'overbet-skin', 'italiagioco-skin', 'gfbwin888-skin', 'skiller-skin', 'loginbet-skin', 'il10bet-skin']
+  let pvr = { turnover: 0, ggr: 0, actives: 0 }
+  for (const sk of pvrSkins) {
+    const s = skinMap[sk]
+    if (s) { pvr.turnover += s.turnover; pvr.ggr += s.ggr; pvr.actives += s.actives }
+  }
+  if (pvr.turnover > 0) {
+    chanPerf.push({ channel: 'PVR', turnover: pvr.turnover, ggr: pvr.ggr, gwm: pvr.turnover > 0 ? parseFloat((pvr.ggr / pvr.turnover * 100).toFixed(1)) : 0, actives: pvr.actives })
+    totChGgr += pvr.ggr
+  }
+  
+  // Retail (concessioni 4528 + 4218) - separate
   if (retailTot.turnover > 0 || retailTot.ggr !== 0) {
-    chanPerf.push({ channel: 'PVR (Retail)', turnover: retailTot.turnover, ggr: retailTot.ggr, gwm: retailTot.turnover > 0 ? parseFloat((retailTot.ggr / retailTot.turnover * 100).toFixed(1)) : 0, actives: 0 })
+    chanPerf.push({ channel: 'Retail', turnover: retailTot.turnover, ggr: retailTot.ggr, gwm: retailTot.turnover > 0 ? parseFloat((retailTot.ggr / retailTot.turnover * 100).toFixed(1)) : 0, actives: 0 })
     totChGgr += retailTot.ggr
   }
   
@@ -670,33 +682,14 @@ const processSportData = (files, weekNum, dateRange) => {
     }
   }
   
-  // Scommettendo (Online B2B)
-  const scS = skinMap['scommettendo s.r.l']
-  if (scS && scS.turnover > 0) {
-    chanPerf.push({ channel: 'Scommettendo', turnover: scS.turnover, ggr: scS.ggr, gwm: scS.turnover > 0 ? parseFloat((scS.ggr / scS.turnover * 100).toFixed(1)) : 0, actives: scS.actives })
-    totChGgr += scS.ggr
-  }
-  
-  // Altri B2B (sirplay, gs24, overbet, etc.)
-  const b2bSkins = ['sirplay-skin', 'gs24-skin', 'overbet-skin', 'italiagioco-skin', 'gfbwin888-skin', 'skiller-skin', 'loginbet-skin', 'il10bet-skin']
-  let altriB2B = { turnover: 0, ggr: 0, actives: 0 }
-  for (const sk of b2bSkins) {
-    const s = skinMap[sk]
-    if (s) { altriB2B.turnover += s.turnover; altriB2B.ggr += s.ggr; altriB2B.actives += s.actives }
-  }
-  if (altriB2B.turnover > 0) {
-    chanPerf.push({ channel: 'Altri B2B', turnover: altriB2B.turnover, ggr: altriB2B.ggr, gwm: altriB2B.turnover > 0 ? parseFloat((altriB2B.ggr / altriB2B.turnover * 100).toFixed(1)) : 0, actives: altriB2B.actives })
-    totChGgr += altriB2B.ggr
-  }
-  
   // Calculate revShare for each channel
   chanPerf.forEach(c => { c.revShare = totChGgr > 0 ? Math.round(c.ggr / totChGgr * 1000) / 10 : 0 })
   chanPerf.sort((a, b) => b.turnover - a.turnover)
   
   // ═══════════════════════════════════════════════════════════════════════════
-  // ONLINE breakdown (sum of all online channels = Scommettendo + VIVABET + Academy + DAZNBET + Altri B2B)
+  // ONLINE breakdown (all channels except Retail)
   // ═══════════════════════════════════════════════════════════════════════════
-  const onlineChannels = chanPerf.filter(c => c.channel !== 'PVR (Retail)')
+  const onlineChannels = chanPerf.filter(c => c.channel !== 'Retail')
   const online = {
     turnover: onlineChannels.reduce((s, c) => s + c.turnover, 0),
     ggr: onlineChannels.reduce((s, c) => s + c.ggr, 0),
