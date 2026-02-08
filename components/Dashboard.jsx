@@ -111,6 +111,26 @@ const SPORT_FILES = [
 ]
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// CHANNEL CONFIG — Allowlist dei Cod Punto DAZN Direct (canali proprietari DAZN)
+// ─────────────────────────────────────────────────────────────────────────────
+// Quando appare un NUOVO Cod Punto nelle settimane future:
+//   • Se è un canale DAZN-owned (IntReg, Herobanner, nuova app, ecc.)
+//     → aggiungerlo qui sotto
+//   • Se è un affiliato/partner (Raccoon, One Click, nuova agenzia, ecc.)
+//     → NON aggiungerlo, finirà automaticamente in AFFILIATES
+//   • I Cod Punto DAZN_* vengono matchati anche per prefisso (vedi classifyChannel)
+// ═══════════════════════════════════════════════════════════════════════════════
+const DAZN_DIRECT_COD_PUNTI = new Set([
+  'DAZN_SUPERPRONOSTICO',
+  'DAZN_INTREG',
+  'DAZN_HEROBANNER',
+  'DAZN_STATS',
+  'DAZN_APP',
+  'IG_STORIES',
+  'SISAL_REG'
+])
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // UTILITIES
 // ═══════════════════════════════════════════════════════════════════════════════
 const parseNum = v => {
@@ -179,17 +199,24 @@ const classifyChannel = row => {
   const puntoVendita = String(row["Punto vendita"] || "").toLowerCase().trim()
   const codPunto = String(row["Cod Punto"] || "").toUpperCase().trim()
 
+  // ── VIVABET-SKIN ──
   if (skin.includes("VIVABET")) {
     if (promoter.includes("nsg social web")) return "VIVABET/GLAD"
     return "Tipster Academy"
   }
-  if (skin.includes("DAZNBET") || skin.includes("SCOMMETTENDO")) {
-    if (puntoVendita.includes("www.daznbet.it") || puntoVendita.includes("www.scommettendo.it")) return "DAZNBET Organic"
-    if (promoter.includes("dazn") || promoter.includes("funpoints") || codPunto.includes("DAZN_SUPERPRONOSTICO")) return "DAZN Direct"
+
+  // ── DAZNBET-SKIN ──
+  if (skin.includes("DAZNBET")) {
+    if (puntoVendita.includes("www.daznbet.it")) return "DAZNBET Organic"
+    if (codPunto.startsWith("DAZN_") || DAZN_DIRECT_COD_PUNTI.has(codPunto)) return "DAZN Direct"
     return "AFFILIATES"
   }
-  if (!puntoVendita.includes("www.scommettendo.it")) return "PVR"
-  return "OTHER"
+
+  // ── SCOMMETTENDO-SKIN → PVR (rete retail, NON affiliati) ──
+  if (skin.includes("SCOMMETTENDO")) return "PVR"
+
+  // ── Tutte le altre SKIN → PVR ──
+  return "PVR"
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -302,11 +329,11 @@ const processData = (files, weekNum, dateRange) => {
   }
 
   let ddT = 0, ddG = 0, ddA = 0
-  daznbet.forEach(r => { const c = String(r["Cod liv 1"] || ""); if (c.startsWith("DAZN_")) { ddT += parseNum(r["Giocato"]); ddG += parseNum(r["ggr"]); ddA++ } })
+  daznbet.forEach(r => { const c = String(r["Cod liv 1"] || "").toUpperCase(); if (c.startsWith("DAZN_") || DAZN_DIRECT_COD_PUNTI.has(c)) { ddT += parseNum(r["Giocato"]); ddG += parseNum(r["ggr"]); ddA++ } })
   if (ddT > 0) { chanPerf.push({ channel: 'DAZN Direct', turnover: ddT, ggr: ddG, gwm: ddT > 0 ? parseFloat((ddG / ddT * 100).toFixed(1)) : 0, actives: ddA }); totGgr += ddG }
 
   let affT = 0, affG = 0, affA = 0
-  daznbet.forEach(r => { const c = String(r["Cod liv 1"] || ""); if (c && c !== "DAZNBET" && !c.startsWith("DAZN_") && c.toLowerCase() !== "nan") { affT += parseNum(r["Giocato"]); affG += parseNum(r["ggr"]); affA++ } })
+  daznbet.forEach(r => { const c = String(r["Cod liv 1"] || "").toUpperCase(); if (c && c !== "DAZNBET" && !c.startsWith("DAZN_") && !DAZN_DIRECT_COD_PUNTI.has(c) && c.toLowerCase() !== "nan") { affT += parseNum(r["Giocato"]); affG += parseNum(r["ggr"]); affA++ } })
   if (affT > 0) { chanPerf.push({ channel: 'AFFILIATES', turnover: affT, ggr: affG, gwm: affT > 0 ? parseFloat((affG / affT * 100).toFixed(1)) : 0, actives: affA }); totGgr += affG }
 
   chanPerf.forEach(c => { c.revShare = totGgr > 0 ? parseFloat((c.ggr / totGgr * 100).toFixed(1)) : 0 })
@@ -448,11 +475,11 @@ const processCasinoData = (files, weekNum, dateRange) => {
   }
 
   let ddT = 0, ddG = 0, ddA = 0
-  daznbet.forEach(r => { const c = String(r["Cod liv 1"] || ""); if (c.startsWith("DAZN_")) { ddT += parseNum(r["Giocato"]); ddG += parseNum(r["ggr"]) || parseNum(r["rake"]); ddA++ } })
+  daznbet.forEach(r => { const c = String(r["Cod liv 1"] || "").toUpperCase(); if (c.startsWith("DAZN_") || DAZN_DIRECT_COD_PUNTI.has(c)) { ddT += parseNum(r["Giocato"]); ddG += parseNum(r["ggr"]) || parseNum(r["rake"]); ddA++ } })
   if (ddT > 0) { chanPerf.push({ channel: 'DAZN Direct', turnover: ddT, ggr: ddG, actives: ddA }); totChGgr += ddG }
 
   let affT = 0, affG = 0, affA = 0
-  daznbet.forEach(r => { const c = String(r["Cod liv 1"] || ""); if (c && c !== "DAZNBET" && !c.startsWith("DAZN_") && c.toLowerCase() !== "nan") { affT += parseNum(r["Giocato"]); affG += parseNum(r["ggr"]) || parseNum(r["rake"]); affA++ } })
+  daznbet.forEach(r => { const c = String(r["Cod liv 1"] || "").toUpperCase(); if (c && c !== "DAZNBET" && !c.startsWith("DAZN_") && !DAZN_DIRECT_COD_PUNTI.has(c) && c.toLowerCase() !== "nan") { affT += parseNum(r["Giocato"]); affG += parseNum(r["ggr"]) || parseNum(r["rake"]); affA++ } })
   if (affT > 0) { chanPerf.push({ channel: 'AFFILIATES', turnover: affT, ggr: affG, actives: affA }); totChGgr += affG }
 
   chanPerf.forEach(c => {
