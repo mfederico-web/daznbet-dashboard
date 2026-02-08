@@ -553,25 +553,17 @@ const processSessionData = (rows) => {
 // SPORT DATA PROCESSING
 // ═══════════════════════════════════════════════════════════════════════════════
 const processSportData = (files, weekNum, dateRange) => {
-  console.log('[processSportData] Starting with files:', Object.keys(files))
-  
   // Sport_Total.xlsx - main totals with Online vs Retail and Live breakdown
-  // NOTE: files.sportTotal IS the data array directly (not files.sportTotal.data)
   const totalRows = files.sportTotal || []
-  console.log('[processSportData] Sport_Total rows:', totalRows.length)
   
-  let online = { turnover: 0, ggr: 0, tickets: 0, turnoverLive: 0, ticketsLive: 0, vinto: 0, betBonus: 0 }
+  // Online (15125) vs Retail (4528, 4218) from Sport_Total
+  let onlineRaw = { turnover: 0, ggr: 0, tickets: 0, turnoverLive: 0, ticketsLive: 0, vinto: 0, betBonus: 0 }
   let retail4528 = { turnover: 0, ggr: 0, tickets: 0, turnoverLive: 0, ticketsLive: 0, vinto: 0 }
   let retail4218 = { turnover: 0, ggr: 0, tickets: 0, turnoverLive: 0, ticketsLive: 0, vinto: 0 }
-  const puntiVendita = []
-  
-  if (totalRows.length > 0) {
-    console.log('[processSportData] First row keys:', Object.keys(totalRows[0]))
-    console.log('[processSportData] First row Id_cn:', totalRows[0]['Id_cn'])
-  }
   
   for (const row of totalRows) {
     const idCn = String(row['Id_cn'] || row['id_cn'] || '')
+    if (idCn === 'Totali') continue // Skip totals row
     const data = {
       turnover: parseNum(row['Giocato totale']),
       ggr: parseNum(row['Netto']),
@@ -581,14 +573,10 @@ const processSportData = (files, weekNum, dateRange) => {
       vinto: parseNum(row['Vinto']),
       betBonus: parseNum(row['Bet bonus'])
     }
-    // Debug first few rows
-    if (totalRows.indexOf(row) < 3) {
-      console.log(`[processSportData] Row Id_cn='${idCn}', turnover=${data.turnover}, ggr=${data.ggr}`)
-    }
     if (idCn === '15125') {
-      online.turnover += data.turnover; online.ggr += data.ggr; online.tickets += data.tickets
-      online.turnoverLive += data.turnoverLive; online.ticketsLive += data.ticketsLive
-      online.vinto += data.vinto; online.betBonus += data.betBonus
+      onlineRaw.turnover += data.turnover; onlineRaw.ggr += data.ggr; onlineRaw.tickets += data.tickets
+      onlineRaw.turnoverLive += data.turnoverLive; onlineRaw.ticketsLive += data.ticketsLive
+      onlineRaw.vinto += data.vinto; onlineRaw.betBonus += data.betBonus
     } else if (idCn === '4528') {
       retail4528.turnover += data.turnover; retail4528.ggr += data.ggr; retail4528.tickets += data.tickets
       retail4528.turnoverLive += data.turnoverLive; retail4528.ticketsLive += data.ticketsLive
@@ -598,13 +586,7 @@ const processSportData = (files, weekNum, dateRange) => {
       retail4218.turnoverLive += data.turnoverLive; retail4218.ticketsLive += data.ticketsLive
       retail4218.vinto += data.vinto
     }
-    if (row['Ragione sociale'] && data.turnover > 0) {
-      puntiVendita.push({ id: row['Id_pvend'], name: row['Ragione sociale'], concessione: idCn, ...data })
-    }
   }
-  
-  console.log('[processSportData] Online totals:', online)
-  console.log('[processSportData] Retail totals:', retail4528.turnover + retail4218.turnover)
   
   const retailTot = {
     turnover: retail4528.turnover + retail4218.turnover,
@@ -615,19 +597,123 @@ const processSportData = (files, weekNum, dateRange) => {
   }
   
   const totals = {
-    turnover: online.turnover + retailTot.turnover,
-    ggr: online.ggr + retailTot.ggr,
-    tickets: online.tickets + retailTot.tickets,
-    turnoverLive: online.turnoverLive + retailTot.turnoverLive,
-    ticketsLive: online.ticketsLive + retailTot.ticketsLive,
-    vinto: online.vinto + retail4528.vinto + retail4218.vinto,
-    betBonus: online.betBonus
+    turnover: onlineRaw.turnover + retailTot.turnover,
+    ggr: onlineRaw.ggr + retailTot.ggr,
+    tickets: onlineRaw.tickets + retailTot.tickets,
+    turnoverLive: onlineRaw.turnoverLive + retailTot.turnoverLive,
+    ticketsLive: onlineRaw.ticketsLive + retailTot.ticketsLive,
+    vinto: onlineRaw.vinto + retail4528.vinto + retail4218.vinto,
+    betBonus: onlineRaw.betBonus
   }
+  
+  // ═══════════════════════════════════════════════════════════════════════════
+  // CHANNEL PERFORMANCE (same logic as General/Casino)
+  // ═══════════════════════════════════════════════════════════════════════════
+  const chanPerf = []
+  let totChGgr = 0
+  
+  // SKIN_TOTALSPORT.xlsx - raw skin data
+  const skinRows = files.sportSkinTotal || []
+  const skinMap = {}
+  for (const row of skinRows) {
+    const skin = String(row['Skin'] || '').toLowerCase()
+    if (!skin || skin === 'none') continue
+    skinMap[skin] = {
+      turnover: parseNum(row['Giocato']),
+      ggr: parseNum(row['ggr']) || parseNum(row['rake']),
+      actives: parseNum(row['conti attivi']),
+      tickets: parseNum(row['num ticket']),
+      payout: parseNum(row['% payout'])
+    }
+  }
+  
+  // PVR (Retail - concessioni 4528, 4218)
+  if (retailTot.turnover > 0 || retailTot.ggr !== 0) {
+    chanPerf.push({ channel: 'PVR (Retail)', turnover: retailTot.turnover, ggr: retailTot.ggr, gwm: retailTot.turnover > 0 ? parseFloat((retailTot.ggr / retailTot.turnover * 100).toFixed(1)) : 0, actives: 0 })
+    totChGgr += retailTot.ggr
+  }
+  
+  // VIVABET/GLADIATORE and Tipster Academy from vivabet-skin
+  const vS = skinMap['vivabet-skin']
+  const academyRow = (files.sportAcademyTotal || [])[0]
+  if (vS) {
+    const aT = academyRow ? parseNum(academyRow['Giocato']) : 0
+    const aG = academyRow ? parseNum(academyRow['rake']) : 0
+    const aA = academyRow ? parseNum(academyRow['conti attivi']) : 0
+    // VIVABET/GLAD = vivabet-skin minus Academy
+    if ((vS.turnover - aT) > 0) {
+      chanPerf.push({ channel: 'VIVABET/GLAD', turnover: vS.turnover - aT, ggr: vS.ggr - aG, gwm: (vS.turnover - aT) > 0 ? parseFloat(((vS.ggr - aG) / (vS.turnover - aT) * 100).toFixed(1)) : 0, actives: vS.actives - aA })
+      totChGgr += vS.ggr - aG
+    }
+    if (aT > 0) {
+      chanPerf.push({ channel: 'Tipster Academy', turnover: aT, ggr: aG, gwm: aT > 0 ? parseFloat((aG / aT * 100).toFixed(1)) : 0, actives: aA })
+      totChGgr += aG
+    }
+  }
+  
+  // DAZNBET Organic and DAZN Direct from daznbet-skin
+  const dS = skinMap['daznbet-skin']
+  const organicRow = (files.sportOrganicTotal || [])[0]
+  if (dS) {
+    const oT = organicRow ? parseNum(organicRow['Giocato']) : 0
+    const oG = organicRow ? parseNum(organicRow['rake']) : 0
+    const oA = organicRow ? parseNum(organicRow['conti attivi']) : 0
+    if (oT > 0) {
+      chanPerf.push({ channel: 'DAZNBET Organic', turnover: oT, ggr: oG, gwm: oT > 0 ? parseFloat((oG / oT * 100).toFixed(1)) : 0, actives: oA })
+      totChGgr += oG
+    }
+    // DAZN Direct = daznbet-skin minus Organic
+    const ddT = dS.turnover - oT, ddG = dS.ggr - oG, ddA = dS.actives - oA
+    if (ddT > 0) {
+      chanPerf.push({ channel: 'DAZN Direct', turnover: ddT, ggr: ddG, gwm: ddT > 0 ? parseFloat((ddG / ddT * 100).toFixed(1)) : 0, actives: ddA })
+      totChGgr += ddG
+    }
+  }
+  
+  // Scommettendo (Online B2B)
+  const scS = skinMap['scommettendo s.r.l']
+  if (scS && scS.turnover > 0) {
+    chanPerf.push({ channel: 'Scommettendo', turnover: scS.turnover, ggr: scS.ggr, gwm: scS.turnover > 0 ? parseFloat((scS.ggr / scS.turnover * 100).toFixed(1)) : 0, actives: scS.actives })
+    totChGgr += scS.ggr
+  }
+  
+  // Altri B2B (sirplay, gs24, overbet, etc.)
+  const b2bSkins = ['sirplay-skin', 'gs24-skin', 'overbet-skin', 'italiagioco-skin', 'gfbwin888-skin', 'skiller-skin', 'loginbet-skin', 'il10bet-skin']
+  let altriB2B = { turnover: 0, ggr: 0, actives: 0 }
+  for (const sk of b2bSkins) {
+    const s = skinMap[sk]
+    if (s) { altriB2B.turnover += s.turnover; altriB2B.ggr += s.ggr; altriB2B.actives += s.actives }
+  }
+  if (altriB2B.turnover > 0) {
+    chanPerf.push({ channel: 'Altri B2B', turnover: altriB2B.turnover, ggr: altriB2B.ggr, gwm: altriB2B.turnover > 0 ? parseFloat((altriB2B.ggr / altriB2B.turnover * 100).toFixed(1)) : 0, actives: altriB2B.actives })
+    totChGgr += altriB2B.ggr
+  }
+  
+  // Calculate revShare for each channel
+  chanPerf.forEach(c => { c.revShare = totChGgr > 0 ? Math.round(c.ggr / totChGgr * 1000) / 10 : 0 })
+  chanPerf.sort((a, b) => b.turnover - a.turnover)
+  
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ONLINE breakdown (sum of all online channels = Scommettendo + VIVABET + Academy + DAZNBET + Altri B2B)
+  // ═══════════════════════════════════════════════════════════════════════════
+  const onlineChannels = chanPerf.filter(c => c.channel !== 'PVR (Retail)')
+  const online = {
+    turnover: onlineChannels.reduce((s, c) => s + c.turnover, 0),
+    ggr: onlineChannels.reduce((s, c) => s + c.ggr, 0),
+    tickets: onlineRaw.tickets, // from Sport_Total 15125
+    turnoverLive: onlineRaw.turnoverLive,
+    ticketsLive: onlineRaw.ticketsLive,
+    pct: 0
+  }
+  online.pct = totals.turnover > 0 ? Math.round(online.turnover / totals.turnover * 1000) / 10 : 0
+  const retail = { ...retailTot, pct: totals.turnover > 0 ? Math.round(retailTot.turnover / totals.turnover * 1000) / 10 : 0 }
   
   const turnoverPreMatch = totals.turnover - totals.turnoverLive
   const ticketsPreMatch = totals.tickets - totals.ticketsLive
   
+  // ═══════════════════════════════════════════════════════════════════════════
   // SPORT_Total_età.xlsx - per-account with age
+  // ═══════════════════════════════════════════════════════════════════════════
   const etaRows = files.sportTotalEta || []
   const ages = []
   let activeAccounts = 0
@@ -651,14 +737,18 @@ const processSportData = (files, weekNum, dateRange) => {
     range, count, percent: activeAccounts > 0 ? Math.round(count / activeAccounts * 1000) / 10 : 0
   }))
   
+  // ═══════════════════════════════════════════════════════════════════════════
   // Sport_Manifestazione.xlsx - by sport and competition
+  // ═══════════════════════════════════════════════════════════════════════════
   const manifRows = files.sportManifestazione || []
   const sportsMap = {}
   const manifestazioni = []
   
   for (const row of manifRows) {
-    const sport = row['Sport'] || 'UNKNOWN'
-    const manif = row['Manifestazione']
+    const sport = row['Sport'] || ''
+    if (!sport || sport === 'UNKNOWN' || sport.toLowerCase() === 'totali') continue
+    const manif = row['Manifestazione'] || ''
+    if (manif.toLowerCase() === 'totali') continue
     const venduto = parseNum(row['Venduto'])
     const profit = parseNum(row['Profit'])
     const profitPct = parseNum(row['Profit %'])
@@ -676,19 +766,22 @@ const processSportData = (files, weekNum, dateRange) => {
   }
   
   const topSports = Object.entries(sportsMap)
+    .filter(([name]) => name && name !== 'UNKNOWN')
     .map(([name, d]) => ({ name, turnover: d.turnover, ggr: d.ggr, tickets: d.tickets, gwm: d.turnover > 0 ? Math.round(d.ggr / d.turnover * 1000) / 10 : 0 }))
     .sort((a, b) => b.turnover - a.turnover).slice(0, 12)
   
-  const topManifestazioni = [...manifestazioni].sort((a, b) => b.turnover - a.turnover).slice(0, 20)
+  const topManifestazioni = [...manifestazioni].sort((a, b) => b.turnover - a.turnover).slice(0, 30)
   
-  // Sport_NumEventi.xlsx - singles, doubles, etc.
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Sport_NumEventi.xlsx - singles, doubles, etc. (up to 30)
+  // ═══════════════════════════════════════════════════════════════════════════
   const eventiRows = files.sportNumEventi || []
   const numEventi = []
-  const LABEL_MAP = { 1: 'Singole', 2: 'Doppie', 3: 'Triple', 4: 'Quadruple', 5: 'Quintuple', 6: '6 Eventi', 7: '7 Eventi', 8: '8 Eventi', 9: '9 Eventi', 10: '10 Eventi', 11: '11+ Eventi' }
+  const LABEL_MAP = { 1: 'Singole', 2: 'Doppie', 3: 'Triple', 4: 'Quadruple', 5: 'Quintuple' }
   
   for (const row of eventiRows) {
     const eventi = parseNum(row['Eventi'])
-    if (eventi > 0) {
+    if (eventi > 0 && eventi <= 30) {
       numEventi.push({
         eventi,
         label: LABEL_MAP[eventi] || `${eventi} Eventi`,
@@ -702,82 +795,70 @@ const processSportData = (files, weekNum, dateRange) => {
   }
   numEventi.sort((a, b) => a.eventi - b.eventi)
   
-  // Sport_Scommesse.xlsx - bet types (optional)
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Sport_Scommesse.xlsx - bet types (exclude totals)
+  // ═══════════════════════════════════════════════════════════════════════════
   const scommesseRows = files.sportScommesse || []
   const topScommesse = scommesseRows
-    .filter(r => r['Scommessa'] && parseNum(r['Venduto']) > 0)
+    .filter(r => {
+      const id = String(r['Id scommessa'] || r['Id'] || '')
+      const name = String(r['Scommessa'] || '')
+      return name && id !== 'Totali' && name.toLowerCase() !== 'totali' && parseNum(r['Venduto']) > 0
+    })
     .map(r => ({
-      name: r['Scommessa'],
+      id: r['Id scommessa'] || r['Id'],
+      name: String(r['Scommessa'] || ''),
       tickets: parseNum(r['Tickets']),
       turnover: parseNum(r['Venduto']),
       ggr: parseNum(r['Profit']),
       profitPct: parseNum(r['Profit %']),
       livePct: parseNum(r['% Live totale'])
     }))
-    .sort((a, b) => b.turnover - a.turnover).slice(0, 15)
+    .sort((a, b) => b.turnover - a.turnover).slice(0, 30)
   
-  // Sport_PuntoVendita.xlsx - by point of sale (optional)
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Sport_PuntoVendita.xlsx - by point of sale (exclude totals)
+  // ═══════════════════════════════════════════════════════════════════════════
   const pvRows = files.sportPuntoVendita || []
   const topPuntiVendita = pvRows
-    .filter(r => r['Cod punto'] && parseNum(r['Venduto']) > 0)
+    .filter(r => {
+      const cod = String(r['Cod punto'] || '')
+      return cod && cod !== 'Totali' && cod.toLowerCase() !== 'totali' && parseNum(r['Venduto']) > 0
+    })
     .map(r => ({
-      codice: r['Cod punto'],
-      skin: r['Skin'],
+      codice: String(r['Cod punto'] || ''),
+      skin: String(r['Skin'] || ''),
       tickets: parseNum(r['Tickets']),
       turnover: parseNum(r['Venduto']),
       ggr: parseNum(r['Profit']),
       profitPct: parseNum(r['Profit %']),
       livePct: parseNum(r['% Live totale'])
     }))
-    .sort((a, b) => b.turnover - a.turnover).slice(0, 25)
+    .sort((a, b) => b.turnover - a.turnover).slice(0, 30)
   
-  // SKIN_TOTALSPORT.xlsx - channel performance
-  const skinRows = files.sportSkinTotal || []
-  const channelPerformance = skinRows
-    .filter(r => r['Skin'] && typeof r['Giocato'] !== 'string')
-    .map(r => {
-      const turnover = parseNum(r['Giocato'])
-      const ggr = parseNum(r['ggr']) || parseNum(r['rake'])
-      return {
-        channel: r['Skin'],
-        turnover, ggr,
-        actives: parseNum(r['conti attivi']),
-        tickets: parseNum(r['num ticket']),
-        betBonus: parseNum(r['bet bonus']),
-        payout: turnover > 0 ? Math.round((turnover - ggr) / turnover * 1000) / 10 : 0,
-        gwm: turnover > 0 ? Math.round(ggr / turnover * 1000) / 10 : 0
-      }
-    })
-    .sort((a, b) => b.turnover - a.turnover)
-  
-  const totalChGgr = channelPerformance.reduce((s, c) => s + c.ggr, 0)
-  channelPerformance.forEach(c => { c.revShare = totalChGgr > 0 ? Math.round(c.ggr / totalChGgr * 1000) / 10 : 0 })
-  
-  // Academy, Organic, DAZNBET breakdowns (optional)
-  const academyRow = (files.sportAcademyTotal || [])[0]
-  const organicRow = (files.sportOrganicTotal || [])[0]
-  const academyData = academyRow ? { turnover: parseNum(academyRow['Giocato']), ggr: parseNum(academyRow['rake']), actives: parseNum(academyRow['conti attivi']) } : null
-  const organicData = organicRow ? { turnover: parseNum(organicRow['Giocato']), ggr: parseNum(organicRow['rake']), actives: parseNum(organicRow['conti attivi']) } : null
-  
-  // DAZNBET breakdown for DAZN Direct vs Affiliates
-  const daznbetRows = files.sportDaznbet || []
-  let daznDirect = { turnover: 0, ggr: 0, conti: 0 }
-  let affiliates = { turnover: 0, ggr: 0, conti: 0 }
-  
-  for (const row of daznbetRows) {
-    const codLiv1 = String(row['Cod liv 1'] || '')
-    const giocato = parseNum(row['Giocato'])
-    const ggr = parseNum(row['ggr'])
-    if (codLiv1.toUpperCase().startsWith('DAZN')) {
-      daznDirect.turnover += giocato; daznDirect.ggr += ggr; daznDirect.conti++
-    } else if (codLiv1) {
-      affiliates.turnover += giocato; affiliates.ggr += ggr; affiliates.conti++
-    }
-  }
-  
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ADDITIONAL KPIs
+  // ═══════════════════════════════════════════════════════════════════════════
   const arpu = activeAccounts > 0 ? Math.round(totals.ggr / activeAccounts * 100) / 100 : 0
   const gwm = totals.turnover > 0 ? Math.round(totals.ggr / totals.turnover * 1000) / 10 : 0
   const payout = totals.turnover > 0 ? Math.round(totals.vinto / totals.turnover * 1000) / 10 : 0
+  const avgTicket = totals.tickets > 0 ? Math.round(totals.turnover / totals.tickets * 100) / 100 : 0
+  const ticketsPerUser = activeAccounts > 0 ? Math.round(totals.tickets / activeAccounts * 10) / 10 : 0
+  
+  // Top Sport summary for quick KPIs
+  const topSportCalcio = topSports.find(s => s.name === 'CALCIO')
+  const topSportTennis = topSports.find(s => s.name === 'TENNIS')
+  const calcioPct = totals.turnover > 0 && topSportCalcio ? Math.round(topSportCalcio.turnover / totals.turnover * 1000) / 10 : 0
+  
+  // Live betting insights
+  const livePct = totals.turnover > 0 ? Math.round(totals.turnoverLive / totals.turnover * 1000) / 10 : 0
+  const liveGgr = onlineRaw.turnoverLive > 0 ? chanPerf.reduce((s, c) => s + (c.ggr * livePct / 100), 0) : 0
+  
+  // Singles analysis
+  const singole = numEventi.find(e => e.eventi === 1)
+  const multiple = numEventi.filter(e => e.eventi > 1)
+  const multipleTurnover = multiple.reduce((s, e) => s + e.turnover, 0)
+  const multiplePct = totals.turnover > 0 ? Math.round(multipleTurnover / totals.turnover * 1000) / 10 : 0
   
   return {
     weekNumber: weekNum,
@@ -792,13 +873,14 @@ const processSportData = (files, weekNum, dateRange) => {
     avgAge,
     betBonus: totals.betBonus,
     payout,
+    avgTicket,
+    ticketsPerUser,
     // Online vs Retail
-    online: { ...online, pct: totals.turnover > 0 ? Math.round(online.turnover / totals.turnover * 1000) / 10 : 0 },
-    retail: { ...retailTot, pct: totals.turnover > 0 ? Math.round(retailTot.turnover / totals.turnover * 1000) / 10 : 0 },
-    retail4528, retail4218,
+    online,
+    retail,
     // Pre-match vs Live
     preMatch: { turnover: turnoverPreMatch, tickets: ticketsPreMatch, pct: totals.turnover > 0 ? Math.round(turnoverPreMatch / totals.turnover * 1000) / 10 : 0 },
-    live: { turnover: totals.turnoverLive, tickets: totals.ticketsLive, pct: totals.turnover > 0 ? Math.round(totals.turnoverLive / totals.turnover * 1000) / 10 : 0 },
+    live: { turnover: totals.turnoverLive, tickets: totals.ticketsLive, pct: livePct },
     // Breakdowns
     topSports,
     topManifestazioni,
@@ -806,12 +888,11 @@ const processSportData = (files, weekNum, dateRange) => {
     topScommesse,
     topPuntiVendita,
     ageData,
-    channelPerformance,
-    // Channel details
-    academyData,
-    organicData,
-    daznDirect,
-    affiliates
+    channelPerformance: chanPerf,
+    // Additional insights
+    calcioPct,
+    multiplePct,
+    singolePct: singole ? Math.round(singole.turnover / totals.turnover * 1000) / 10 : 0
   }
 }
 
@@ -916,7 +997,7 @@ const Table = ({ cols, data, compact = false, theme }) => {
             const baseBg = r.isTotal ? C.accent + '12' : ri % 2 === 0 ? C.card : C.bg
             return (
               <tr key={ri} onMouseEnter={() => setHovered(ri)} onMouseLeave={() => setHovered(null)} style={{ background: isHov ? C.hover : baseBg, transition: 'background 0.15s', cursor: 'default' }}>
-                {cols.map((c, ci) => { const v = c.accessor ? r[c.accessor] : ''; return <td key={ci} style={{ padding: compact ? '8px 12px' : 'clamp(10px, 1.3vw, 12px) clamp(12px, 1.5vw, 18px)', textAlign: c.align || 'left', color: r.isTotal ? C.accent : C.text, fontWeight: r.isTotal ? 800 : 400, borderBottom: `1px solid ${C.border}` }}>{c.format ? c.format(v, r) : v}</td> })}
+                {cols.map((c, ci) => { const v = c.accessor ? r[c.accessor] : ''; return <td key={ci} style={{ padding: compact ? '8px 12px' : 'clamp(10px, 1.3vw, 12px) clamp(12px, 1.5vw, 18px)', textAlign: c.align || 'left', color: r.isTotal ? C.accent : C.text, fontWeight: r.isTotal ? 800 : 400, borderBottom: `1px solid ${C.border}` }}>{c.format ? c.format(v, ri, r) : v}</td> })}
               </tr>
             )
           })}
@@ -2330,11 +2411,26 @@ const SportWeekly = ({ data, prev, theme }) => {
   const mob = ww < 768
   const [manifSort, setManifSort] = useState('turnover')
   const [pvSort, setPvSort] = useState('turnover')
+  const [scommSort, setScommSort] = useState('turnover')
+  const [showMoreEventi, setShowMoreEventi] = useState(false)
+  const [showMoreManif, setShowMoreManif] = useState(false)
+  const [showMoreScomm, setShowMoreScomm] = useState(false)
+  const [showMorePV, setShowMorePV] = useState(false)
   
   if (!data) return <div style={{ padding: '60px', textAlign: 'center' }}><p style={{ color: C.textMuted }}>Seleziona una settimana</p></div>
   
-  const topManif = [...(data.topManifestazioni || [])].sort((a, b) => b[manifSort] - a[manifSort]).slice(0, 15)
-  const topPV = [...(data.topPuntiVendita || [])].sort((a, b) => b[pvSort] - a[pvSort]).slice(0, 20)
+  // Sort and slice data
+  const topManif = [...(data.topManifestazioni || [])].sort((a, b) => b[manifSort] - a[manifSort])
+  const topScomm = [...(data.topScommesse || [])].sort((a, b) => b[scommSort] - a[scommSort])
+  const topPV = [...(data.topPuntiVendita || [])].sort((a, b) => b[pvSort] - a[pvSort])
+  const eventiData = data.numEventi || []
+  
+  // Accordion helper
+  const Accordion = ({ label, expanded, onToggle, count }) => (
+    <button onClick={onToggle} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: '8px', padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px', width: '100%', justifyContent: 'center' }}>
+      <span style={{ color: C.textMuted, fontSize: '12px', fontWeight: 700 }}>{expanded ? '▲ Nascondi' : `▼ Mostra altri ${count}`}</span>
+    </button>
+  )
 
   return (
     <div style={{ padding: 'clamp(20px, 3vw, 48px)' }}>
@@ -2346,9 +2442,28 @@ const SportWeekly = ({ data, prev, theme }) => {
           <KPI label="Biglietti" value={data.tickets} change={calcChange(data.tickets, prev?.tickets)} icon="box" theme={C} />
           <KPI label="Conti Attivi" value={data.activeUsers} change={calcChange(data.activeUsers, prev?.activeUsers)} icon="users" theme={C} />
           <KPI label="ARPU" value={data.arpu} cur icon="wallet" theme={C} />
-          <KPI label="Età Media" value={`${data.avgAge}`} sub="anni" icon="user" theme={C} />
+          <KPI label="Avg Ticket" value={data.avgTicket} cur icon="card" sub={`${data.ticketsPerUser || 0} bets/user`} theme={C} />
           <KPI label="Payout" value={`${data.payout}%`} icon="percent" theme={C} />
-          <KPI label="Bet Bonus" value={data.betBonus} cur icon="card" theme={C} />
+          <KPI label="Bet Bonus" value={data.betBonus} cur icon="gift" theme={C} />
+        </div>
+        {/* Quick Insights Row */}
+        <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr 1fr' : 'repeat(4, 1fr)', gap: '12px', marginBottom: '16px' }}>
+          <div style={{ background: C.card, borderRadius: '10px', padding: '14px', border: `1px solid ${C.border}`, textAlign: 'center' }}>
+            <p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', fontWeight: 700, textTransform: 'uppercase' }}>Calcio %</p>
+            <p style={{ color: C.accent, fontSize: '22px', fontWeight: 800, margin: 0 }}>{data.calcioPct || 0}%</p>
+          </div>
+          <div style={{ background: C.card, borderRadius: '10px', padding: '14px', border: `1px solid ${C.border}`, textAlign: 'center' }}>
+            <p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', fontWeight: 700, textTransform: 'uppercase' }}>Live %</p>
+            <p style={{ color: C.danger, fontSize: '22px', fontWeight: 800, margin: 0 }}>{data.live?.pct || 0}%</p>
+          </div>
+          <div style={{ background: C.card, borderRadius: '10px', padding: '14px', border: `1px solid ${C.border}`, textAlign: 'center' }}>
+            <p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', fontWeight: 700, textTransform: 'uppercase' }}>Multiple %</p>
+            <p style={{ color: C.primary, fontSize: '22px', fontWeight: 800, margin: 0 }}>{data.multiplePct || 0}%</p>
+          </div>
+          <div style={{ background: C.card, borderRadius: '10px', padding: '14px', border: `1px solid ${C.border}`, textAlign: 'center' }}>
+            <p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', fontWeight: 700, textTransform: 'uppercase' }}>Età Media</p>
+            <p style={{ color: C.blue, fontSize: '22px', fontWeight: 800, margin: 0 }}>{data.avgAge}</p>
+          </div>
         </div>
       </Section>
 
@@ -2366,8 +2481,8 @@ const SportWeekly = ({ data, prev, theme }) => {
                 </div>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px' }}>
-                <span style={{ color: C.text, fontSize: '12px', fontWeight: 700 }}>Online (15125)</span>
-                <span style={{ color: C.text, fontSize: '12px', fontWeight: 700 }}>Retail (4528+4218)</span>
+                <span style={{ color: C.text, fontSize: '12px', fontWeight: 700 }}>Online</span>
+                <span style={{ color: C.text, fontSize: '12px', fontWeight: 700 }}>Retail (PVR)</span>
               </div>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
@@ -2433,21 +2548,23 @@ const SportWeekly = ({ data, prev, theme }) => {
         </div>
       </Section>
 
-      {/* Top Sports */}
+      {/* Top Sports - filter out UNKNOWN */}
       <Section title="Top Sport per Disciplina" theme={C}>
         <ChartCard title="Turnover per Sport" height={280} theme={C}>
-          <BarChart data={(data.topSports || []).slice(0, 10)} layout="vertical">
+          <BarChart data={(data.topSports || []).filter(s => s.name && s.name !== 'UNKNOWN').slice(0, 10)} layout="vertical">
             <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
             <XAxis type="number" tick={{ fill: C.textMuted, fontSize: 10 }} tickFormatter={v => fmtCurrency(v, false)} />
             <YAxis type="category" dataKey="name" width={90} tick={{ fill: C.text, fontSize: 11, fontWeight: 600 }} />
             <Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} />
-            <Bar dataKey="turnover" fill={C.primary} radius={[0, 4, 4, 0]} />
+            <Bar dataKey="turnover" fill={C.primary} radius={[0, 4, 4, 0]}>
+              {(data.topSports || []).slice(0, 10).map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}
+            </Bar>
           </BarChart>
         </ChartCard>
       </Section>
 
-      {/* Top Manifestazioni */}
-      <Section title="Top Manifestazioni" right={
+      {/* Top Manifestazioni - show 15, accordion to 30 */}
+      <Section title="Top 15 Manifestazioni" right={
         <select value={manifSort} onChange={e => setManifSort(e.target.value)} style={{ background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '6px 12px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>
           <option value="turnover">Turnover</option>
           <option value="ggr">GGR</option>
@@ -2455,30 +2572,34 @@ const SportWeekly = ({ data, prev, theme }) => {
         </select>
       } theme={C}>
         <Table cols={[
-          { header: '#', accessor: '_idx', format: (_, i) => <span style={{ color: C.textMuted, fontWeight: 700 }}>{i + 1}</span> },
-          { header: 'Manifestazione', accessor: 'name', format: v => <span style={{ fontWeight: 700 }}>{v?.substring(0, 30)}</span> },
+          { header: '#', accessor: '_idx', format: (v, i) => <span style={{ color: C.textMuted, fontWeight: 700 }}>{i + 1}</span> },
+          { header: 'Manifestazione', accessor: 'name', format: v => <span style={{ fontWeight: 700 }}>{String(v || '').substring(0, 30)}</span> },
           { header: 'Sport', accessor: 'sport', format: v => <span style={{ color: C.textMuted, fontSize: '11px' }}>{v}</span> },
           { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
           { header: 'GGR', accessor: 'ggr', align: 'right', format: v => <span style={{ color: v >= 0 ? C.success : C.danger, fontWeight: 700 }}>{fmtCurrency(v)}</span> },
           { header: 'Profit%', accessor: 'profitPct', align: 'center', format: v => <span style={{ color: v >= 0 ? C.success : C.danger, fontWeight: 700 }}>{v}%</span> },
           { header: 'Live%', accessor: 'livePct', align: 'center', format: v => `${v}%` }
-        ]} data={topManif} theme={C} />
+        ]} data={topManif.slice(0, showMoreManif ? 30 : 15)} theme={C} />
+        {topManif.length > 15 && <Accordion label="manifestazioni" expanded={showMoreManif} onToggle={() => setShowMoreManif(!showMoreManif)} count={Math.min(topManif.length - 15, 15)} />}
       </Section>
 
-      {/* Numero Eventi */}
+      {/* Numero Eventi - show 15, accordion to 30 */}
       <Section title="Distribuzione per Numero Eventi" theme={C}>
         <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '1.5fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
-          <Table cols={[
-            { header: 'Eventi', accessor: 'label', format: v => <span style={{ fontWeight: 700 }}>{v}</span> },
-            { header: 'Biglietti', accessor: 'tickets', align: 'right', format: v => fmtNum(v) },
-            { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
-            { header: 'Profit%', accessor: 'profitPct', align: 'center', format: v => <span style={{ color: v >= 0 ? C.success : C.danger, fontWeight: 700 }}>{v}%</span> },
-            { header: 'Live%', accessor: 'livePct', align: 'center', format: v => `${v}%` }
-          ]} data={(data.numEventi || []).slice(0, 10)} theme={C} />
+          <div>
+            <Table cols={[
+              { header: 'Eventi', accessor: 'label', format: v => <span style={{ fontWeight: 700 }}>{v}</span> },
+              { header: 'Biglietti', accessor: 'tickets', align: 'right', format: v => fmtNum(v) },
+              { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
+              { header: 'Profit%', accessor: 'profitPct', align: 'center', format: v => <span style={{ color: v >= 0 ? C.success : C.danger, fontWeight: 700 }}>{v}%</span> },
+              { header: 'Live%', accessor: 'livePct', align: 'center', format: v => `${v}%` }
+            ]} data={eventiData.slice(0, showMoreEventi ? 30 : 15)} theme={C} />
+            {eventiData.length > 15 && <Accordion label="eventi" expanded={showMoreEventi} onToggle={() => setShowMoreEventi(!showMoreEventi)} count={Math.min(eventiData.length - 15, 15)} />}
+          </div>
           <ChartCard title="Turnover per Tipo" height={250} theme={C}>
             <PieChart>
-              <Pie data={(data.numEventi || []).slice(0, 6)} cx="50%" cy="50%" innerRadius={45} outerRadius={80} paddingAngle={2} dataKey="turnover" nameKey="label">
-                {(data.numEventi || []).slice(0, 6).map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}
+              <Pie data={eventiData.slice(0, 6)} cx="50%" cy="50%" innerRadius={45} outerRadius={80} paddingAngle={2} dataKey="turnover" nameKey="label">
+                {eventiData.slice(0, 6).map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}
               </Pie>
               <Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} /><Legend />
             </PieChart>
@@ -2486,16 +2607,25 @@ const SportWeekly = ({ data, prev, theme }) => {
         </div>
       </Section>
 
-      {/* Channel Performance */}
+      {/* Channel Performance - using same channels as General/Casino */}
       <Section title="Channel Performance" theme={C}>
-        <Table cols={[
-          { header: 'Channel', accessor: 'channel', format: v => <span style={{ fontWeight: 700 }}>{v}</span> },
-          { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
-          { header: 'GGR', accessor: 'ggr', align: 'right', format: v => <span style={{ color: v >= 0 ? C.success : C.danger, fontWeight: 700 }}>{fmtCurrency(v)}</span> },
-          { header: 'GWM%', accessor: 'gwm', align: 'center', format: v => `${v}%` },
-          { header: 'Attivi', accessor: 'actives', align: 'right', format: v => fmtNum(v) },
-          { header: 'Rev Share', accessor: 'revShare', align: 'center', format: v => <span style={{ color: C.accent, fontWeight: 700 }}>{v}%</span> }
-        ]} data={data.channelPerformance || []} theme={C} />
+        <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '1.5fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
+          <Table cols={[
+            { header: 'Channel', accessor: 'channel', format: v => <span style={{ fontWeight: 700 }}>{v}</span> },
+            { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
+            { header: 'GGR', accessor: 'ggr', align: 'right', format: v => <span style={{ color: v >= 0 ? C.success : C.danger, fontWeight: 700 }}>{fmtCurrency(v)}</span> },
+            { header: 'GWM%', accessor: 'gwm', align: 'center', format: v => `${v}%` },
+            { header: 'Rev Share', accessor: 'revShare', align: 'center', format: v => <span style={{ color: C.accent, fontWeight: 700 }}>{v}%</span> }
+          ]} data={data.channelPerformance || []} theme={C} />
+          <ChartCard title="Revenue Share" height={220} theme={C}>
+            <PieChart>
+              <Pie data={(data.channelPerformance || []).filter(c => c.revShare > 0)} cx="50%" cy="50%" innerRadius={50} outerRadius={85} paddingAngle={2} dataKey="revShare" nameKey="channel">
+                {(data.channelPerformance || []).map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}
+              </Pie>
+              <Tooltip content={<Tip theme={C} />} /><Legend />
+            </PieChart>
+          </ChartCard>
+        </div>
       </Section>
 
       {/* Age Distribution */}
@@ -2513,22 +2643,29 @@ const SportWeekly = ({ data, prev, theme }) => {
         </ChartCard>
       </Section>
 
-      {/* Top Scommesse */}
-      {data.topScommesse?.length > 0 && (
-        <Section title="Top Tipi Scommessa" theme={C}>
+      {/* Top Scommesse - show 15, accordion to 30 */}
+      {topScomm.length > 0 && (
+        <Section title="Top Tipi Scommessa" right={
+          <select value={scommSort} onChange={e => setScommSort(e.target.value)} style={{ background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '6px 12px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>
+            <option value="turnover">Turnover</option>
+            <option value="ggr">GGR</option>
+            <option value="tickets">Biglietti</option>
+          </select>
+        } theme={C}>
           <Table cols={[
-            { header: '#', accessor: '_idx', format: (_, i) => <span style={{ color: C.textMuted, fontWeight: 700 }}>{i + 1}</span> },
-            { header: 'Scommessa', accessor: 'name', format: v => <span style={{ fontWeight: 700 }}>{v?.substring(0, 40)}</span> },
+            { header: '#', accessor: '_idx', format: (v, i) => <span style={{ color: C.textMuted, fontWeight: 700 }}>{i + 1}</span> },
+            { header: 'Scommessa', accessor: 'name', format: v => <span style={{ fontWeight: 700 }}>{String(v || '').substring(0, 40)}</span> },
             { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
             { header: 'Biglietti', accessor: 'tickets', align: 'right', format: v => fmtNum(v) },
             { header: 'Profit%', accessor: 'profitPct', align: 'center', format: v => <span style={{ color: v >= 0 ? C.success : C.danger, fontWeight: 700 }}>{v}%</span> },
             { header: 'Live%', accessor: 'livePct', align: 'center', format: v => `${v}%` }
-          ]} data={data.topScommesse} theme={C} />
+          ]} data={topScomm.slice(0, showMoreScomm ? 30 : 15)} theme={C} />
+          {topScomm.length > 15 && <Accordion label="scommesse" expanded={showMoreScomm} onToggle={() => setShowMoreScomm(!showMoreScomm)} count={Math.min(topScomm.length - 15, 15)} />}
         </Section>
       )}
 
-      {/* Top Punti Vendita */}
-      {data.topPuntiVendita?.length > 0 && (
+      {/* Top Punti Vendita - show 15, accordion to 30 */}
+      {topPV.length > 0 && (
         <Section title="Top Punti Vendita" right={
           <select value={pvSort} onChange={e => setPvSort(e.target.value)} style={{ background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '6px 12px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>
             <option value="turnover">Turnover</option>
@@ -2537,31 +2674,14 @@ const SportWeekly = ({ data, prev, theme }) => {
           </select>
         } theme={C}>
           <Table cols={[
-            { header: '#', accessor: '_idx', format: (_, i) => <span style={{ color: C.textMuted, fontWeight: 700 }}>{i + 1}</span> },
-            { header: 'Cod Punto', accessor: 'codice', format: v => <span style={{ fontWeight: 700 }}>{v}</span> },
-            { header: 'Skin', accessor: 'skin', format: v => <span style={{ color: C.textMuted, fontSize: '11px' }}>{v}</span> },
+            { header: '#', accessor: '_idx', format: (v, i) => <span style={{ color: C.textMuted, fontWeight: 700 }}>{i + 1}</span> },
+            { header: 'Cod Punto', accessor: 'codice', format: v => <span style={{ fontWeight: 700 }}>{String(v || '')}</span> },
+            { header: 'Skin', accessor: 'skin', format: v => <span style={{ color: C.textMuted, fontSize: '11px' }}>{String(v || '')}</span> },
             { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
             { header: 'GGR', accessor: 'ggr', align: 'right', format: v => <span style={{ color: v >= 0 ? C.success : C.danger, fontWeight: 700 }}>{fmtCurrency(v)}</span> },
             { header: 'Profit%', accessor: 'profitPct', align: 'center', format: v => <span style={{ color: v >= 0 ? C.success : C.danger, fontWeight: 700 }}>{v}%</span> }
-          ]} data={topPV} theme={C} />
-        </Section>
-      )}
-
-      {/* DAZNBET Breakdown */}
-      {(data.daznDirect?.turnover > 0 || data.affiliates?.turnover > 0) && (
-        <Section title="DAZNBET Breakdown" theme={C}>
-          <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '1fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
-            <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `2px solid ${C.primary}` }}>
-              <p style={{ color: C.textMuted, fontSize: '11px', fontWeight: 600, margin: '0 0 8px 0', textTransform: 'uppercase' }}>DAZN Direct</p>
-              <p style={{ color: C.text, fontSize: '28px', fontWeight: 800, margin: '0 0 4px 0' }}>{fmtCurrency(data.daznDirect?.turnover)}</p>
-              <p style={{ color: C.success, fontSize: '14px', fontWeight: 700, margin: 0 }}>GGR: {fmtCurrency(data.daznDirect?.ggr)} • {data.daznDirect?.conti} conti</p>
-            </div>
-            <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `2px solid ${C.purple}` }}>
-              <p style={{ color: C.textMuted, fontSize: '11px', fontWeight: 600, margin: '0 0 8px 0', textTransform: 'uppercase' }}>Affiliates</p>
-              <p style={{ color: C.text, fontSize: '28px', fontWeight: 800, margin: '0 0 4px 0' }}>{fmtCurrency(data.affiliates?.turnover)}</p>
-              <p style={{ color: data.affiliates?.ggr >= 0 ? C.success : C.danger, fontSize: '14px', fontWeight: 700, margin: 0 }}>GGR: {fmtCurrency(data.affiliates?.ggr)} • {data.affiliates?.conti} conti</p>
-            </div>
-          </div>
+          ]} data={topPV.slice(0, showMorePV ? 30 : 15)} theme={C} />
+          {topPV.length > 15 && <Accordion label="punti vendita" expanded={showMorePV} onToggle={() => setShowMorePV(!showMorePV)} count={Math.min(topPV.length - 15, 15)} />}
         </Section>
       )}
     </div>
