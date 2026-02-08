@@ -553,12 +553,22 @@ const processSessionData = (rows) => {
 // SPORT DATA PROCESSING
 // ═══════════════════════════════════════════════════════════════════════════════
 const processSportData = (files, weekNum, dateRange) => {
+  console.log('[processSportData] Starting with files:', Object.keys(files))
+  
   // Sport_Total.xlsx - main totals with Online vs Retail and Live breakdown
-  const totalRows = files.sportTotal?.data || []
+  // NOTE: files.sportTotal IS the data array directly (not files.sportTotal.data)
+  const totalRows = files.sportTotal || []
+  console.log('[processSportData] Sport_Total rows:', totalRows.length)
+  
   let online = { turnover: 0, ggr: 0, tickets: 0, turnoverLive: 0, ticketsLive: 0, vinto: 0, betBonus: 0 }
   let retail4528 = { turnover: 0, ggr: 0, tickets: 0, turnoverLive: 0, ticketsLive: 0, vinto: 0 }
   let retail4218 = { turnover: 0, ggr: 0, tickets: 0, turnoverLive: 0, ticketsLive: 0, vinto: 0 }
   const puntiVendita = []
+  
+  if (totalRows.length > 0) {
+    console.log('[processSportData] First row keys:', Object.keys(totalRows[0]))
+    console.log('[processSportData] First row Id_cn:', totalRows[0]['Id_cn'])
+  }
   
   for (const row of totalRows) {
     const idCn = String(row['Id_cn'] || row['id_cn'] || '')
@@ -570,6 +580,10 @@ const processSportData = (files, weekNum, dateRange) => {
       ticketsLive: parseNum(row['Biglietti live']),
       vinto: parseNum(row['Vinto']),
       betBonus: parseNum(row['Bet bonus'])
+    }
+    // Debug first few rows
+    if (totalRows.indexOf(row) < 3) {
+      console.log(`[processSportData] Row Id_cn='${idCn}', turnover=${data.turnover}, ggr=${data.ggr}`)
     }
     if (idCn === '15125') {
       online.turnover += data.turnover; online.ggr += data.ggr; online.tickets += data.tickets
@@ -588,6 +602,9 @@ const processSportData = (files, weekNum, dateRange) => {
       puntiVendita.push({ id: row['Id_pvend'], name: row['Ragione sociale'], concessione: idCn, ...data })
     }
   }
+  
+  console.log('[processSportData] Online totals:', online)
+  console.log('[processSportData] Retail totals:', retail4528.turnover + retail4218.turnover)
   
   const retailTot = {
     turnover: retail4528.turnover + retail4218.turnover,
@@ -611,7 +628,7 @@ const processSportData = (files, weekNum, dateRange) => {
   const ticketsPreMatch = totals.tickets - totals.ticketsLive
   
   // SPORT_Total_età.xlsx - per-account with age
-  const etaRows = files.sportTotalEta?.data || []
+  const etaRows = files.sportTotalEta || []
   const ages = []
   let activeAccounts = 0
   const ageGroups = { '18-24': 0, '25-34': 0, '35-44': 0, '45-54': 0, '55-64': 0, '65+': 0 }
@@ -635,7 +652,7 @@ const processSportData = (files, weekNum, dateRange) => {
   }))
   
   // Sport_Manifestazione.xlsx - by sport and competition
-  const manifRows = files.sportManifestazione?.data || []
+  const manifRows = files.sportManifestazione || []
   const sportsMap = {}
   const manifestazioni = []
   
@@ -665,7 +682,7 @@ const processSportData = (files, weekNum, dateRange) => {
   const topManifestazioni = [...manifestazioni].sort((a, b) => b.turnover - a.turnover).slice(0, 20)
   
   // Sport_NumEventi.xlsx - singles, doubles, etc.
-  const eventiRows = files.sportNumEventi?.data || []
+  const eventiRows = files.sportNumEventi || []
   const numEventi = []
   const LABEL_MAP = { 1: 'Singole', 2: 'Doppie', 3: 'Triple', 4: 'Quadruple', 5: 'Quintuple', 6: '6 Eventi', 7: '7 Eventi', 8: '8 Eventi', 9: '9 Eventi', 10: '10 Eventi', 11: '11+ Eventi' }
   
@@ -686,7 +703,7 @@ const processSportData = (files, weekNum, dateRange) => {
   numEventi.sort((a, b) => a.eventi - b.eventi)
   
   // Sport_Scommesse.xlsx - bet types (optional)
-  const scommesseRows = files.sportScommesse?.data || []
+  const scommesseRows = files.sportScommesse || []
   const topScommesse = scommesseRows
     .filter(r => r['Scommessa'] && parseNum(r['Venduto']) > 0)
     .map(r => ({
@@ -700,7 +717,7 @@ const processSportData = (files, weekNum, dateRange) => {
     .sort((a, b) => b.turnover - a.turnover).slice(0, 15)
   
   // Sport_PuntoVendita.xlsx - by point of sale (optional)
-  const pvRows = files.sportPuntoVendita?.data || []
+  const pvRows = files.sportPuntoVendita || []
   const topPuntiVendita = pvRows
     .filter(r => r['Cod punto'] && parseNum(r['Venduto']) > 0)
     .map(r => ({
@@ -715,7 +732,7 @@ const processSportData = (files, weekNum, dateRange) => {
     .sort((a, b) => b.turnover - a.turnover).slice(0, 25)
   
   // SKIN_TOTALSPORT.xlsx - channel performance
-  const skinRows = files.sportSkinTotal?.data || []
+  const skinRows = files.sportSkinTotal || []
   const channelPerformance = skinRows
     .filter(r => r['Skin'] && typeof r['Giocato'] !== 'string')
     .map(r => {
@@ -737,13 +754,13 @@ const processSportData = (files, weekNum, dateRange) => {
   channelPerformance.forEach(c => { c.revShare = totalChGgr > 0 ? Math.round(c.ggr / totalChGgr * 1000) / 10 : 0 })
   
   // Academy, Organic, DAZNBET breakdowns (optional)
-  const academyRow = (files.sportAcademyTotal?.data || [])[0]
-  const organicRow = (files.sportOrganicTotal?.data || [])[0]
+  const academyRow = (files.sportAcademyTotal || [])[0]
+  const organicRow = (files.sportOrganicTotal || [])[0]
   const academyData = academyRow ? { turnover: parseNum(academyRow['Giocato']), ggr: parseNum(academyRow['rake']), actives: parseNum(academyRow['conti attivi']) } : null
   const organicData = organicRow ? { turnover: parseNum(organicRow['Giocato']), ggr: parseNum(organicRow['rake']), actives: parseNum(organicRow['conti attivi']) } : null
   
   // DAZNBET breakdown for DAZN Direct vs Affiliates
-  const daznbetRows = files.sportDaznbet?.data || []
+  const daznbetRows = files.sportDaznbet || []
   let daznDirect = { turnover: 0, ggr: 0, conti: 0 }
   let affiliates = { turnover: 0, ggr: 0, conti: 0 }
   
@@ -1067,16 +1084,19 @@ const UploadPage = ({ weeksData, casinoWeeksData, sportWeeksData, onUpload, onCa
     if (!fileList.length) return
     setLoading(true)
     setMsg({ t: 'info', m: `Processing ${fileList.length} files...` })
+    console.log('[Sport Debug] Section:', uploadSection, 'isMain:', isMain, 'isCasino:', isCasino, 'isSport:', isSport)
     const newFiles = { ...curFiles }
     let matched = 0
     for (const f of fileList) {
       const fname = f.name.toLowerCase()
       const key = isMain ? matchMainFile(fname) : isCasino ? matchCasinoFile(fname) : matchSportFile(fname)
+      console.log('[Sport Debug] File:', f.name, '=> Key:', key)
       if (key) {
         try { const d = await readFile(f); newFiles[key] = { name: f.name, data: d, rows: d.length }; matched++ }
         catch (err) { console.error(`Error reading ${f.name}:`, err) }
       }
     }
+    console.log('[Sport Debug] Matched files:', Object.keys(newFiles))
     setCurFiles(newFiles)
     setLoading(false)
     setMsg({ t: 'success', m: `${matched}/${fileList.length} files matched and loaded!` })
@@ -1085,11 +1105,17 @@ const UploadPage = ({ weeksData, casinoWeeksData, sportWeeksData, onUpload, onCa
   const handleUpload = async () => {
     if (!week || !dateFrom || !dateTo) { setMsg({ t: 'error', m: 'Enter week number and select dates' }); return }
     const missing = curFILES.filter(f => !curFiles[f.key])
-    if (missing.length) { setMsg({ t: 'error', m: `${missing.length} files missing` }); return }
+    console.log('[Sport Debug] Upload - Section:', uploadSection)
+    console.log('[Sport Debug] Required files:', curFILES.map(f => f.key))
+    console.log('[Sport Debug] Loaded files:', Object.keys(curFiles))
+    console.log('[Sport Debug] Missing:', missing.map(f => f.key))
+    if (missing.length) { setMsg({ t: 'error', m: `${missing.length} files missing: ${missing.map(f => f.name).join(', ')}` }); return }
     setLoading(true)
     try {
       const fd = {}; Object.entries(curFiles).forEach(([k, v]) => fd[k] = v.data)
+      console.log('[Sport Debug] Processing with keys:', Object.keys(fd))
       const proc = isMain ? processData(fd, parseInt(week), dates) : isCasino ? processCasinoData(fd, parseInt(week), dates) : processSportData(fd, parseInt(week), dates)
+      console.log('[Sport Debug] Processed result:', proc)
       if (isMain) await onUpload(proc)
       else if (isCasino) await onCasinoUpload(proc)
       else await onSportUpload(proc)
@@ -1115,12 +1141,18 @@ const UploadPage = ({ weeksData, casinoWeeksData, sportWeeksData, onUpload, onCa
           <button onClick={handleLogout} style={{ background: 'transparent', color: C.danger, border: `1px solid ${C.danger}`, borderRadius: '6px', padding: '8px 16px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}><Icon name="logout" size={14} color={C.danger} /> Logout</button>
         </div>
         
-        {/* UPLOAD MASSIVO */}
+        {/* UPLOAD MASSIVO - Separate inputs for each section */}
         <div style={{ background: C.primary + '10', border: `2px dashed ${C.primary}`, borderRadius: '12px', padding: '24px', marginBottom: '24px', textAlign: 'center' }}>
           <h3 style={{ color: C.accent, margin: '0 0 8px 0', fontSize: '16px', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}><Icon name="upload" size={18} color={C.accent} /> Bulk Upload {isCasino ? '(Casino)' : isSport ? '(Sport)' : ''}</h3>
           <p style={{ color: C.textMuted, fontSize: '13px', margin: '0 0 16px 0' }}>Select all {totalRequired} Excel files at once — they will be matched automatically</p>
-          <input ref={isMain ? bulkInputRef : isCasino ? casinoBulkRef : sportBulkRef} type="file" accept=".xlsx,.xls" multiple onChange={handleBulkUpload} style={{ display: 'none' }} />
-          <button onClick={() => (isMain ? bulkInputRef : isCasino ? casinoBulkRef : sportBulkRef).current?.click()} disabled={loading} style={{ background: C.primary, color: C.primaryText, border: 'none', borderRadius: '8px', padding: '12px 32px', fontSize: '14px', fontWeight: 800, cursor: 'pointer' }}>
+          {isMain && <input ref={bulkInputRef} type="file" accept=".xlsx,.xls" multiple onChange={handleBulkUpload} style={{ display: 'none' }} />}
+          {isCasino && <input ref={casinoBulkRef} type="file" accept=".xlsx,.xls" multiple onChange={handleBulkUpload} style={{ display: 'none' }} />}
+          {isSport && <input ref={sportBulkRef} type="file" accept=".xlsx,.xls" multiple onChange={handleBulkUpload} style={{ display: 'none' }} />}
+          <button onClick={() => {
+            if (isMain) bulkInputRef.current?.click();
+            else if (isCasino) casinoBulkRef.current?.click();
+            else if (isSport) sportBulkRef.current?.click();
+          }} disabled={loading} style={{ background: C.primary, color: C.primaryText, border: 'none', borderRadius: '8px', padding: '12px 32px', fontSize: '14px', fontWeight: 800, cursor: 'pointer' }}>
             {loading ? 'Processing...' : 'Select All Files'}
           </button>
         </div>
@@ -1175,7 +1207,7 @@ const UploadPage = ({ weeksData, casinoWeeksData, sportWeeksData, onUpload, onCa
 
         {Object.keys(curWeeksData).length > 0 && (
           <>
-            <h3 style={{ color: C.text, fontSize: '16px', margin: '0 0 16px 0', fontWeight: 700 }}>Uploaded Weeks {!isMain && '(Casino)'}</h3>
+            <h3 style={{ color: C.text, fontSize: '16px', margin: '0 0 16px 0', fontWeight: 700 }}>Uploaded Weeks {isCasino ? '(Casino)' : isSport ? '(Sport)' : ''}</h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
               {Object.values(curWeeksData).sort((a, b) => b.weekNumber - a.weekNumber).map(w => (
                 <div key={w.weekNumber} style={{ background: C.card, borderRadius: '10px', padding: '16px', border: `1px solid ${C.border}`, position: 'relative' }}>
