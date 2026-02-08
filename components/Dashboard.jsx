@@ -104,7 +104,7 @@ const SPORT_FILES = [
   { key: 'sportNumEventi', name: 'Sport_NumEventi.xlsx', path: 'Bookmaker → Report Sport → Num Eventi' },
   { key: 'sportScommesse', name: 'Sport_Scommesse.xlsx', path: 'Bookmaker → Report Sport → Scommesse' },
   { key: 'sportPuntoVendita', name: 'Sport_PuntoVendita.xlsx', path: 'Bookmaker → Report Sport → Punti Vendita' },
-  { key: 'sportSkin', name: 'Anagrafica_SKIN.xlsx', path: 'Stats Multilivello → GRID Skin + Categoria' },
+  { key: 'sportSkin', name: 'SKIN_Total_Sport.xlsx', path: 'Stats Multilivello → SCOMMESSE → GRID Skin' },
   { key: 'sportAcademyTotal', name: 'Anagrafica_ACCADEMY_TOTAL.xlsx', path: 'Stats Multi → vivabet promoter' },
   { key: 'sportOrganicTotal', name: 'Anagrafica_ORGANIC_TOTAL.xlsx', path: 'Stats Multi → daznbet www.daznbet.it' },
   { key: 'sportDaznbet', name: 'Anagrafica_DAZNBET.xlsx', path: 'Stats Multi → daznbet per conto' }
@@ -619,8 +619,8 @@ const processSportData = (files, weekNum, dateRange) => {
   const chanPerf = []
   let totChGgr = 0
   
-  // Anagrafica_SKIN.xlsx - filter for SCOMMESSE category only
-  const skinRows = (files.sportSkin || []).filter(r => String(r['Categoria'] || '').toUpperCase() === 'SCOMMESSE')
+  // SKIN_Total_Sport.xlsx - already filtered for Sport, no Categoria needed
+  const skinRows = (files.sportSkin || []).filter(r => r['Skin'] && String(r['Skin']).trim() !== '')
   const skinMap = {}
   for (const row of skinRows) {
     const skin = String(row['Skin'] || '').toLowerCase()
@@ -1177,8 +1177,8 @@ const UploadPage = ({ weeksData, casinoWeeksData, sportWeeksData, onUpload, onCa
     if (fname.includes('sport_numeventi') || fname.includes('sport_num_eventi')) return 'sportNumEventi'
     if (fname.includes('sport_scommesse')) return 'sportScommesse'
     if (fname.includes('sport_puntovendita') || fname.includes('sport_punto_vendita')) return 'sportPuntoVendita'
-    // Anagrafica_SKIN.xlsx - contains Categoria + Skin + conti attivi
-    if (fname.includes('anagrafica_skin') && !fname.includes('total')) return 'sportSkin'
+    // SKIN_Total_Sport.xlsx - Sport-specific skin data (no Categoria needed)
+    if (fname.includes('skin_total_sport') || fname.includes('skin_totalsport')) return 'sportSkin'
     // Academy - both old and new names
     if (fname.includes('accademy_totalsport') || fname.includes('academy_totalsport') || fname.includes('anagrafica_accademy_total')) return 'sportAcademyTotal'
     // Organic - both old and new names
