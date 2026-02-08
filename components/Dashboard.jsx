@@ -1197,19 +1197,37 @@ const UploadPage = ({ weeksData, casinoWeeksData, sportWeeksData, onUpload, onCa
     console.log('[Sport Debug] Section:', uploadSection, 'isMain:', isMain, 'isCasino:', isCasino, 'isSport:', isSport)
     const newFiles = { ...curFiles }
     let matched = 0
+    let sportMatches = 0, casinoMatches = 0, mainMatches = 0
     for (const f of fileList) {
       const fname = f.name.toLowerCase()
-      const key = isMain ? matchMainFile(fname) : isCasino ? matchCasinoFile(fname) : matchSportFile(fname)
-      console.log('[Sport Debug] File:', f.name, '=> Key:', key)
+      // Match based on current section
+      let key = isMain ? matchMainFile(fname) : isCasino ? matchCasinoFile(fname) : matchSportFile(fname)
+      
+      // Track which section files belong to
+      if (matchSportFile(fname)) sportMatches++
+      if (matchCasinoFile(fname)) casinoMatches++
+      if (matchMainFile(fname)) mainMatches++
+      
+      console.log('[Upload Debug] File:', f.name, '=> Key:', key, '| Section:', uploadSection)
       if (key) {
         try { const d = await readFile(f); newFiles[key] = { name: f.name, data: d, rows: d.length }; matched++ }
         catch (err) { console.error(`Error reading ${f.name}:`, err) }
       }
     }
-    console.log('[Sport Debug] Matched files:', Object.keys(newFiles))
+    console.log('[Upload Debug] Matched files:', Object.keys(newFiles))
     setCurFiles(newFiles)
     setLoading(false)
-    setMsg({ t: 'success', m: `${matched}/${fileList.length} files matched and loaded!` })
+    const sectionLabel = isMain ? 'General' : isCasino ? 'Casino' : 'Sport'
+    if (matched === 0 && fileList.length > 0) {
+      // Suggest the correct section
+      let suggestion = ''
+      if (sportMatches > casinoMatches && sportMatches > mainMatches) suggestion = ' These look like SPORT files!'
+      else if (casinoMatches > sportMatches && casinoMatches > mainMatches) suggestion = ' These look like CASINO files!'
+      else if (mainMatches > sportMatches && mainMatches > casinoMatches) suggestion = ' These look like GENERAL files!'
+      setMsg({ t: 'error', m: `0 files matched for ${sectionLabel}.${suggestion}` })
+    } else {
+      setMsg({ t: 'success', m: `${matched}/${fileList.length} files matched for ${sectionLabel}!` })
+    }
   }
 
   const handleUpload = async () => {
