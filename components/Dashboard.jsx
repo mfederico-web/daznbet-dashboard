@@ -2445,7 +2445,7 @@ const SportWeekly = ({ data, prev, theme }) => {
           <KPI label="Bet Bonus" value={data.betBonus} cur icon="gift" theme={C} />
         </div>
         {/* Quick Insights Row */}
-        <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr 1fr' : 'repeat(4, 1fr)', gap: '12px', marginBottom: '16px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr 1fr' : 'repeat(3, 1fr)', gap: '12px', marginBottom: '16px' }}>
           <div style={{ background: C.card, borderRadius: '10px', padding: '14px', border: `1px solid ${C.border}`, textAlign: 'center' }}>
             <p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', fontWeight: 700, textTransform: 'uppercase' }}>Football %</p>
             <p style={{ color: C.accent, fontSize: '22px', fontWeight: 800, margin: 0 }}>{data.calcioPct || 0}%</p>
@@ -2453,10 +2453,6 @@ const SportWeekly = ({ data, prev, theme }) => {
           <div style={{ background: C.card, borderRadius: '10px', padding: '14px', border: `1px solid ${C.border}`, textAlign: 'center' }}>
             <p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', fontWeight: 700, textTransform: 'uppercase' }}>Live %</p>
             <p style={{ color: C.danger, fontSize: '22px', fontWeight: 800, margin: 0 }}>{data.live?.pct || 0}%</p>
-          </div>
-          <div style={{ background: C.card, borderRadius: '10px', padding: '14px', border: `1px solid ${C.border}`, textAlign: 'center' }}>
-            <p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', fontWeight: 700, textTransform: 'uppercase' }}>Multiple 3+ %</p>
-            <p style={{ color: C.primary, fontSize: '22px', fontWeight: 800, margin: 0 }}>{data.multiple3plusPct || 0}%</p>
           </div>
           <div style={{ background: C.card, borderRadius: '10px', padding: '14px', border: `1px solid ${C.border}`, textAlign: 'center' }}>
             <p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', fontWeight: 700, textTransform: 'uppercase' }}>Avg Age</p>
@@ -2647,7 +2643,13 @@ const SportMonthly = ({ weeksData, theme }) => {
   const C = theme
   const ww = useWindowWidth()
   const mob = ww < 768
-  const weekNums = Object.keys(weeksData).map(Number).sort((a, b) => a - b)
+  
+  // Safety check for weeksData
+  if (!weeksData || typeof weeksData !== 'object') {
+    return <div style={{ padding: '60px', textAlign: 'center' }}><p style={{ color: C.textMuted }}>No data available</p></div>
+  }
+  
+  const weekNums = Object.keys(weeksData).map(Number).filter(n => !isNaN(n)).sort((a, b) => a - b)
   
   if (!weekNums.length) return <div style={{ padding: '60px', textAlign: 'center' }}><p style={{ color: C.textMuted }}>No data available</p></div>
   
@@ -2670,8 +2672,9 @@ const SportMonthly = ({ weeksData, theme }) => {
   }
   
   // Averages
+  const totalActives = weeks.reduce((s, w) => s + (w.activeUsers || 0), 0)
   const avgs = {
-    actives: Math.round(weeks.reduce((s, w) => s + (w.activeUsers || 0), 0) / n),
+    actives: Math.round(totalActives / n),
     age: Math.round(weeks.reduce((s, w) => s + (w.avgAge || 0), 0) / n * 10) / 10,
     arpu: Math.round(weeks.reduce((s, w) => s + (w.arpu || 0), 0) / n * 100) / 100,
     avgTicket: Math.round(weeks.reduce((s, w) => s + (w.avgTicket || 0), 0) / n * 100) / 100,
@@ -2679,17 +2682,13 @@ const SportMonthly = ({ weeksData, theme }) => {
     gwm: totals.turnover > 0 ? Math.round(totals.ggr / totals.turnover * 1000) / 10 : 0,
     calcioPct: Math.round(weeks.reduce((s, w) => s + (w.calcioPct || 0), 0) / n * 10) / 10,
     livePct: Math.round(weeks.reduce((s, w) => s + (w.live?.pct || 0), 0) / n * 10) / 10,
-    multiple3plusPct: Math.round(weeks.reduce((s, w) => s + (w.multiple3plusPct || 0), 0) / n * 10) / 10,
-    ticketsPerUser: avgs?.actives > 0 ? Math.round(totals.tickets / weeks.reduce((s, w) => s + (w.activeUsers || 0), 0) * 10) / 10 : 0
+    ticketsPerUser: totalActives > 0 ? Math.round(totals.tickets / totalActives * 10) / 10 : 0
   }
-  // Recalculate ticketsPerUser properly
-  const totalActives = weeks.reduce((s, w) => s + (w.activeUsers || 0), 0)
-  avgs.ticketsPerUser = totalActives > 0 ? Math.round(totals.tickets / totalActives * 10) / 10 : 0
   
   // Calculated metrics
   const onlinePct = totals.turnover > 0 ? Math.round(totals.onlineTurnover / totals.turnover * 1000) / 10 : 0
   const retailPct = totals.turnover > 0 ? Math.round(totals.retailTurnover / totals.turnover * 1000) / 10 : 0
-  const livePct = totals.turnover > 0 ? Math.round(totals.liveTurnover / totals.turnover * 1000) / 10 : 0
+  const totalLivePct = totals.turnover > 0 ? Math.round(totals.liveTurnover / totals.turnover * 1000) / 10 : 0
   const preMatchPct = totals.turnover > 0 ? Math.round(totals.preMatchTurnover / totals.turnover * 1000) / 10 : 0
   
   // Trend data
@@ -2778,7 +2777,7 @@ const SportMonthly = ({ weeksData, theme }) => {
         </div>
         
         {/* Quick Insights Row */}
-        <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr 1fr' : 'repeat(5, 1fr)', gap: '12px', marginBottom: '24px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr 1fr' : 'repeat(4, 1fr)', gap: '12px', marginBottom: '24px' }}>
           <div style={{ background: C.card, borderRadius: '10px', padding: '14px', border: `1px solid ${C.border}`, textAlign: 'center' }}>
             <p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', fontWeight: 700, textTransform: 'uppercase' }}>Football % Avg</p>
             <p style={{ color: C.accent, fontSize: '22px', fontWeight: 800, margin: 0 }}>{avgs.calcioPct}%</p>
@@ -2786,10 +2785,6 @@ const SportMonthly = ({ weeksData, theme }) => {
           <div style={{ background: C.card, borderRadius: '10px', padding: '14px', border: `1px solid ${C.border}`, textAlign: 'center' }}>
             <p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', fontWeight: 700, textTransform: 'uppercase' }}>Live % Avg</p>
             <p style={{ color: C.danger, fontSize: '22px', fontWeight: 800, margin: 0 }}>{avgs.livePct}%</p>
-          </div>
-          <div style={{ background: C.card, borderRadius: '10px', padding: '14px', border: `1px solid ${C.border}`, textAlign: 'center' }}>
-            <p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', fontWeight: 700, textTransform: 'uppercase' }}>Multiple 3+ %</p>
-            <p style={{ color: C.primary, fontSize: '22px', fontWeight: 800, margin: 0 }}>{avgs.multiple3plusPct}%</p>
           </div>
           <div style={{ background: C.card, borderRadius: '10px', padding: '14px', border: `1px solid ${C.border}`, textAlign: 'center' }}>
             <p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', fontWeight: 700, textTransform: 'uppercase' }}>Avg Age</p>
@@ -2863,7 +2858,7 @@ const SportMonthly = ({ weeksData, theme }) => {
                 <span style={{ color: '#FFF', fontSize: '11px', fontWeight: 800 }}>{preMatchPct}%</span>
               </div>
               <div style={{ flex: 1, background: C.danger, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <span style={{ color: '#FFF', fontSize: '11px', fontWeight: 800 }}>{livePct}%</span>
+                <span style={{ color: '#FFF', fontSize: '11px', fontWeight: 800 }}>{totalLivePct}%</span>
               </div>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
