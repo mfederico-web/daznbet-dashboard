@@ -923,8 +923,7 @@ const UploadPage = ({ weeksData, casinoWeeksData, onUpload, onCasinoUpload, onDe
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// MONTHLY SUMMARY — NEW VERSION
-// Calendar month aggregation + Month-over-Month comparison
+// MONTHLY SUMMARY — ALL + CUSTOM
 // ═══════════════════════════════════════════════════════════════════════════════
 const Monthly = ({ weeksData, theme }) => {
   const C = theme
@@ -932,30 +931,12 @@ const Monthly = ({ weeksData, theme }) => {
   const mob = ww < 768
   const allWeeks = Object.values(weeksData).sort((a, b) => a.weekNumber - b.weekNumber)
   
-  const [filterMode, setFilterMode] = useState('month')
-  const [selectedMonth, setSelectedMonth] = useState('')
+  const [filterMode, setFilterMode] = useState('all')
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo] = useState('')
   const [qaChannel, setQaChannel] = useState('ALL')
 
   if (!allWeeks.length) return <div style={{ padding: '60px', textAlign: 'center' }}><p style={{ color: C.textMuted, fontSize: '16px' }}>No data available</p></div>
-
-  // ── Raggruppa settimane per MESE SOLARE ──
-  // Usa la data di INIZIO settimana dal dateRange per assegnare al mese
-  const monthsMap = {}
-  allWeeks.forEach(w => {
-    const m = getMonthFromDateRange(w.dateRange)
-    if (m.key) {
-      if (!monthsMap[m.key]) monthsMap[m.key] = { name: m.name, key: m.key, weeks: [] }
-      monthsMap[m.key].weeks.push(w)
-    }
-  })
-  const months = Object.values(monthsMap).sort((a, b) => a.key.localeCompare(b.key))
-
-  // Auto-select ultimo mese se nessuno selezionato
-  useEffect(() => {
-    if (!selectedMonth && months.length > 0) setSelectedMonth(months[months.length - 1].key)
-  }, [months.length])
 
   // ── Aggregazione helper ──
   const aggregateWeeks = (weeks) => {
@@ -971,7 +952,6 @@ const Monthly = ({ weeksData, theme }) => {
     const logins = weeks.reduce((s, w) => s + (w.totalLogins || 0), 0)
     const avgAct = Math.round(weeks.reduce((s, w) => s + (w.activeUsers || 0), 0) / weeks.length)
 
-    // Quality Acquisition aggregation
     const qualityAgg = {}
     weeks.forEach(w => (w.qualityAcquisition || []).forEach(ch => {
       if (ch.isTotal) return
@@ -986,7 +966,6 @@ const Monthly = ({ weeksData, theme }) => {
     qTotals.conv = qTotals.reg > 0 ? parseFloat((qTotals.ftds / qTotals.reg * 100).toFixed(1)) : 0
     qualityData.push(qTotals)
 
-    // Channel Performance aggregation
     const channelAgg = {}
     weeks.forEach(w => (w.channelPerformance || []).forEach(ch => {
       if (!channelAgg[ch.channel]) channelAgg[ch.channel] = { channel: ch.channel, turnover: 0, ggr: 0, actives: 0 }
@@ -1001,7 +980,6 @@ const Monthly = ({ weeksData, theme }) => {
     const totalChGgr = channelData.reduce((s, c) => s + c.ggr, 0)
     channelData.forEach(ch => { ch.revShare = totalChGgr > 0 ? parseFloat((ch.ggr / totalChGgr * 100).toFixed(1)) : 0 })
 
-    // Product Performance
     const productAgg = {}
     weeks.forEach(w => (w.productPerformance || []).forEach(p => {
       if (!productAgg[p.product]) productAgg[p.product] = { product: p.product, turnover: 0, ggr: 0, actives: 0 }
@@ -1013,7 +991,6 @@ const Monthly = ({ weeksData, theme }) => {
       ...p, actives: Math.round(p.actives / weeks.length)
     })).sort((a, b) => b.ggr - a.ggr)
 
-    // Gender aggregation
     let totalMale = 0, totalFemale = 0
     weeks.forEach(w => {
       const d = w.demographics
@@ -1024,7 +1001,6 @@ const Monthly = ({ weeksData, theme }) => {
     })
     const totalGender = totalMale + totalFemale
 
-    // Age Distribution
     const ageAcc = { "18-24": 0, "25-34": 0, "35-44": 0, "45-54": 0, "55-64": 0, "65+": 0 }
     weeks.forEach(w => {
       (w.ageGroups || []).forEach(ag => {
@@ -1040,69 +1016,33 @@ const Monthly = ({ weeksData, theme }) => {
       netDep: dep - wit,
       conv: reg > 0 ? parseFloat((ftds / reg * 100).toFixed(1)) : 0,
       gwm: turn > 0 ? parseFloat((ggr / turn * 100).toFixed(1)) : 0,
-      arpu: avgAct > 0 ? Math.round(ggr / avgAct) : 0,
       bonusRoi: bonus > 0 ? parseFloat((ggr / bonus).toFixed(1)) : 0,
       bonusPctGgr: ggr > 0 ? parseFloat((bonus / ggr * 100).toFixed(1)) : 0,
-      witRatio: dep > 0 ? parseFloat((wit / dep * 100).toFixed(1)) : 0,
-      loginPerUser: avgAct > 0 ? parseFloat((logins / weeks.length / avgAct).toFixed(1)) : 0,
-      avgWeeklyReg: Math.round(reg / weeks.length),
-      avgWeeklyFtds: Math.round(ftds / weeks.length),
-      avgWeeklyGgr: Math.round(ggr / weeks.length),
-      avgWeeklyTurn: Math.round(turn / weeks.length),
       qualityData, channelData, productData,
       gender: { male: totalGender > 0 ? Math.round(totalMale / totalGender * 100) : 0, female: totalGender > 0 ? Math.round(totalFemale / totalGender * 100) : 0, _maleCount: totalMale, _femaleCount: totalFemale },
       ageGroups: aggAge
     }
   }
 
-  // ── Calcola dati correnti e MoM ──
-  let current, prevMonth, periodLabel, momData
+  // ── Calcola dati correnti ──
+  let current, periodLabel
   
   if (filterMode === 'all') {
     current = aggregateWeeks(allWeeks)
     periodLabel = `All Weeks (${allWeeks.length})`
-    prevMonth = null
-  } else if (filterMode === 'month') {
-    const monthObj = monthsMap[selectedMonth]
-    if (!monthObj) return <div style={{ padding: '60px', textAlign: 'center' }}><p style={{ color: C.textMuted }}>Select a month</p></div>
-    current = aggregateWeeks(monthObj.weeks)
-    periodLabel = monthObj.name
-
-    // Trova mese precedente per MoM
-    const monthIdx = months.findIndex(m => m.key === selectedMonth)
-    if (monthIdx > 0) {
-      prevMonth = aggregateWeeks(months[monthIdx - 1].weeks)
-    }
   } else if (filterMode === 'custom') {
     const from = parseInt(customFrom), to = parseInt(customTo)
     const filtered = allWeeks.filter(w => w.weekNumber >= from && w.weekNumber <= to)
     current = aggregateWeeks(filtered.length ? filtered : allWeeks)
     periodLabel = customFrom && customTo ? `Week ${customFrom} - ${customTo}` : `All Weeks`
-    prevMonth = null
   }
 
   if (!current) return <div style={{ padding: '60px', textAlign: 'center' }}><p style={{ color: C.textMuted }}>No data for selection</p></div>
-
-  // MoM helper
-  const mom = (curVal, prevVal) => {
-    if (!prevMonth || !prevVal || prevVal === 0) return null
-    return parseFloat(((curVal - prevVal) / prevVal * 100).toFixed(1))
-  }
-  const momPp = (curVal, prevVal) => {
-    if (!prevMonth) return null
-    return parseFloat((curVal - prevVal).toFixed(1))
-  }
 
   // Chart data
   const trend = current.weeks.map(w => ({ week: `W${w.weekNumber}`, REG: w.registrations, FTDs: w.ftds, GGR: Math.round(w.ggr / 1000), Actives: w.activeUsers }))
   const cashFlowTrend = current.weeks.map(w => ({ week: `W${w.weekNumber}`, Deposits: w.totalDeposits || 0, Withdrawals: w.totalWithdrawals || 0, NetDeposit: (w.totalDeposits || 0) - (w.totalWithdrawals || 0) }))
   const bonusTrend = current.weeks.map(w => ({ week: `W${w.weekNumber}`, Bonus: w.totalBonus || 0 }))
-
-  // Monthly comparison bar chart (all months)
-  const monthlyComparison = months.map(m => {
-    const agg = aggregateWeeks(m.weeks)
-    return { month: m.name.split(' ')[0].substring(0, 3), REG: agg.reg, FTDs: agg.ftds, GGR: Math.round(agg.ggr / 1000), Turnover: Math.round(agg.turn / 1000), Actives: agg.avgAct }
-  })
 
   // QA per-week comparison
   const qaWeeks = current.weeks.slice(-10)
@@ -1121,46 +1061,15 @@ const Monthly = ({ weeksData, theme }) => {
 
   const weekNums = allWeeks.map(w => w.weekNumber)
 
-  // ── MoM Badge component ──
-  const MoMBadge = ({ value, suffix = '%', invert = false }) => {
-    if (value === null || value === undefined) return null
-    const isPos = invert ? value < 0 : value >= 0
-    return <span style={{ fontSize: '11px', fontWeight: 800, color: isPos ? C.success : C.danger, marginLeft: '6px' }}>{value > 0 ? '▲' : value < 0 ? '▼' : '='} {Math.abs(value)}{suffix} MoM</span>
-  }
-
-  // ── Mini stat for MoM comparison ──
-  const MoMStat = ({ label, current: cur, prev, format = 'num', invert = false }) => {
-    const ch = format === 'pct' ? momPp(cur, prev) : mom(cur, prev)
-    const fmtVal = format === 'cur' ? fmtCurrency(cur) : format === 'pct' ? `${cur}%` : fmtNum(cur)
-    const fmtPrev = format === 'cur' ? fmtCurrency(prev || 0) : format === 'pct' ? `${prev || 0}%` : fmtNum(prev || 0)
-    return (
-      <div style={{ padding: '12px', background: C.bg, borderRadius: '8px', border: `1px solid ${C.border}` }}>
-        <p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', textTransform: 'uppercase', fontWeight: 600 }}>{label}</p>
-        <p style={{ color: C.text, fontSize: '20px', fontWeight: 900, margin: '0 0 2px 0' }}>{fmtVal}</p>
-        {prevMonth && <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
-          <span style={{ color: C.textMuted, fontSize: '10px' }}>prev: {fmtPrev}</span>
-          {ch !== null && <MoMBadge value={ch} suffix={format === 'pct' ? 'pp' : '%'} invert={invert} />}
-        </div>}
-      </div>
-    )
-  }
-
   return (
     <div id="monthly-report" style={{ padding: 'clamp(20px, 3vw, 48px)' }}>
       {/* ═══ FILTER BAR ═══ */}
       <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}`, marginBottom: '32px', display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', gap: '8px' }}>
-          {['all', 'month', 'custom'].map(mode => (
-            <button key={mode} onClick={() => setFilterMode(mode)} style={{ background: filterMode === mode ? C.primary : 'transparent', color: filterMode === mode ? C.primaryText : C.textSec, border: `1px solid ${filterMode === mode ? C.primary : C.border}`, borderRadius: '6px', padding: '8px 16px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>{mode === 'all' ? 'All' : mode === 'month' ? 'Month' : 'Custom'}</button>
+          {['all', 'custom'].map(mode => (
+            <button key={mode} onClick={() => setFilterMode(mode)} style={{ background: filterMode === mode ? C.primary : 'transparent', color: filterMode === mode ? C.primaryText : C.textSec, border: `1px solid ${filterMode === mode ? C.primary : C.border}`, borderRadius: '6px', padding: '8px 16px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>{mode === 'all' ? 'All' : 'Custom'}</button>
           ))}
         </div>
-        
-        {filterMode === 'month' && (
-          <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} style={{ background: C.bg, color: C.text, border: `1px solid ${C.primary}`, borderRadius: '6px', padding: '8px 14px', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}>
-            <option value="">Select month</option>
-            {months.map(m => <option key={m.key} value={m.key}>{m.name} ({m.weeks.length}w)</option>)}
-          </select>
-        )}
 
         {filterMode === 'custom' && (
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -1180,50 +1089,14 @@ const Monthly = ({ weeksData, theme }) => {
       {/* ═══ TRADING SUMMARY ═══ */}
       <Section title="Trading Summary" theme={C}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 'clamp(12px, 1.5vw, 16px)', marginBottom: 'clamp(24px, 3vw, 40px)' }}>
-          <KPI label="Total REG" value={current.reg} change={mom(current.reg, prevMonth?.reg)} icon="user" delay={0} theme={C} />
-          <KPI label="Total FTDs" value={current.ftds} sub={`Conv: ${current.conv}%`} change={mom(current.ftds, prevMonth?.ftds)} icon="card" delay={50} theme={C} />
-          <KPI label="Net Deposit" value={current.netDep} change={mom(current.netDep, prevMonth?.netDep)} cur icon="wallet" delay={100} theme={C} />
-          <KPI label="Turnover" value={current.turn} change={mom(current.turn, prevMonth?.turn)} cur icon="activity" delay={150} theme={C} />
-          <KPI label="GGR" value={current.ggr} sub={`GWM: ${current.gwm}%`} change={mom(current.ggr, prevMonth?.ggr)} cur icon="trending" delay={200} theme={C} />
-          <KPI label="Avg Actives" value={current.avgAct} change={mom(current.avgAct, prevMonth?.avgAct)} icon="users" delay={250} theme={C} />
+          <KPI label="Total REG" value={current.reg} icon="user" delay={0} theme={C} />
+          <KPI label="Total FTDs" value={current.ftds} sub={`Conv: ${current.conv}%`} icon="card" delay={50} theme={C} />
+          <KPI label="Net Deposit" value={current.netDep} cur icon="wallet" delay={100} theme={C} />
+          <KPI label="Turnover" value={current.turn} cur icon="activity" delay={150} theme={C} />
+          <KPI label="GGR" value={current.ggr} sub={`GWM: ${current.gwm}%`} cur icon="trending" delay={200} theme={C} />
+          <KPI label="Avg Actives" value={current.avgAct} icon="users" delay={250} theme={C} />
         </div>
 
-        {/* ── MoM COMPARISON PANEL (solo in modalità Month) ── */}
-        {filterMode === 'month' && prevMonth && (
-          <div style={{ background: C.card, borderRadius: '12px', padding: 'clamp(16px, 2vw, 24px)', border: `1px solid ${C.border}`, marginBottom: 'clamp(24px, 3vw, 40px)' }}>
-            <h4 style={{ color: C.textSec, margin: '0 0 16px 0', fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Icon name="trending" size={14} color={C.textSec} /> Month-over-Month Detail
-            </h4>
-            <div style={{ display: 'grid', gridTemplateColumns: mob ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: '10px' }}>
-              <MoMStat label="Avg Weekly REG" current={current.avgWeeklyReg} prev={prevMonth.avgWeeklyReg} />
-              <MoMStat label="Avg Weekly FTDs" current={current.avgWeeklyFtds} prev={prevMonth.avgWeeklyFtds} />
-              <MoMStat label="Avg Weekly GGR" current={current.avgWeeklyGgr} prev={prevMonth.avgWeeklyGgr} format="cur" />
-              <MoMStat label="Avg Weekly T/O" current={current.avgWeeklyTurn} prev={prevMonth.avgWeeklyTurn} format="cur" />
-              <MoMStat label="ARPU" current={current.arpu} prev={prevMonth.arpu} format="cur" />
-              <MoMStat label="GWM" current={current.gwm} prev={prevMonth.gwm} format="pct" />
-              <MoMStat label="Conversion" current={current.conv} prev={prevMonth.conv} format="pct" />
-              <MoMStat label="Bonus ROI" current={current.bonusRoi} prev={prevMonth.bonusRoi} />
-              <MoMStat label="Withdrawal Ratio" current={current.witRatio} prev={prevMonth.witRatio} format="pct" invert />
-              <MoMStat label="Bonus % GGR" current={current.bonusPctGgr} prev={prevMonth.bonusPctGgr} format="pct" invert />
-              <MoMStat label="Total Bonus" current={current.bonus} prev={prevMonth.bonus} format="cur" />
-              <MoMStat label="Logins / User / W" current={current.loginPerUser} prev={prevMonth.loginPerUser} />
-            </div>
-          </div>
-        )}
-
-        {/* Monthly comparison chart (se ci sono almeno 2 mesi) */}
-        {months.length >= 2 && (
-          <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : 'repeat(auto-fit, minmax(380px, 1fr))', gap: 'clamp(16px, 2vw, 24px)', marginBottom: 'clamp(24px, 3vw, 40px)' }}>
-            <ChartCard title="Monthly REG & FTDs" theme={C}>
-              <BarChart data={monthlyComparison} barGap={2}><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="month" tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} /><YAxis tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} /><Tooltip content={<Tip theme={C} />} /><Legend /><Bar dataKey="REG" fill={C.primary} radius={[4, 4, 0, 0]} /><Bar dataKey="FTDs" fill={C.success} radius={[4, 4, 0, 0]} /></BarChart>
-            </ChartCard>
-            <ChartCard title="Monthly GGR (€K) & Actives" theme={C}>
-              <ComposedChart data={monthlyComparison}><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="month" tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} /><YAxis tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} /><Tooltip content={<Tip theme={C} />} /><Bar dataKey="GGR" name="GGR (€K)" fill={C.primary} radius={[4, 4, 0, 0]} /><Line type="monotone" dataKey="Actives" stroke={C.blue} strokeWidth={2} dot={{ fill: C.blue, r: 4 }} /></ComposedChart>
-            </ChartCard>
-          </div>
-        )}
-
-        {/* Weekly trend within period */}
         <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : 'repeat(auto-fit, minmax(380px, 1fr))', gap: 'clamp(16px, 2vw, 24px)', marginBottom: 'clamp(24px, 3vw, 40px)' }}>
           <ChartCard title="Registration & FTD Trend" theme={C}>
             <AreaChart data={trend}><defs><linearGradient id="gR" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.primary} stopOpacity={0.3} /><stop offset="95%" stopColor={C.primary} stopOpacity={0} /></linearGradient><linearGradient id="gF" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.success} stopOpacity={0.3} /><stop offset="95%" stopColor={C.success} stopOpacity={0} /></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} /><YAxis tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} /><Tooltip content={<Tip theme={C} />} /><Legend /><Area type="monotone" dataKey="REG" stroke={C.primary} fill="url(#gR)" strokeWidth={2} /><Area type="monotone" dataKey="FTDs" stroke={C.success} fill="url(#gF)" strokeWidth={2} /></AreaChart>
@@ -1267,10 +1140,10 @@ const Monthly = ({ weeksData, theme }) => {
           <div style={{ background: C.card, borderRadius: '12px', padding: '24px', border: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
             <h4 style={{ color: C.textMuted, margin: '0 0 16px 0', fontSize: '11px', textTransform: 'uppercase', fontWeight: 700 }}>Bonus Summary</h4>
             <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '1fr 1fr', gap: '20px' }}>
-              <div><p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', textTransform: 'uppercase' }}>Total Bonus</p><p style={{ color: C.orange, fontSize: '28px', fontWeight: 900, margin: 0 }}>{fmtCurrency(current.bonus)}</p>{prevMonth && <MoMBadge value={mom(current.bonus, prevMonth.bonus)} />}</div>
+              <div><p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', textTransform: 'uppercase' }}>Total Bonus</p><p style={{ color: C.orange, fontSize: '28px', fontWeight: 900, margin: 0 }}>{fmtCurrency(current.bonus)}</p></div>
               <div><p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', textTransform: 'uppercase' }}>Avg Weekly</p><p style={{ color: C.text, fontSize: '28px', fontWeight: 900, margin: 0 }}>{fmtCurrency(current.bonus / current.weekCount)}</p></div>
-              <div><p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', textTransform: 'uppercase' }}>Bonus ROI</p><p style={{ color: C.success, fontSize: '28px', fontWeight: 900, margin: 0 }}>{current.bonusRoi}x</p>{prevMonth && <MoMBadge value={mom(current.bonusRoi, prevMonth.bonusRoi)} />}</div>
-              <div><p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', textTransform: 'uppercase' }}>% of GGR</p><p style={{ color: C.text, fontSize: '28px', fontWeight: 900, margin: 0 }}>{current.bonusPctGgr}%</p>{prevMonth && <MoMBadge value={momPp(current.bonusPctGgr, prevMonth.bonusPctGgr)} suffix="pp" invert />}</div>
+              <div><p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', textTransform: 'uppercase' }}>Bonus ROI</p><p style={{ color: C.success, fontSize: '28px', fontWeight: 900, margin: 0 }}>{current.bonusRoi}x</p></div>
+              <div><p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', textTransform: 'uppercase' }}>% of GGR</p><p style={{ color: C.text, fontSize: '28px', fontWeight: 900, margin: 0 }}>{current.bonusPctGgr}%</p></div>
             </div>
           </div>
         </div>
@@ -1383,7 +1256,6 @@ const Monthly = ({ weeksData, theme }) => {
     </div>
   )
 }
-
 
 
 // ═══════════════════════════════════════════════════════════════════════════════
