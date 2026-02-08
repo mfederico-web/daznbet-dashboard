@@ -97,6 +97,19 @@ const CASINO_FILES = [
   { key: 'casinoSessioni', name: 'SessioniCasino.xlsx', path: 'Report Sessioni Casino (ticket-level)' }
 ]
 
+const SPORT_FILES = [
+  { key: 'sportTotal', name: 'Sport_Total.xlsx', path: 'Bookmaker → Export GRID completo' },
+  { key: 'sportTotalEta', name: 'SPORT_Total_età.xlsx', path: 'Stats Multilivello → SCOMMESSE → per conto' },
+  { key: 'sportManifestazione', name: 'Sport_Manifestazione.xlsx', path: 'Bookmaker → Report Sport → Manifestazioni' },
+  { key: 'sportNumEventi', name: 'Sport_NumEventi.xlsx', path: 'Bookmaker → Report Sport → Num Eventi' },
+  { key: 'sportScommesse', name: 'Sport_Scommesse.xlsx', path: 'Bookmaker → Report Sport → Scommesse' },
+  { key: 'sportPuntoVendita', name: 'Sport_PuntoVendita.xlsx', path: 'Bookmaker → Report Sport → Punti Vendita' },
+  { key: 'sportSkinTotal', name: 'SKIN_TOTALSPORT.xlsx', path: 'Stats Multilivello → SCOMMESSE → GRID Skin' },
+  { key: 'sportAcademyTotal', name: 'ACCADEMY_TOTALSPORT.xlsx', path: 'Academy Total Sport' },
+  { key: 'sportOrganicTotal', name: 'ORGANIC_TOTALSPORT.xlsx', path: 'Organic Total Sport' },
+  { key: 'sportDaznbet', name: 'DAZNBETSPORT.xlsx', path: 'DAZNBET Sport per conto' }
+]
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // UTILITIES
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -537,6 +550,255 @@ const processSessionData = (rows) => {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// SPORT DATA PROCESSING
+// ═══════════════════════════════════════════════════════════════════════════════
+const processSportData = (files, weekNum, dateRange) => {
+  // Sport_Total.xlsx - main totals with Online vs Retail and Live breakdown
+  const totalRows = files.sportTotal?.data || []
+  let online = { turnover: 0, ggr: 0, tickets: 0, turnoverLive: 0, ticketsLive: 0, vinto: 0, betBonus: 0 }
+  let retail4528 = { turnover: 0, ggr: 0, tickets: 0, turnoverLive: 0, ticketsLive: 0, vinto: 0 }
+  let retail4218 = { turnover: 0, ggr: 0, tickets: 0, turnoverLive: 0, ticketsLive: 0, vinto: 0 }
+  const puntiVendita = []
+  
+  for (const row of totalRows) {
+    const idCn = String(row['Id_cn'] || row['id_cn'] || '')
+    const data = {
+      turnover: parseNum(row['Giocato totale']),
+      ggr: parseNum(row['Netto']),
+      tickets: parseNum(row['Totale biglietti']),
+      turnoverLive: parseNum(row['Giocato live']),
+      ticketsLive: parseNum(row['Biglietti live']),
+      vinto: parseNum(row['Vinto']),
+      betBonus: parseNum(row['Bet bonus'])
+    }
+    if (idCn === '15125') {
+      online.turnover += data.turnover; online.ggr += data.ggr; online.tickets += data.tickets
+      online.turnoverLive += data.turnoverLive; online.ticketsLive += data.ticketsLive
+      online.vinto += data.vinto; online.betBonus += data.betBonus
+    } else if (idCn === '4528') {
+      retail4528.turnover += data.turnover; retail4528.ggr += data.ggr; retail4528.tickets += data.tickets
+      retail4528.turnoverLive += data.turnoverLive; retail4528.ticketsLive += data.ticketsLive
+      retail4528.vinto += data.vinto
+    } else if (idCn === '4218') {
+      retail4218.turnover += data.turnover; retail4218.ggr += data.ggr; retail4218.tickets += data.tickets
+      retail4218.turnoverLive += data.turnoverLive; retail4218.ticketsLive += data.ticketsLive
+      retail4218.vinto += data.vinto
+    }
+    if (row['Ragione sociale'] && data.turnover > 0) {
+      puntiVendita.push({ id: row['Id_pvend'], name: row['Ragione sociale'], concessione: idCn, ...data })
+    }
+  }
+  
+  const retailTot = {
+    turnover: retail4528.turnover + retail4218.turnover,
+    ggr: retail4528.ggr + retail4218.ggr,
+    tickets: retail4528.tickets + retail4218.tickets,
+    turnoverLive: retail4528.turnoverLive + retail4218.turnoverLive,
+    ticketsLive: retail4528.ticketsLive + retail4218.ticketsLive
+  }
+  
+  const totals = {
+    turnover: online.turnover + retailTot.turnover,
+    ggr: online.ggr + retailTot.ggr,
+    tickets: online.tickets + retailTot.tickets,
+    turnoverLive: online.turnoverLive + retailTot.turnoverLive,
+    ticketsLive: online.ticketsLive + retailTot.ticketsLive,
+    vinto: online.vinto + retail4528.vinto + retail4218.vinto,
+    betBonus: online.betBonus
+  }
+  
+  const turnoverPreMatch = totals.turnover - totals.turnoverLive
+  const ticketsPreMatch = totals.tickets - totals.ticketsLive
+  
+  // SPORT_Total_età.xlsx - per-account with age
+  const etaRows = files.sportTotalEta?.data || []
+  const ages = []
+  let activeAccounts = 0
+  const ageGroups = { '18-24': 0, '25-34': 0, '35-44': 0, '45-54': 0, '55-64': 0, '65+': 0 }
+  
+  for (const row of etaRows) {
+    const eta = parseNum(row['Età'])
+    if (eta > 0 && eta < 120) {
+      ages.push(eta)
+      activeAccounts++
+      if (eta <= 24) ageGroups['18-24']++
+      else if (eta <= 34) ageGroups['25-34']++
+      else if (eta <= 44) ageGroups['35-44']++
+      else if (eta <= 54) ageGroups['45-54']++
+      else if (eta <= 64) ageGroups['55-64']++
+      else ageGroups['65+']++
+    }
+  }
+  const avgAge = ages.length > 0 ? Math.round(ages.reduce((a, b) => a + b, 0) / ages.length * 10) / 10 : 0
+  const ageData = Object.entries(ageGroups).map(([range, count]) => ({
+    range, count, percent: activeAccounts > 0 ? Math.round(count / activeAccounts * 1000) / 10 : 0
+  }))
+  
+  // Sport_Manifestazione.xlsx - by sport and competition
+  const manifRows = files.sportManifestazione?.data || []
+  const sportsMap = {}
+  const manifestazioni = []
+  
+  for (const row of manifRows) {
+    const sport = row['Sport'] || 'UNKNOWN'
+    const manif = row['Manifestazione']
+    const venduto = parseNum(row['Venduto'])
+    const profit = parseNum(row['Profit'])
+    const profitPct = parseNum(row['Profit %'])
+    const tickets = parseNum(row['Tickets'])
+    const livePct = parseNum(row['% Live totale'])
+    
+    if (!sportsMap[sport]) sportsMap[sport] = { turnover: 0, ggr: 0, tickets: 0 }
+    sportsMap[sport].turnover += venduto
+    sportsMap[sport].ggr += profit
+    sportsMap[sport].tickets += tickets
+    
+    if (manif && venduto > 0) {
+      manifestazioni.push({ sport, name: manif, turnover: venduto, ggr: profit, profitPct, tickets, livePct })
+    }
+  }
+  
+  const topSports = Object.entries(sportsMap)
+    .map(([name, d]) => ({ name, turnover: d.turnover, ggr: d.ggr, tickets: d.tickets, gwm: d.turnover > 0 ? Math.round(d.ggr / d.turnover * 1000) / 10 : 0 }))
+    .sort((a, b) => b.turnover - a.turnover).slice(0, 12)
+  
+  const topManifestazioni = [...manifestazioni].sort((a, b) => b.turnover - a.turnover).slice(0, 20)
+  
+  // Sport_NumEventi.xlsx - singles, doubles, etc.
+  const eventiRows = files.sportNumEventi?.data || []
+  const numEventi = []
+  const LABEL_MAP = { 1: 'Singole', 2: 'Doppie', 3: 'Triple', 4: 'Quadruple', 5: 'Quintuple', 6: '6 Eventi', 7: '7 Eventi', 8: '8 Eventi', 9: '9 Eventi', 10: '10 Eventi', 11: '11+ Eventi' }
+  
+  for (const row of eventiRows) {
+    const eventi = parseNum(row['Eventi'])
+    if (eventi > 0) {
+      numEventi.push({
+        eventi,
+        label: LABEL_MAP[eventi] || `${eventi} Eventi`,
+        tickets: parseNum(row['Tickets']),
+        turnover: parseNum(row['Venduto']),
+        ggr: parseNum(row['Profit']),
+        profitPct: parseNum(row['Profit %']),
+        livePct: parseNum(row['% Live totale'])
+      })
+    }
+  }
+  numEventi.sort((a, b) => a.eventi - b.eventi)
+  
+  // Sport_Scommesse.xlsx - bet types (optional)
+  const scommesseRows = files.sportScommesse?.data || []
+  const topScommesse = scommesseRows
+    .filter(r => r['Scommessa'] && parseNum(r['Venduto']) > 0)
+    .map(r => ({
+      name: r['Scommessa'],
+      tickets: parseNum(r['Tickets']),
+      turnover: parseNum(r['Venduto']),
+      ggr: parseNum(r['Profit']),
+      profitPct: parseNum(r['Profit %']),
+      livePct: parseNum(r['% Live totale'])
+    }))
+    .sort((a, b) => b.turnover - a.turnover).slice(0, 15)
+  
+  // Sport_PuntoVendita.xlsx - by point of sale (optional)
+  const pvRows = files.sportPuntoVendita?.data || []
+  const topPuntiVendita = pvRows
+    .filter(r => r['Cod punto'] && parseNum(r['Venduto']) > 0)
+    .map(r => ({
+      codice: r['Cod punto'],
+      skin: r['Skin'],
+      tickets: parseNum(r['Tickets']),
+      turnover: parseNum(r['Venduto']),
+      ggr: parseNum(r['Profit']),
+      profitPct: parseNum(r['Profit %']),
+      livePct: parseNum(r['% Live totale'])
+    }))
+    .sort((a, b) => b.turnover - a.turnover).slice(0, 25)
+  
+  // SKIN_TOTALSPORT.xlsx - channel performance
+  const skinRows = files.sportSkinTotal?.data || []
+  const channelPerformance = skinRows
+    .filter(r => r['Skin'] && typeof r['Giocato'] !== 'string')
+    .map(r => {
+      const turnover = parseNum(r['Giocato'])
+      const ggr = parseNum(r['ggr']) || parseNum(r['rake'])
+      return {
+        channel: r['Skin'],
+        turnover, ggr,
+        actives: parseNum(r['conti attivi']),
+        tickets: parseNum(r['num ticket']),
+        betBonus: parseNum(r['bet bonus']),
+        payout: turnover > 0 ? Math.round((turnover - ggr) / turnover * 1000) / 10 : 0,
+        gwm: turnover > 0 ? Math.round(ggr / turnover * 1000) / 10 : 0
+      }
+    })
+    .sort((a, b) => b.turnover - a.turnover)
+  
+  const totalChGgr = channelPerformance.reduce((s, c) => s + c.ggr, 0)
+  channelPerformance.forEach(c => { c.revShare = totalChGgr > 0 ? Math.round(c.ggr / totalChGgr * 1000) / 10 : 0 })
+  
+  // Academy, Organic, DAZNBET breakdowns (optional)
+  const academyRow = (files.sportAcademyTotal?.data || [])[0]
+  const organicRow = (files.sportOrganicTotal?.data || [])[0]
+  const academyData = academyRow ? { turnover: parseNum(academyRow['Giocato']), ggr: parseNum(academyRow['rake']), actives: parseNum(academyRow['conti attivi']) } : null
+  const organicData = organicRow ? { turnover: parseNum(organicRow['Giocato']), ggr: parseNum(organicRow['rake']), actives: parseNum(organicRow['conti attivi']) } : null
+  
+  // DAZNBET breakdown for DAZN Direct vs Affiliates
+  const daznbetRows = files.sportDaznbet?.data || []
+  let daznDirect = { turnover: 0, ggr: 0, conti: 0 }
+  let affiliates = { turnover: 0, ggr: 0, conti: 0 }
+  
+  for (const row of daznbetRows) {
+    const codLiv1 = String(row['Cod liv 1'] || '')
+    const giocato = parseNum(row['Giocato'])
+    const ggr = parseNum(row['ggr'])
+    if (codLiv1.toUpperCase().startsWith('DAZN')) {
+      daznDirect.turnover += giocato; daznDirect.ggr += ggr; daznDirect.conti++
+    } else if (codLiv1) {
+      affiliates.turnover += giocato; affiliates.ggr += ggr; affiliates.conti++
+    }
+  }
+  
+  const arpu = activeAccounts > 0 ? Math.round(totals.ggr / activeAccounts * 100) / 100 : 0
+  const gwm = totals.turnover > 0 ? Math.round(totals.ggr / totals.turnover * 1000) / 10 : 0
+  const payout = totals.turnover > 0 ? Math.round(totals.vinto / totals.turnover * 1000) / 10 : 0
+  
+  return {
+    weekNumber: weekNum,
+    dateRange,
+    // Main KPIs
+    turnover: totals.turnover,
+    ggr: totals.ggr,
+    gwm,
+    tickets: totals.tickets,
+    activeUsers: activeAccounts,
+    arpu,
+    avgAge,
+    betBonus: totals.betBonus,
+    payout,
+    // Online vs Retail
+    online: { ...online, pct: totals.turnover > 0 ? Math.round(online.turnover / totals.turnover * 1000) / 10 : 0 },
+    retail: { ...retailTot, pct: totals.turnover > 0 ? Math.round(retailTot.turnover / totals.turnover * 1000) / 10 : 0 },
+    retail4528, retail4218,
+    // Pre-match vs Live
+    preMatch: { turnover: turnoverPreMatch, tickets: ticketsPreMatch, pct: totals.turnover > 0 ? Math.round(turnoverPreMatch / totals.turnover * 1000) / 10 : 0 },
+    live: { turnover: totals.turnoverLive, tickets: totals.ticketsLive, pct: totals.turnover > 0 ? Math.round(totals.turnoverLive / totals.turnover * 1000) / 10 : 0 },
+    // Breakdowns
+    topSports,
+    topManifestazioni,
+    numEventi,
+    topScommesse,
+    topPuntiVendita,
+    ageData,
+    channelPerformance,
+    // Channel details
+    academyData,
+    organicData,
+    daznDirect,
+    affiliates
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // SVG ICONS (monochrome, theme-aware)
 // ═══════════════════════════════════════════════════════════════════════════════
 const ICON_PATHS = {
@@ -690,7 +952,7 @@ const LoginGate = ({ onLogin, theme }) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // UPLOAD PAGE - CON UPLOAD MASSIVO
 // ═══════════════════════════════════════════════════════════════════════════════
-const UploadPage = ({ weeksData, casinoWeeksData, onUpload, onCasinoUpload, onDelete, onCasinoDelete, onLogout, theme }) => {
+const UploadPage = ({ weeksData, casinoWeeksData, sportWeeksData, onUpload, onCasinoUpload, onSportUpload, onDelete, onCasinoDelete, onSportDelete, onLogout, theme }) => {
   const C = theme
   const ww = useWindowWidth()
   const mob = ww < 768
@@ -703,15 +965,19 @@ const UploadPage = ({ weeksData, casinoWeeksData, onUpload, onCasinoUpload, onDe
   const [dateTo, setDateTo] = useState('')
   const [files, setFiles] = useState({})
   const [casinoFiles, setCasinoFiles] = useState({})
+  const [sportFiles, setSportFiles] = useState({})
   const [loading, setLoading] = useState(false)
   const [msg, setMsg] = useState(null)
   const bulkInputRef = useRef(null)
   const casinoBulkRef = useRef(null)
+  const sportBulkRef = useRef(null)
   const isMain = uploadSection === 'main'
-  const curFILES = isMain ? FILES : CASINO_FILES
-  const curFiles = isMain ? files : casinoFiles
-  const setCurFiles = isMain ? setFiles : setCasinoFiles
-  const curWeeksData = isMain ? weeksData : (casinoWeeksData || {})
+  const isCasino = uploadSection === 'casino'
+  const isSport = uploadSection === 'sport'
+  const curFILES = isMain ? FILES : isCasino ? CASINO_FILES : SPORT_FILES
+  const curFiles = isMain ? files : isCasino ? casinoFiles : sportFiles
+  const setCurFiles = isMain ? setFiles : isCasino ? setCasinoFiles : setSportFiles
+  const curWeeksData = isMain ? weeksData : isCasino ? (casinoWeeksData || {}) : (sportWeeksData || {})
   const exists = week && curWeeksData[parseInt(week)]
 
   useEffect(() => { if (localStorage.getItem('dazn_upload_auth') === 'true') setUploadAuth(true) }, [])
@@ -781,6 +1047,19 @@ const UploadPage = ({ weeksData, casinoWeeksData, onUpload, onCasinoUpload, onDe
     if (fname.includes('sessionicasino') || fname.includes('sessioni_casino')) return 'casinoSessioni'
     return null
   }
+  const matchSportFile = (fname) => {
+    if (fname.includes('sport_total_et') || fname.includes('sport_total_età')) return 'sportTotalEta'
+    if (fname.includes('sport_total')) return 'sportTotal'
+    if (fname.includes('sport_manifestazion')) return 'sportManifestazione'
+    if (fname.includes('sport_numeventi') || fname.includes('sport_num_eventi')) return 'sportNumEventi'
+    if (fname.includes('sport_scommesse')) return 'sportScommesse'
+    if (fname.includes('sport_puntovendita') || fname.includes('sport_punto_vendita')) return 'sportPuntoVendita'
+    if (fname.includes('skin_totalsport')) return 'sportSkinTotal'
+    if (fname.includes('accademy_totalsport') || fname.includes('academy_totalsport')) return 'sportAcademyTotal'
+    if (fname.includes('organic_totalsport')) return 'sportOrganicTotal'
+    if (fname.includes('daznbetsport')) return 'sportDaznbet'
+    return null
+  }
 
   // UPLOAD MASSIVO - Match file names automaticamente
   const handleBulkUpload = async (e) => {
@@ -792,7 +1071,7 @@ const UploadPage = ({ weeksData, casinoWeeksData, onUpload, onCasinoUpload, onDe
     let matched = 0
     for (const f of fileList) {
       const fname = f.name.toLowerCase()
-      const key = isMain ? matchMainFile(fname) : matchCasinoFile(fname)
+      const key = isMain ? matchMainFile(fname) : isCasino ? matchCasinoFile(fname) : matchSportFile(fname)
       if (key) {
         try { const d = await readFile(f); newFiles[key] = { name: f.name, data: d, rows: d.length }; matched++ }
         catch (err) { console.error(`Error reading ${f.name}:`, err) }
@@ -810,8 +1089,10 @@ const UploadPage = ({ weeksData, casinoWeeksData, onUpload, onCasinoUpload, onDe
     setLoading(true)
     try {
       const fd = {}; Object.entries(curFiles).forEach(([k, v]) => fd[k] = v.data)
-      const proc = isMain ? processData(fd, parseInt(week), dates) : processCasinoData(fd, parseInt(week), dates)
-      if (isMain) await onUpload(proc); else await onCasinoUpload(proc)
+      const proc = isMain ? processData(fd, parseInt(week), dates) : isCasino ? processCasinoData(fd, parseInt(week), dates) : processSportData(fd, parseInt(week), dates)
+      if (isMain) await onUpload(proc)
+      else if (isCasino) await onCasinoUpload(proc)
+      else await onSportUpload(proc)
       setMsg({ t: 'success', m: exists ? `Week ${week} updated!` : `Week ${week} uploaded!` })
       setWeek(''); setDateFrom(''); setDateTo(''); setCurFiles({})
     } catch (err) { console.error(err); setMsg({ t: 'error', m: 'Error: ' + err.message }) }
@@ -827,7 +1108,7 @@ const UploadPage = ({ weeksData, casinoWeeksData, onUpload, onCasinoUpload, onDe
       <Section title="Upload Week Data" theme={C}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
           <div style={{ display: 'flex', gap: '4px' }}>
-            {[{ id: 'main', label: 'Main Dashboard', icon: 'chart' }, { id: 'casino', label: 'Casino', icon: 'casino' }].map(s => (
+            {[{ id: 'main', label: 'Main Dashboard', icon: 'chart' }, { id: 'casino', label: 'Casino', icon: 'casino' }, { id: 'sport', label: 'Sport', icon: 'sport' }].map(s => (
               <button key={s.id} onClick={() => { setUploadSection(s.id); setMsg(null) }} style={{ background: uploadSection === s.id ? C.primary : 'transparent', color: uploadSection === s.id ? C.primaryText : C.textSec, border: `1px solid ${uploadSection === s.id ? C.primary : C.border}`, borderRadius: '6px', padding: '8px 16px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}><Icon name={s.icon} size={14} color={uploadSection === s.id ? C.primaryText : C.textSec} />{!mob && s.label}</button>
             ))}
           </div>
@@ -836,10 +1117,10 @@ const UploadPage = ({ weeksData, casinoWeeksData, onUpload, onCasinoUpload, onDe
         
         {/* UPLOAD MASSIVO */}
         <div style={{ background: C.primary + '10', border: `2px dashed ${C.primary}`, borderRadius: '12px', padding: '24px', marginBottom: '24px', textAlign: 'center' }}>
-          <h3 style={{ color: C.accent, margin: '0 0 8px 0', fontSize: '16px', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}><Icon name="upload" size={18} color={C.accent} /> Bulk Upload {!isMain && '(Casino)'}</h3>
+          <h3 style={{ color: C.accent, margin: '0 0 8px 0', fontSize: '16px', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}><Icon name="upload" size={18} color={C.accent} /> Bulk Upload {isCasino ? '(Casino)' : isSport ? '(Sport)' : ''}</h3>
           <p style={{ color: C.textMuted, fontSize: '13px', margin: '0 0 16px 0' }}>Select all {totalRequired} Excel files at once — they will be matched automatically</p>
-          <input ref={isMain ? bulkInputRef : casinoBulkRef} type="file" accept=".xlsx,.xls" multiple onChange={handleBulkUpload} style={{ display: 'none' }} />
-          <button onClick={() => (isMain ? bulkInputRef : casinoBulkRef).current?.click()} disabled={loading} style={{ background: C.primary, color: C.primaryText, border: 'none', borderRadius: '8px', padding: '12px 32px', fontSize: '14px', fontWeight: 800, cursor: 'pointer' }}>
+          <input ref={isMain ? bulkInputRef : isCasino ? casinoBulkRef : sportBulkRef} type="file" accept=".xlsx,.xls" multiple onChange={handleBulkUpload} style={{ display: 'none' }} />
+          <button onClick={() => (isMain ? bulkInputRef : isCasino ? casinoBulkRef : sportBulkRef).current?.click()} disabled={loading} style={{ background: C.primary, color: C.primaryText, border: 'none', borderRadius: '8px', padding: '12px 32px', fontSize: '14px', fontWeight: 800, cursor: 'pointer' }}>
             {loading ? 'Processing...' : 'Select All Files'}
           </button>
         </div>
@@ -898,7 +1179,7 @@ const UploadPage = ({ weeksData, casinoWeeksData, onUpload, onCasinoUpload, onDe
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
               {Object.values(curWeeksData).sort((a, b) => b.weekNumber - a.weekNumber).map(w => (
                 <div key={w.weekNumber} style={{ background: C.card, borderRadius: '10px', padding: '16px', border: `1px solid ${C.border}`, position: 'relative' }}>
-                  <button onClick={() => isMain ? onDelete(w.weekNumber) : onCasinoDelete(w.weekNumber)} style={{ position: 'absolute', top: '10px', right: '10px', background: 'transparent', color: C.danger, border: 'none', fontSize: '14px', cursor: 'pointer', opacity: 0.6 }}>✕</button>
+                  <button onClick={() => isMain ? onDelete(w.weekNumber) : isCasino ? onCasinoDelete(w.weekNumber) : onSportDelete(w.weekNumber)} style={{ position: 'absolute', top: '10px', right: '10px', background: 'transparent', color: C.danger, border: 'none', fontSize: '14px', cursor: 'pointer', opacity: 0.6 }}>✕</button>
                   <h4 style={{ color: C.accent, margin: '0 0 4px 0', fontSize: '20px', fontWeight: 800 }}>W{w.weekNumber}</h4>
                   <p style={{ color: C.textMuted, margin: '0 0 12px 0', fontSize: '12px' }}>{w.dateRange}</p>
                   <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '1fr 1fr', gap: '8px', fontSize: '12px' }}>
@@ -1966,6 +2247,355 @@ const CasinoMonthly = ({ weeksData, theme }) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMING SOON
 // ═══════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
+// SPORT SECTION
+// ═══════════════════════════════════════════════════════════════════════════════
+const SportSection = ({ weeksData, theme }) => {
+  const C = theme
+  const ww = useWindowWidth()
+  const mob = ww < 768
+  const [view, setView] = useState('weekly')
+  const [selected, setSelected] = useState(null)
+  const weekNums = Object.keys(weeksData).map(Number).sort((a, b) => b - a)
+  useEffect(() => { if (weekNums.length && !selected) setSelected(weekNums[0]) }, [weekNums.length])
+  const current = selected ? weeksData[selected] : null
+  const prev = selected && weeksData[selected - 1] ? weeksData[selected - 1] : null
+
+  if (!weekNums.length) return (
+    <div style={{ padding: '80px 20px', textAlign: 'center' }}>
+      <Icon name="sport" size={48} color={C.textMuted} />
+      <h2 style={{ color: C.text, margin: '16px 0 8px 0', fontSize: '24px', fontWeight: 800 }}>Sport Dashboard</h2>
+      <p style={{ color: C.textMuted, fontSize: '14px' }}>Nessun dato Sport caricato. Vai nell'area Admin per caricare i dati.</p>
+    </div>
+  )
+
+  return (
+    <div>
+      <div style={{ padding: mob ? '12px 16px' : '16px clamp(20px, 3vw, 48px)', display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap', borderBottom: `1px solid ${C.border}` }}>
+        <div style={{ display: 'flex', gap: '4px' }}>
+          {['weekly', 'monthly'].map(v => (
+            <button key={v} onClick={() => setView(v)} style={{ background: view === v ? C.primary : 'transparent', color: view === v ? C.primaryText : C.textSec, border: `1px solid ${view === v ? C.primary : C.border}`, borderRadius: '6px', padding: '8px 16px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>{v === 'weekly' ? 'Weekly' : 'Monthly'}</button>
+          ))}
+        </div>
+        {view === 'weekly' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <select value={selected || ''} onChange={e => setSelected(Number(e.target.value))} style={{ background: C.bg, color: C.text, border: `1px solid ${C.primary}`, borderRadius: '6px', padding: '8px 14px', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}>
+              {weekNums.map(w => <option key={w} value={w}>Week {w}</option>)}
+            </select>
+            {current && <span style={{ color: C.textMuted, fontSize: '12px', fontWeight: 600 }}>{current.dateRange}</span>}
+          </div>
+        )}
+        <span style={{ marginLeft: 'auto', color: C.accent, fontSize: '12px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px' }}>Sport</span>
+      </div>
+      {view === 'weekly' ? <SportWeekly data={current} prev={prev} theme={C} /> : <SportMonthly weeksData={weeksData} theme={C} />}
+    </div>
+  )
+}
+
+const SportWeekly = ({ data, prev, theme }) => {
+  const C = theme
+  const ww = useWindowWidth()
+  const mob = ww < 768
+  const [manifSort, setManifSort] = useState('turnover')
+  const [pvSort, setPvSort] = useState('turnover')
+  
+  if (!data) return <div style={{ padding: '60px', textAlign: 'center' }}><p style={{ color: C.textMuted }}>Seleziona una settimana</p></div>
+  
+  const topManif = [...(data.topManifestazioni || [])].sort((a, b) => b[manifSort] - a[manifSort]).slice(0, 15)
+  const topPV = [...(data.topPuntiVendita || [])].sort((a, b) => b[pvSort] - a[pvSort]).slice(0, 20)
+
+  return (
+    <div style={{ padding: 'clamp(20px, 3vw, 48px)' }}>
+      {/* KPI Header */}
+      <Section title="Trading Summary Sport" theme={C}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))', gap: 'clamp(12px, 1.5vw, 16px)', marginBottom: 'clamp(24px, 3vw, 40px)' }}>
+          <KPI label="Turnover" value={data.turnover} change={calcChange(data.turnover, prev?.turnover)} cur icon="activity" theme={C} />
+          <KPI label="GGR" value={data.ggr} change={calcChange(data.ggr, prev?.ggr)} cur icon="trending" sub={`GWM: ${data.gwm || 0}%`} theme={C} />
+          <KPI label="Biglietti" value={data.tickets} change={calcChange(data.tickets, prev?.tickets)} icon="box" theme={C} />
+          <KPI label="Conti Attivi" value={data.activeUsers} change={calcChange(data.activeUsers, prev?.activeUsers)} icon="users" theme={C} />
+          <KPI label="ARPU" value={data.arpu} cur icon="wallet" theme={C} />
+          <KPI label="Età Media" value={`${data.avgAge}`} sub="anni" icon="user" theme={C} />
+          <KPI label="Payout" value={`${data.payout}%`} icon="percent" theme={C} />
+          <KPI label="Bet Bonus" value={data.betBonus} cur icon="card" theme={C} />
+        </div>
+      </Section>
+
+      {/* Online vs Retail */}
+      <Section title="Online vs Retail" theme={C}>
+        <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '1fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
+          <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}` }}>
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ display: 'flex', height: '32px', borderRadius: '8px', overflow: 'hidden' }}>
+                <div style={{ width: `${data.online?.pct || 0}%`, background: C.primary, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <span style={{ color: C.primaryText, fontSize: '11px', fontWeight: 800 }}>{data.online?.pct || 0}%</span>
+                </div>
+                <div style={{ flex: 1, background: C.blue, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <span style={{ color: '#FFF', fontSize: '11px', fontWeight: 800 }}>{data.retail?.pct || 0}%</span>
+                </div>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px' }}>
+                <span style={{ color: C.text, fontSize: '12px', fontWeight: 700 }}>Online (15125)</span>
+                <span style={{ color: C.text, fontSize: '12px', fontWeight: 700 }}>Retail (4528+4218)</span>
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div style={{ background: C.bg, borderRadius: '8px', padding: '12px', border: `2px solid ${C.primary}` }}>
+                <p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 600, margin: '0 0 4px 0' }}>ONLINE T/O</p>
+                <p style={{ color: C.text, fontSize: '20px', fontWeight: 800, margin: 0 }}>{fmtCurrency(data.online?.turnover)}</p>
+                <p style={{ color: C.success, fontSize: '12px', fontWeight: 700, margin: '4px 0 0 0' }}>GGR: {fmtCurrency(data.online?.ggr)}</p>
+              </div>
+              <div style={{ background: C.bg, borderRadius: '8px', padding: '12px', border: `2px solid ${C.blue}` }}>
+                <p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 600, margin: '0 0 4px 0' }}>RETAIL T/O</p>
+                <p style={{ color: C.text, fontSize: '20px', fontWeight: 800, margin: 0 }}>{fmtCurrency(data.retail?.turnover)}</p>
+                <p style={{ color: C.success, fontSize: '12px', fontWeight: 700, margin: '4px 0 0 0' }}>GGR: {fmtCurrency(data.retail?.ggr)}</p>
+              </div>
+            </div>
+          </div>
+          <ChartCard title="Distribuzione Turnover" height={200} theme={C}>
+            <PieChart>
+              <Pie data={[{ name: 'Online', value: data.online?.turnover || 0 }, { name: 'Retail', value: data.retail?.turnover || 0 }]} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={3} dataKey="value">
+                <Cell fill={C.primary} /><Cell fill={C.blue} />
+              </Pie>
+              <Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} /><Legend />
+            </PieChart>
+          </ChartCard>
+        </div>
+      </Section>
+
+      {/* Pre-Match vs Live */}
+      <Section title="Pre-Match vs Live" theme={C}>
+        <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '1fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
+          <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}` }}>
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ display: 'flex', height: '32px', borderRadius: '8px', overflow: 'hidden' }}>
+                <div style={{ width: `${data.preMatch?.pct || 0}%`, background: C.success, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <span style={{ color: '#FFF', fontSize: '11px', fontWeight: 800 }}>{data.preMatch?.pct || 0}%</span>
+                </div>
+                <div style={{ flex: 1, background: C.danger, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <span style={{ color: '#FFF', fontSize: '11px', fontWeight: 800 }}>{data.live?.pct || 0}%</span>
+                </div>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px' }}>
+                <span style={{ color: C.text, fontSize: '12px', fontWeight: 700 }}>Pre-Match</span>
+                <span style={{ color: C.text, fontSize: '12px', fontWeight: 700 }}>Live</span>
+              </div>
+            </div>
+            <Table cols={[
+              { header: 'Tipo', accessor: 'tipo', format: v => <span style={{ fontWeight: 700 }}>{v}</span> },
+              { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
+              { header: 'Biglietti', accessor: 'tickets', align: 'right', format: v => fmtNum(v) },
+              { header: '%', accessor: 'pct', align: 'center', format: v => <span style={{ color: C.accent, fontWeight: 800 }}>{v}%</span> }
+            ]} data={[
+              { tipo: 'Pre-Match', turnover: data.preMatch?.turnover, tickets: data.preMatch?.tickets, pct: data.preMatch?.pct },
+              { tipo: 'Live', turnover: data.live?.turnover, tickets: data.live?.tickets, pct: data.live?.pct }
+            ]} theme={C} />
+          </div>
+          <ChartCard title="Split Pre-Match / Live" height={200} theme={C}>
+            <PieChart>
+              <Pie data={[{ name: 'Pre-Match', value: data.preMatch?.turnover || 0 }, { name: 'Live', value: data.live?.turnover || 0 }]} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={3} dataKey="value">
+                <Cell fill={C.success} /><Cell fill={C.danger} />
+              </Pie>
+              <Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} /><Legend />
+            </PieChart>
+          </ChartCard>
+        </div>
+      </Section>
+
+      {/* Top Sports */}
+      <Section title="Top Sport per Disciplina" theme={C}>
+        <ChartCard title="Turnover per Sport" height={280} theme={C}>
+          <BarChart data={(data.topSports || []).slice(0, 10)} layout="vertical">
+            <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
+            <XAxis type="number" tick={{ fill: C.textMuted, fontSize: 10 }} tickFormatter={v => fmtCurrency(v, false)} />
+            <YAxis type="category" dataKey="name" width={90} tick={{ fill: C.text, fontSize: 11, fontWeight: 600 }} />
+            <Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} />
+            <Bar dataKey="turnover" fill={C.primary} radius={[0, 4, 4, 0]} />
+          </BarChart>
+        </ChartCard>
+      </Section>
+
+      {/* Top Manifestazioni */}
+      <Section title="Top Manifestazioni" right={
+        <select value={manifSort} onChange={e => setManifSort(e.target.value)} style={{ background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '6px 12px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>
+          <option value="turnover">Turnover</option>
+          <option value="ggr">GGR</option>
+          <option value="tickets">Biglietti</option>
+        </select>
+      } theme={C}>
+        <Table cols={[
+          { header: '#', accessor: '_idx', format: (_, i) => <span style={{ color: C.textMuted, fontWeight: 700 }}>{i + 1}</span> },
+          { header: 'Manifestazione', accessor: 'name', format: v => <span style={{ fontWeight: 700 }}>{v?.substring(0, 30)}</span> },
+          { header: 'Sport', accessor: 'sport', format: v => <span style={{ color: C.textMuted, fontSize: '11px' }}>{v}</span> },
+          { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
+          { header: 'GGR', accessor: 'ggr', align: 'right', format: v => <span style={{ color: v >= 0 ? C.success : C.danger, fontWeight: 700 }}>{fmtCurrency(v)}</span> },
+          { header: 'Profit%', accessor: 'profitPct', align: 'center', format: v => <span style={{ color: v >= 0 ? C.success : C.danger, fontWeight: 700 }}>{v}%</span> },
+          { header: 'Live%', accessor: 'livePct', align: 'center', format: v => `${v}%` }
+        ]} data={topManif} theme={C} />
+      </Section>
+
+      {/* Numero Eventi */}
+      <Section title="Distribuzione per Numero Eventi" theme={C}>
+        <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '1.5fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
+          <Table cols={[
+            { header: 'Eventi', accessor: 'label', format: v => <span style={{ fontWeight: 700 }}>{v}</span> },
+            { header: 'Biglietti', accessor: 'tickets', align: 'right', format: v => fmtNum(v) },
+            { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
+            { header: 'Profit%', accessor: 'profitPct', align: 'center', format: v => <span style={{ color: v >= 0 ? C.success : C.danger, fontWeight: 700 }}>{v}%</span> },
+            { header: 'Live%', accessor: 'livePct', align: 'center', format: v => `${v}%` }
+          ]} data={(data.numEventi || []).slice(0, 10)} theme={C} />
+          <ChartCard title="Turnover per Tipo" height={250} theme={C}>
+            <PieChart>
+              <Pie data={(data.numEventi || []).slice(0, 6)} cx="50%" cy="50%" innerRadius={45} outerRadius={80} paddingAngle={2} dataKey="turnover" nameKey="label">
+                {(data.numEventi || []).slice(0, 6).map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}
+              </Pie>
+              <Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} /><Legend />
+            </PieChart>
+          </ChartCard>
+        </div>
+      </Section>
+
+      {/* Channel Performance */}
+      <Section title="Channel Performance" theme={C}>
+        <Table cols={[
+          { header: 'Channel', accessor: 'channel', format: v => <span style={{ fontWeight: 700 }}>{v}</span> },
+          { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
+          { header: 'GGR', accessor: 'ggr', align: 'right', format: v => <span style={{ color: v >= 0 ? C.success : C.danger, fontWeight: 700 }}>{fmtCurrency(v)}</span> },
+          { header: 'GWM%', accessor: 'gwm', align: 'center', format: v => `${v}%` },
+          { header: 'Attivi', accessor: 'actives', align: 'right', format: v => fmtNum(v) },
+          { header: 'Rev Share', accessor: 'revShare', align: 'center', format: v => <span style={{ color: C.accent, fontWeight: 700 }}>{v}%</span> }
+        ]} data={data.channelPerformance || []} theme={C} />
+      </Section>
+
+      {/* Age Distribution */}
+      <Section title="Distribuzione Età" theme={C}>
+        <ChartCard title="Fascia d'Età" height={200} theme={C}>
+          <BarChart data={data.ageData || []}>
+            <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
+            <XAxis dataKey="range" tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} />
+            <YAxis tick={{ fill: C.textMuted, fontSize: 11 }} />
+            <Tooltip content={<Tip theme={C} />} />
+            <Bar dataKey="count" fill={C.primary} radius={[4, 4, 0, 0]}>
+              {(data.ageData || []).map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}
+            </Bar>
+          </BarChart>
+        </ChartCard>
+      </Section>
+
+      {/* Top Scommesse */}
+      {data.topScommesse?.length > 0 && (
+        <Section title="Top Tipi Scommessa" theme={C}>
+          <Table cols={[
+            { header: '#', accessor: '_idx', format: (_, i) => <span style={{ color: C.textMuted, fontWeight: 700 }}>{i + 1}</span> },
+            { header: 'Scommessa', accessor: 'name', format: v => <span style={{ fontWeight: 700 }}>{v?.substring(0, 40)}</span> },
+            { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
+            { header: 'Biglietti', accessor: 'tickets', align: 'right', format: v => fmtNum(v) },
+            { header: 'Profit%', accessor: 'profitPct', align: 'center', format: v => <span style={{ color: v >= 0 ? C.success : C.danger, fontWeight: 700 }}>{v}%</span> },
+            { header: 'Live%', accessor: 'livePct', align: 'center', format: v => `${v}%` }
+          ]} data={data.topScommesse} theme={C} />
+        </Section>
+      )}
+
+      {/* Top Punti Vendita */}
+      {data.topPuntiVendita?.length > 0 && (
+        <Section title="Top Punti Vendita" right={
+          <select value={pvSort} onChange={e => setPvSort(e.target.value)} style={{ background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '6px 12px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>
+            <option value="turnover">Turnover</option>
+            <option value="ggr">GGR</option>
+            <option value="tickets">Biglietti</option>
+          </select>
+        } theme={C}>
+          <Table cols={[
+            { header: '#', accessor: '_idx', format: (_, i) => <span style={{ color: C.textMuted, fontWeight: 700 }}>{i + 1}</span> },
+            { header: 'Cod Punto', accessor: 'codice', format: v => <span style={{ fontWeight: 700 }}>{v}</span> },
+            { header: 'Skin', accessor: 'skin', format: v => <span style={{ color: C.textMuted, fontSize: '11px' }}>{v}</span> },
+            { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
+            { header: 'GGR', accessor: 'ggr', align: 'right', format: v => <span style={{ color: v >= 0 ? C.success : C.danger, fontWeight: 700 }}>{fmtCurrency(v)}</span> },
+            { header: 'Profit%', accessor: 'profitPct', align: 'center', format: v => <span style={{ color: v >= 0 ? C.success : C.danger, fontWeight: 700 }}>{v}%</span> }
+          ]} data={topPV} theme={C} />
+        </Section>
+      )}
+
+      {/* DAZNBET Breakdown */}
+      {(data.daznDirect?.turnover > 0 || data.affiliates?.turnover > 0) && (
+        <Section title="DAZNBET Breakdown" theme={C}>
+          <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '1fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
+            <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `2px solid ${C.primary}` }}>
+              <p style={{ color: C.textMuted, fontSize: '11px', fontWeight: 600, margin: '0 0 8px 0', textTransform: 'uppercase' }}>DAZN Direct</p>
+              <p style={{ color: C.text, fontSize: '28px', fontWeight: 800, margin: '0 0 4px 0' }}>{fmtCurrency(data.daznDirect?.turnover)}</p>
+              <p style={{ color: C.success, fontSize: '14px', fontWeight: 700, margin: 0 }}>GGR: {fmtCurrency(data.daznDirect?.ggr)} • {data.daznDirect?.conti} conti</p>
+            </div>
+            <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `2px solid ${C.purple}` }}>
+              <p style={{ color: C.textMuted, fontSize: '11px', fontWeight: 600, margin: '0 0 8px 0', textTransform: 'uppercase' }}>Affiliates</p>
+              <p style={{ color: C.text, fontSize: '28px', fontWeight: 800, margin: '0 0 4px 0' }}>{fmtCurrency(data.affiliates?.turnover)}</p>
+              <p style={{ color: data.affiliates?.ggr >= 0 ? C.success : C.danger, fontSize: '14px', fontWeight: 700, margin: 0 }}>GGR: {fmtCurrency(data.affiliates?.ggr)} • {data.affiliates?.conti} conti</p>
+            </div>
+          </div>
+        </Section>
+      )}
+    </div>
+  )
+}
+
+const SportMonthly = ({ weeksData, theme }) => {
+  const C = theme
+  const ww = useWindowWidth()
+  const mob = ww < 768
+  const weekNums = Object.keys(weeksData).map(Number).sort((a, b) => a - b)
+  
+  if (!weekNums.length) return <div style={{ padding: '60px', textAlign: 'center' }}><p style={{ color: C.textMuted }}>Nessun dato disponibile</p></div>
+  
+  const trendData = weekNums.map(w => {
+    const d = weeksData[w]
+    return { week: `W${w}`, turnover: d.turnover || 0, ggr: d.ggr || 0, tickets: d.tickets || 0, actives: d.activeUsers || 0 }
+  })
+  
+  const totals = weekNums.reduce((acc, w) => {
+    const d = weeksData[w]
+    acc.turnover += d.turnover || 0
+    acc.ggr += d.ggr || 0
+    acc.tickets += d.tickets || 0
+    return acc
+  }, { turnover: 0, ggr: 0, tickets: 0 })
+  
+  return (
+    <div style={{ padding: 'clamp(20px, 3vw, 48px)' }}>
+      <Section title="Riepilogo Mensile" theme={C}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 'clamp(12px, 1.5vw, 16px)', marginBottom: '24px' }}>
+          <KPI label="Turnover Totale" value={totals.turnover} cur icon="activity" theme={C} />
+          <KPI label="GGR Totale" value={totals.ggr} cur icon="trending" theme={C} />
+          <KPI label="Biglietti Totali" value={totals.tickets} icon="box" theme={C} />
+          <KPI label="Settimane" value={weekNums.length} icon="calendar" theme={C} />
+        </div>
+      </Section>
+      
+      <Section title="Trend Settimanale" theme={C}>
+        <ChartCard title="Turnover" height={280} theme={C}>
+          <ComposedChart data={trendData}>
+            <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
+            <XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} />
+            <YAxis yAxisId="left" tick={{ fill: C.textMuted, fontSize: 10 }} tickFormatter={v => fmtCurrency(v, false)} />
+            <YAxis yAxisId="right" orientation="right" tick={{ fill: C.textMuted, fontSize: 10 }} tickFormatter={v => fmtCurrency(v, false)} />
+            <Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} />
+            <Legend />
+            <Bar yAxisId="left" dataKey="turnover" name="Turnover" fill={C.primary} radius={[4, 4, 0, 0]} />
+            <Line yAxisId="right" type="monotone" dataKey="ggr" name="GGR" stroke={C.success} strokeWidth={3} dot={{ fill: C.success, r: 4 }} />
+          </ComposedChart>
+        </ChartCard>
+      </Section>
+      
+      <Section title="Dettaglio Settimanale" theme={C}>
+        <Table cols={[
+          { header: 'Settimana', accessor: 'week', format: v => <span style={{ fontWeight: 700 }}>{v}</span> },
+          { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
+          { header: 'GGR', accessor: 'ggr', align: 'right', format: v => <span style={{ color: v >= 0 ? C.success : C.danger, fontWeight: 700 }}>{fmtCurrency(v)}</span> },
+          { header: 'Biglietti', accessor: 'tickets', align: 'right', format: v => fmtNum(v) },
+          { header: 'Attivi', accessor: 'actives', align: 'right', format: v => fmtNum(v) }
+        ]} data={[...trendData].reverse()} theme={C} />
+      </Section>
+    </div>
+  )
+}
+
 const ComingSoon = ({ section, icon, theme }) => {
   const C = theme
   return (
@@ -2001,6 +2631,7 @@ export default function Dashboard() {
   const [tab, setTab] = useState('weekly')
   const [weeks, setWeeks] = useState({})
   const [casinoWeeks, setCasinoWeeks] = useState({})
+  const [sportWeeks, setSportWeeks] = useState({})
   const [selected, setSelected] = useState(null)
   const [loading, setLoading] = useState(true)
   const [db, setDb] = useState({ connected: false })
@@ -2030,9 +2661,14 @@ export default function Dashboard() {
         const c = await checkConnection(); setDb(c)
         const r = await loadAllWeeksData()
         if (r.data && Object.keys(r.data).length) {
-          const mainW = {}, casinoW = {}
-          Object.entries(r.data).forEach(([k, v]) => { const n = Number(k); if (n >= 1000) casinoW[n - 1000] = { ...v, weekNumber: n - 1000 }; else mainW[n] = v })
-          setWeeks(mainW); setCasinoWeeks(casinoW)
+          const mainW = {}, casinoW = {}, sportW = {}
+          Object.entries(r.data).forEach(([k, v]) => {
+            const n = Number(k)
+            if (n >= 2000) sportW[n - 2000] = { ...v, weekNumber: n - 2000 }
+            else if (n >= 1000) casinoW[n - 1000] = { ...v, weekNumber: n - 1000 }
+            else mainW[n] = v
+          })
+          setWeeks(mainW); setCasinoWeeks(casinoW); setSportWeeks(sportW)
           const mainKeys = Object.keys(mainW).map(Number); if (mainKeys.length) setSelected(Math.max(...mainKeys))
         }
       } catch (e) { console.error(e) }
@@ -2045,6 +2681,8 @@ export default function Dashboard() {
   const handleDelete = async n => { if (!confirm(`Delete Week ${n}?`)) return; const { [n]: _, ...rest } = weeks; setWeeks(rest); await deleteWeekData(n); setSelected(Object.keys(rest).length ? Math.max(...Object.keys(rest).map(Number)) : null) }
   const handleCasinoUpload = async d => { const u = { ...casinoWeeks, [d.weekNumber]: d }; setCasinoWeeks(u); await saveWeekData({ ...d, weekNumber: d.weekNumber + 1000 }); setTab('casino') }
   const handleCasinoDelete = async n => { if (!confirm(`Delete Casino Week ${n}?`)) return; const { [n]: _, ...rest } = casinoWeeks; setCasinoWeeks(rest); await deleteWeekData(n + 1000) }
+  const handleSportUpload = async d => { const u = { ...sportWeeks, [d.weekNumber]: d }; setSportWeeks(u); await saveWeekData({ ...d, weekNumber: d.weekNumber + 2000 }); setTab('sport') }
+  const handleSportDelete = async n => { if (!confirm(`Delete Sport Week ${n}?`)) return; const { [n]: _, ...rest } = sportWeeks; setSportWeeks(rest); await deleteWeekData(n + 2000) }
 
   const weekNums = Object.keys(weeks).map(Number).sort((a, b) => b - a)
   const current = selected ? weeks[selected] : null
@@ -2112,8 +2750,8 @@ export default function Dashboard() {
         {tab === 'weekly' && <Weekly data={current} prev={prev} theme={C} />}
         {tab === 'monthly' && <Monthly weeksData={weeks} theme={C} />}
         {tab === 'casino' && <CasinoSection weeksData={casinoWeeks} theme={C} />}
-        {tab === 'sport' && <ComingSoon section="Sport" icon="sport" theme={C} />}
-        {tab === 'upload' && <UploadPage weeksData={weeks} casinoWeeksData={casinoWeeks} onUpload={handleUpload} onCasinoUpload={handleCasinoUpload} onDelete={handleDelete} onCasinoDelete={handleCasinoDelete} onLogout={handleLogout} theme={C} />}
+        {tab === 'sport' && <SportSection weeksData={sportWeeks} theme={C} />}
+        {tab === 'upload' && <UploadPage weeksData={weeks} casinoWeeksData={casinoWeeks} sportWeeksData={sportWeeks} onUpload={handleUpload} onCasinoUpload={handleCasinoUpload} onSportUpload={handleSportUpload} onDelete={handleDelete} onCasinoDelete={handleCasinoDelete} onSportDelete={handleSportDelete} onLogout={handleLogout} theme={C} />}
       </main>
       {showTop && <button onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} style={{ position: 'fixed', bottom: '24px', right: '24px', width: '44px', height: '44px', borderRadius: '50%', background: C.primary, color: C.primaryText, border: 'none', fontSize: '20px', fontWeight: 800, cursor: 'pointer', boxShadow: '0 4px 12px rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999, transition: 'opacity 0.3s', opacity: 0.85 }} title="Back to top">↑</button>}
     </div>
