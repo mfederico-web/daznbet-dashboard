@@ -847,11 +847,15 @@ const processSportData = (files, weekNum, dateRange) => {
   const livePct = totals.turnover > 0 ? Math.round(totals.turnoverLive / totals.turnover * 1000) / 10 : 0
   const liveGgr = onlineRaw.turnoverLive > 0 ? chanPerf.reduce((s, c) => s + (c.ggr * livePct / 100), 0) : 0
   
-  // Singles analysis
+  // Singles analysis - Multiple 3+ (3 or more events)
   const singole = numEventi.find(e => e.eventi === 1)
-  const multiple = numEventi.filter(e => e.eventi > 1)
-  const multipleTurnover = multiple.reduce((s, e) => s + e.turnover, 0)
-  const multiplePct = totals.turnover > 0 ? Math.round(multipleTurnover / totals.turnover * 1000) / 10 : 0
+  const multiple3plus = numEventi.filter(e => e.eventi >= 3)
+  const multiple3plusTurnover = multiple3plus.reduce((s, e) => s + e.turnover, 0)
+  const multiple3plusPct = totals.turnover > 0 ? Math.round(multiple3plusTurnover / totals.turnover * 1000) / 10 : 0
+  
+  // Calcio % - calculate directly from sportsMap
+  const calcioData = topSports.find(s => s.name === 'CALCIO')
+  const calcioPctCalc = totals.turnover > 0 && calcioData ? Math.round(calcioData.turnover / totals.turnover * 1000) / 10 : 0
   
   return {
     weekNumber: weekNum,
@@ -883,8 +887,8 @@ const processSportData = (files, weekNum, dateRange) => {
     ageData,
     channelPerformance: chanPerf,
     // Additional insights
-    calcioPct,
-    multiplePct,
+    calcioPct: calcioPctCalc,
+    multiple3plusPct,
     singolePct: singole ? Math.round(singole.turnover / totals.turnover * 1000) / 10 : 0
   }
 }
@@ -2450,8 +2454,8 @@ const SportWeekly = ({ data, prev, theme }) => {
             <p style={{ color: C.danger, fontSize: '22px', fontWeight: 800, margin: 0 }}>{data.live?.pct || 0}%</p>
           </div>
           <div style={{ background: C.card, borderRadius: '10px', padding: '14px', border: `1px solid ${C.border}`, textAlign: 'center' }}>
-            <p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', fontWeight: 700, textTransform: 'uppercase' }}>Multiple %</p>
-            <p style={{ color: C.primary, fontSize: '22px', fontWeight: 800, margin: 0 }}>{data.multiplePct || 0}%</p>
+            <p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', fontWeight: 700, textTransform: 'uppercase' }}>Multiple 3+ %</p>
+            <p style={{ color: C.primary, fontSize: '22px', fontWeight: 800, margin: 0 }}>{data.multiple3plusPct || 0}%</p>
           </div>
           <div style={{ background: C.card, borderRadius: '10px', padding: '14px', border: `1px solid ${C.border}`, textAlign: 'center' }}>
             <p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', fontWeight: 700, textTransform: 'uppercase' }}>Età Media</p>
@@ -2556,8 +2560,8 @@ const SportWeekly = ({ data, prev, theme }) => {
         </ChartCard>
       </Section>
 
-      {/* Top Manifestazioni - show 15, accordion to 30 */}
-      <Section title="Top 15 Manifestazioni" right={
+      {/* Top Manifestazioni - show 10, accordion to 20 */}
+      <Section title="Top 10 Manifestazioni" right={
         <select value={manifSort} onChange={e => setManifSort(e.target.value)} style={{ background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '6px 12px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>
           <option value="turnover">Turnover</option>
           <option value="ggr">GGR</option>
@@ -2569,11 +2573,11 @@ const SportWeekly = ({ data, prev, theme }) => {
           { header: 'Manifestazione', accessor: 'name', format: v => <span style={{ fontWeight: 700 }}>{String(v || '').substring(0, 30)}</span> },
           { header: 'Sport', accessor: 'sport', format: v => <span style={{ color: C.textMuted, fontSize: '11px' }}>{v}</span> },
           { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
+          { header: '% T/O', accessor: 'pctTotal', align: 'center', format: v => <span style={{ color: C.accent, fontWeight: 700 }}>{v}%</span> },
           { header: 'GGR', accessor: 'ggr', align: 'right', format: v => <span style={{ color: v >= 0 ? C.success : C.danger, fontWeight: 700 }}>{fmtCurrency(v)}</span> },
-          { header: 'Profit%', accessor: 'profitPct', align: 'center', format: v => <span style={{ color: v >= 0 ? C.success : C.danger, fontWeight: 700 }}>{v}%</span> },
-          { header: 'Live%', accessor: 'livePct', align: 'center', format: v => `${v}%` }
-        ]} data={topManif.slice(0, showMoreManif ? 30 : 15)} theme={C} />
-        {topManif.length > 15 && <Accordion label="manifestazioni" expanded={showMoreManif} onToggle={() => setShowMoreManif(!showMoreManif)} count={Math.min(topManif.length - 15, 15)} />}
+          { header: 'Profit%', accessor: 'profitPct', align: 'center', format: v => <span style={{ color: v >= 0 ? C.success : C.danger, fontWeight: 700 }}>{v}%</span> }
+        ]} data={topManif.slice(0, showMoreManif ? 20 : 10).map(m => ({ ...m, pctTotal: data.turnover > 0 ? Math.round(m.turnover / data.turnover * 1000) / 10 : 0 }))} theme={C} />
+        {topManif.length > 10 && <Accordion label="manifestazioni" expanded={showMoreManif} onToggle={() => setShowMoreManif(!showMoreManif)} count={Math.min(topManif.length - 10, 10)} />}
       </Section>
 
       {/* Numero Eventi - show 15, accordion to 30 */}
@@ -2584,9 +2588,9 @@ const SportWeekly = ({ data, prev, theme }) => {
               { header: 'Eventi', accessor: 'label', format: v => <span style={{ fontWeight: 700 }}>{v}</span> },
               { header: 'Biglietti', accessor: 'tickets', align: 'right', format: v => fmtNum(v) },
               { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
-              { header: 'Profit%', accessor: 'profitPct', align: 'center', format: v => <span style={{ color: v >= 0 ? C.success : C.danger, fontWeight: 700 }}>{v}%</span> },
-              { header: 'Live%', accessor: 'livePct', align: 'center', format: v => `${v}%` }
-            ]} data={eventiData.slice(0, showMoreEventi ? 30 : 15)} theme={C} />
+              { header: '% T/O', accessor: 'pctTotal', align: 'center', format: v => <span style={{ color: C.accent, fontWeight: 700 }}>{v}%</span> },
+              { header: 'Profit%', accessor: 'profitPct', align: 'center', format: v => <span style={{ color: v >= 0 ? C.success : C.danger, fontWeight: 700 }}>{v}%</span> }
+            ]} data={eventiData.slice(0, showMoreEventi ? 30 : 15).map(e => ({ ...e, pctTotal: data.turnover > 0 ? Math.round(e.turnover / data.turnover * 1000) / 10 : 0 }))} theme={C} />
             {eventiData.length > 15 && <Accordion label="eventi" expanded={showMoreEventi} onToggle={() => setShowMoreEventi(!showMoreEventi)} count={Math.min(eventiData.length - 15, 15)} />}
           </div>
           <ChartCard title="Turnover per Tipo" height={250} theme={C}>
@@ -2606,10 +2610,11 @@ const SportWeekly = ({ data, prev, theme }) => {
           <Table cols={[
             { header: 'Channel', accessor: 'channel', format: v => <span style={{ fontWeight: 700 }}>{v}</span> },
             { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
+            { header: '% T/O', accessor: 'pctTotal', align: 'center', format: v => <span style={{ color: C.accent, fontWeight: 700 }}>{v}%</span> },
             { header: 'GGR', accessor: 'ggr', align: 'right', format: v => <span style={{ color: v >= 0 ? C.success : C.danger, fontWeight: 700 }}>{fmtCurrency(v)}</span> },
             { header: 'GWM%', accessor: 'gwm', align: 'center', format: v => `${v}%` },
-            { header: 'Rev Share', accessor: 'revShare', align: 'center', format: v => <span style={{ color: C.accent, fontWeight: 700 }}>{v}%</span> }
-          ]} data={data.channelPerformance || []} theme={C} />
+            { header: 'Rev Share', accessor: 'revShare', align: 'center', format: v => <span style={{ color: C.purple, fontWeight: 700 }}>{v}%</span> }
+          ]} data={(data.channelPerformance || []).map(c => ({ ...c, pctTotal: data.turnover > 0 ? Math.round(c.turnover / data.turnover * 1000) / 10 : 0 }))} theme={C} />
           <ChartCard title="Revenue Share" height={220} theme={C}>
             <PieChart>
               <Pie data={(data.channelPerformance || []).filter(c => c.revShare > 0)} cx="50%" cy="50%" innerRadius={50} outerRadius={85} paddingAngle={2} dataKey="revShare" nameKey="channel">
@@ -2636,9 +2641,9 @@ const SportWeekly = ({ data, prev, theme }) => {
         </ChartCard>
       </Section>
 
-      {/* Top Scommesse - show 15, accordion to 30 */}
+      {/* Top Scommesse - show 10, accordion to 20 */}
       {topScomm.length > 0 && (
-        <Section title="Top Tipi Scommessa" right={
+        <Section title="Top 10 Tipi Scommessa" right={
           <select value={scommSort} onChange={e => setScommSort(e.target.value)} style={{ background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '6px 12px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>
             <option value="turnover">Turnover</option>
             <option value="ggr">GGR</option>
@@ -2647,19 +2652,19 @@ const SportWeekly = ({ data, prev, theme }) => {
         } theme={C}>
           <Table cols={[
             { header: '#', accessor: '_idx', format: (v, i) => <span style={{ color: C.textMuted, fontWeight: 700 }}>{i + 1}</span> },
-            { header: 'Scommessa', accessor: 'name', format: v => <span style={{ fontWeight: 700 }}>{String(v || '').substring(0, 40)}</span> },
+            { header: 'Scommessa', accessor: 'name', format: v => <span style={{ fontWeight: 700 }}>{String(v || '').substring(0, 35)}</span> },
             { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
+            { header: '% T/O', accessor: 'pctTotal', align: 'center', format: v => <span style={{ color: C.accent, fontWeight: 700 }}>{v}%</span> },
             { header: 'Biglietti', accessor: 'tickets', align: 'right', format: v => fmtNum(v) },
-            { header: 'Profit%', accessor: 'profitPct', align: 'center', format: v => <span style={{ color: v >= 0 ? C.success : C.danger, fontWeight: 700 }}>{v}%</span> },
-            { header: 'Live%', accessor: 'livePct', align: 'center', format: v => `${v}%` }
-          ]} data={topScomm.slice(0, showMoreScomm ? 30 : 15)} theme={C} />
-          {topScomm.length > 15 && <Accordion label="scommesse" expanded={showMoreScomm} onToggle={() => setShowMoreScomm(!showMoreScomm)} count={Math.min(topScomm.length - 15, 15)} />}
+            { header: 'Profit%', accessor: 'profitPct', align: 'center', format: v => <span style={{ color: v >= 0 ? C.success : C.danger, fontWeight: 700 }}>{v}%</span> }
+          ]} data={topScomm.slice(0, showMoreScomm ? 20 : 10).map(s => ({ ...s, pctTotal: data.turnover > 0 ? Math.round(s.turnover / data.turnover * 1000) / 10 : 0 }))} theme={C} />
+          {topScomm.length > 10 && <Accordion label="scommesse" expanded={showMoreScomm} onToggle={() => setShowMoreScomm(!showMoreScomm)} count={Math.min(topScomm.length - 10, 10)} />}
         </Section>
       )}
 
-      {/* Top Punti Vendita - show 15, accordion to 30 */}
+      {/* Top Punti Vendita - show 10, accordion to 20 */}
       {topPV.length > 0 && (
-        <Section title="Top Punti Vendita" right={
+        <Section title="Top 10 Punti Vendita" right={
           <select value={pvSort} onChange={e => setPvSort(e.target.value)} style={{ background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: '6px', padding: '6px 12px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>
             <option value="turnover">Turnover</option>
             <option value="ggr">GGR</option>
@@ -2671,10 +2676,11 @@ const SportWeekly = ({ data, prev, theme }) => {
             { header: 'Cod Punto', accessor: 'codice', format: v => <span style={{ fontWeight: 700 }}>{String(v || '')}</span> },
             { header: 'Skin', accessor: 'skin', format: v => <span style={{ color: C.textMuted, fontSize: '11px' }}>{String(v || '')}</span> },
             { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
+            { header: '% T/O', accessor: 'pctTotal', align: 'center', format: v => <span style={{ color: C.accent, fontWeight: 700 }}>{v}%</span> },
             { header: 'GGR', accessor: 'ggr', align: 'right', format: v => <span style={{ color: v >= 0 ? C.success : C.danger, fontWeight: 700 }}>{fmtCurrency(v)}</span> },
             { header: 'Profit%', accessor: 'profitPct', align: 'center', format: v => <span style={{ color: v >= 0 ? C.success : C.danger, fontWeight: 700 }}>{v}%</span> }
-          ]} data={topPV.slice(0, showMorePV ? 30 : 15)} theme={C} />
-          {topPV.length > 15 && <Accordion label="punti vendita" expanded={showMorePV} onToggle={() => setShowMorePV(!showMorePV)} count={Math.min(topPV.length - 15, 15)} />}
+          ]} data={topPV.slice(0, showMorePV ? 20 : 10).map(p => ({ ...p, pctTotal: data.turnover > 0 ? Math.round(p.turnover / data.turnover * 1000) / 10 : 0 }))} theme={C} />
+          {topPV.length > 10 && <Accordion label="punti vendita" expanded={showMorePV} onToggle={() => setShowMorePV(!showMorePV)} count={Math.min(topPV.length - 10, 10)} />}
         </Section>
       )}
     </div>
