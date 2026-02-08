@@ -2695,52 +2695,340 @@ const SportMonthly = ({ weeksData, theme }) => {
   
   if (!weekNums.length) return <div style={{ padding: '60px', textAlign: 'center' }}><p style={{ color: C.textMuted }}>Nessun dato disponibile</p></div>
   
+  // ═══════════════════════════════════════════════════════════════════════════
+  // AGGREGATE ALL WEEKS
+  // ═══════════════════════════════════════════════════════════════════════════
+  const weeks = weekNums.map(w => weeksData[w])
+  const n = weeks.length
+  
+  // Main totals
+  const totals = {
+    turnover: weeks.reduce((s, w) => s + (w.turnover || 0), 0),
+    ggr: weeks.reduce((s, w) => s + (w.ggr || 0), 0),
+    tickets: weeks.reduce((s, w) => s + (w.tickets || 0), 0),
+    betBonus: weeks.reduce((s, w) => s + (w.betBonus || 0), 0),
+    onlineTurnover: weeks.reduce((s, w) => s + (w.online?.turnover || 0), 0),
+    retailTurnover: weeks.reduce((s, w) => s + (w.retail?.turnover || 0), 0),
+    liveTurnover: weeks.reduce((s, w) => s + (w.live?.turnover || 0), 0),
+    preMatchTurnover: weeks.reduce((s, w) => s + (w.preMatch?.turnover || 0), 0)
+  }
+  
+  // Averages
+  const avgs = {
+    actives: Math.round(weeks.reduce((s, w) => s + (w.activeUsers || 0), 0) / n),
+    age: Math.round(weeks.reduce((s, w) => s + (w.avgAge || 0), 0) / n * 10) / 10,
+    arpu: Math.round(weeks.reduce((s, w) => s + (w.arpu || 0), 0) / n * 100) / 100,
+    avgTicket: Math.round(weeks.reduce((s, w) => s + (w.avgTicket || 0), 0) / n * 100) / 100,
+    payout: Math.round(weeks.reduce((s, w) => s + (w.payout || 0), 0) / n * 10) / 10,
+    gwm: totals.turnover > 0 ? Math.round(totals.ggr / totals.turnover * 1000) / 10 : 0,
+    calcioPct: Math.round(weeks.reduce((s, w) => s + (w.calcioPct || 0), 0) / n * 10) / 10,
+    livePct: Math.round(weeks.reduce((s, w) => s + (w.live?.pct || 0), 0) / n * 10) / 10,
+    multiple3plusPct: Math.round(weeks.reduce((s, w) => s + (w.multiple3plusPct || 0), 0) / n * 10) / 10,
+    ticketsPerUser: avgs?.actives > 0 ? Math.round(totals.tickets / weeks.reduce((s, w) => s + (w.activeUsers || 0), 0) * 10) / 10 : 0
+  }
+  // Recalculate ticketsPerUser properly
+  const totalActives = weeks.reduce((s, w) => s + (w.activeUsers || 0), 0)
+  avgs.ticketsPerUser = totalActives > 0 ? Math.round(totals.tickets / totalActives * 10) / 10 : 0
+  
+  // Calculated metrics
+  const onlinePct = totals.turnover > 0 ? Math.round(totals.onlineTurnover / totals.turnover * 1000) / 10 : 0
+  const retailPct = totals.turnover > 0 ? Math.round(totals.retailTurnover / totals.turnover * 1000) / 10 : 0
+  const livePct = totals.turnover > 0 ? Math.round(totals.liveTurnover / totals.turnover * 1000) / 10 : 0
+  const preMatchPct = totals.turnover > 0 ? Math.round(totals.preMatchTurnover / totals.turnover * 1000) / 10 : 0
+  
+  // Trend data
   const trendData = weekNums.map(w => {
     const d = weeksData[w]
-    return { week: `W${w}`, turnover: d.turnover || 0, ggr: d.ggr || 0, tickets: d.tickets || 0, actives: d.activeUsers || 0 }
+    return { 
+      week: `W${w}`, 
+      turnover: d.turnover || 0, 
+      ggr: d.ggr || 0, 
+      tickets: d.tickets || 0, 
+      actives: d.activeUsers || 0,
+      gwm: d.gwm || 0,
+      payout: d.payout || 0,
+      avgTicket: d.avgTicket || 0,
+      arpu: d.arpu || 0,
+      livePct: d.live?.pct || 0,
+      calcioPct: d.calcioPct || 0
+    }
   })
   
-  const totals = weekNums.reduce((acc, w) => {
+  // Online vs Retail trend
+  const channelTrend = weekNums.map(w => {
     const d = weeksData[w]
-    acc.turnover += d.turnover || 0
-    acc.ggr += d.ggr || 0
-    acc.tickets += d.tickets || 0
-    return acc
-  }, { turnover: 0, ggr: 0, tickets: 0 })
+    return {
+      week: `W${w}`,
+      Online: d.online?.turnover || 0,
+      Retail: d.retail?.turnover || 0
+    }
+  })
   
+  // Pre-Match vs Live trend
+  const typeTrend = weekNums.map(w => {
+    const d = weeksData[w]
+    return {
+      week: `W${w}`,
+      'Pre-Match': d.preMatch?.turnover || 0,
+      Live: d.live?.turnover || 0
+    }
+  })
+  
+  // Channel Performance aggregated
+  const channelAgg = {}
+  weeks.forEach(w => (w.channelPerformance || []).forEach(ch => {
+    if (!channelAgg[ch.channel]) channelAgg[ch.channel] = { channel: ch.channel, turnover: 0, ggr: 0 }
+    channelAgg[ch.channel].turnover += ch.turnover || 0
+    channelAgg[ch.channel].ggr += ch.ggr || 0
+  }))
+  const channelData = Object.values(channelAgg).map(ch => ({
+    ...ch,
+    gwm: ch.turnover > 0 ? Math.round(ch.ggr / ch.turnover * 1000) / 10 : 0,
+    pctTotal: totals.turnover > 0 ? Math.round(ch.turnover / totals.turnover * 1000) / 10 : 0
+  })).sort((a, b) => b.turnover - a.turnover)
+  const totalChGgr = channelData.reduce((s, c) => s + c.ggr, 0)
+  channelData.forEach(c => { c.revShare = totalChGgr > 0 ? Math.round(c.ggr / totalChGgr * 1000) / 10 : 0 })
+  
+  // Top Sports aggregated
+  const sportsAgg = {}
+  weeks.forEach(w => (w.topSports || []).forEach(sp => {
+    if (!sportsAgg[sp.name]) sportsAgg[sp.name] = { name: sp.name, turnover: 0, ggr: 0 }
+    sportsAgg[sp.name].turnover += sp.turnover || 0
+    sportsAgg[sp.name].ggr += sp.ggr || 0
+  }))
+  const topSportsData = Object.values(sportsAgg)
+    .map(sp => ({ ...sp, pctTotal: totals.turnover > 0 ? Math.round(sp.turnover / totals.turnover * 1000) / 10 : 0 }))
+    .sort((a, b) => b.turnover - a.turnover).slice(0, 8)
+  
+  // Age Distribution aggregated
+  const ageAgg = { '18-24': 0, '25-34': 0, '35-44': 0, '45-54': 0, '55-64': 0, '65+': 0 }
+  weeks.forEach(w => (w.ageData || []).forEach(ag => { ageAgg[ag.range] = (ageAgg[ag.range] || 0) + ag.count }))
+  const totalAgeCount = Object.values(ageAgg).reduce((s, v) => s + v, 0)
+  const ageData = Object.entries(ageAgg).map(([range, count]) => ({ range, count, percent: totalAgeCount > 0 ? Math.round(count / totalAgeCount * 1000) / 10 : 0 }))
+
   return (
     <div style={{ padding: 'clamp(20px, 3vw, 48px)' }}>
-      <Section title="Riepilogo Mensile" theme={C}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 'clamp(12px, 1.5vw, 16px)', marginBottom: '24px' }}>
+      {/* ═══ TRADING SUMMARY ═══ */}
+      <Section title="Trading Summary Sport" theme={C}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))', gap: 'clamp(12px, 1.5vw, 16px)', marginBottom: '24px' }}>
           <KPI label="Turnover Totale" value={totals.turnover} cur icon="activity" theme={C} />
-          <KPI label="GGR Totale" value={totals.ggr} cur icon="trending" theme={C} />
+          <KPI label="GGR Totale" value={totals.ggr} sub={`GWM: ${avgs.gwm}%`} cur icon="trending" theme={C} />
           <KPI label="Biglietti Totali" value={totals.tickets} icon="box" theme={C} />
-          <KPI label="Settimane" value={weekNums.length} icon="calendar" theme={C} />
+          <KPI label="Media Attivi/Sett" value={avgs.actives} icon="users" theme={C} />
+          <KPI label="ARPU Medio" value={avgs.arpu} cur icon="wallet" theme={C} />
+          <KPI label="Avg Ticket" value={avgs.avgTicket} cur icon="card" theme={C} />
+          <KPI label="Payout Medio" value={`${avgs.payout}%`} icon="percent" theme={C} />
+          <KPI label="Bet Bonus Totale" value={totals.betBonus} cur icon="gift" theme={C} />
+        </div>
+        
+        {/* Quick Insights Row */}
+        <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr 1fr' : 'repeat(5, 1fr)', gap: '12px', marginBottom: '24px' }}>
+          <div style={{ background: C.card, borderRadius: '10px', padding: '14px', border: `1px solid ${C.border}`, textAlign: 'center' }}>
+            <p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', fontWeight: 700, textTransform: 'uppercase' }}>Calcio % Avg</p>
+            <p style={{ color: C.accent, fontSize: '22px', fontWeight: 800, margin: 0 }}>{avgs.calcioPct}%</p>
+          </div>
+          <div style={{ background: C.card, borderRadius: '10px', padding: '14px', border: `1px solid ${C.border}`, textAlign: 'center' }}>
+            <p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', fontWeight: 700, textTransform: 'uppercase' }}>Live % Avg</p>
+            <p style={{ color: C.danger, fontSize: '22px', fontWeight: 800, margin: 0 }}>{avgs.livePct}%</p>
+          </div>
+          <div style={{ background: C.card, borderRadius: '10px', padding: '14px', border: `1px solid ${C.border}`, textAlign: 'center' }}>
+            <p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', fontWeight: 700, textTransform: 'uppercase' }}>Multiple 3+ %</p>
+            <p style={{ color: C.primary, fontSize: '22px', fontWeight: 800, margin: 0 }}>{avgs.multiple3plusPct}%</p>
+          </div>
+          <div style={{ background: C.card, borderRadius: '10px', padding: '14px', border: `1px solid ${C.border}`, textAlign: 'center' }}>
+            <p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', fontWeight: 700, textTransform: 'uppercase' }}>Età Media</p>
+            <p style={{ color: C.blue, fontSize: '22px', fontWeight: 800, margin: 0 }}>{avgs.age}</p>
+          </div>
+          <div style={{ background: C.card, borderRadius: '10px', padding: '14px', border: `1px solid ${C.border}`, textAlign: 'center' }}>
+            <p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', fontWeight: 700, textTransform: 'uppercase' }}>Settimane</p>
+            <p style={{ color: C.success, fontSize: '22px', fontWeight: 800, margin: 0 }}>{n}</p>
+          </div>
         </div>
       </Section>
       
-      <Section title="Trend Settimanale" theme={C}>
-        <ChartCard title="Turnover" height={280} theme={C}>
-          <ComposedChart data={trendData}>
+      {/* ═══ TURNOVER & GGR TREND ═══ */}
+      <Section title="Trend Turnover & GGR" theme={C}>
+        <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '1fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
+          <ChartCard title="Turnover + GGR" height={280} theme={C}>
+            <ComposedChart data={trendData}>
+              <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
+              <XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} />
+              <YAxis yAxisId="left" tick={{ fill: C.textMuted, fontSize: 10 }} tickFormatter={v => `€${(v/1000).toFixed(0)}K`} />
+              <YAxis yAxisId="right" orientation="right" tick={{ fill: C.textMuted, fontSize: 10 }} tickFormatter={v => `€${(v/1000).toFixed(0)}K`} />
+              <Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} />
+              <Legend />
+              <Bar yAxisId="left" dataKey="turnover" name="Turnover" fill={C.primary} radius={[4, 4, 0, 0]} />
+              <Line yAxisId="right" type="monotone" dataKey="ggr" name="GGR" stroke={C.success} strokeWidth={3} dot={{ fill: C.success, r: 4 }} />
+            </ComposedChart>
+          </ChartCard>
+          <ChartCard title="Biglietti & Attivi" height={280} theme={C}>
+            <ComposedChart data={trendData}>
+              <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
+              <XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} />
+              <YAxis yAxisId="left" tick={{ fill: C.textMuted, fontSize: 10 }} tickFormatter={v => `${(v/1000).toFixed(0)}K`} />
+              <YAxis yAxisId="right" orientation="right" tick={{ fill: C.textMuted, fontSize: 10 }} />
+              <Tooltip content={<Tip theme={C} />} />
+              <Legend />
+              <Bar yAxisId="left" dataKey="tickets" name="Biglietti" fill={C.blue} radius={[4, 4, 0, 0]} />
+              <Line yAxisId="right" type="monotone" dataKey="actives" name="Attivi" stroke={C.orange} strokeWidth={3} dot={{ fill: C.orange, r: 4 }} />
+            </ComposedChart>
+          </ChartCard>
+        </div>
+      </Section>
+      
+      {/* ═══ ONLINE vs RETAIL + PRE-MATCH vs LIVE ═══ */}
+      <Section title="Distribuzione Turnover" theme={C}>
+        <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '1fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
+          <div>
+            <h4 style={{ color: C.textSec, fontSize: '12px', fontWeight: 700, margin: '0 0 12px 0', textTransform: 'uppercase' }}>Online vs Retail</h4>
+            <div style={{ display: 'flex', height: '32px', borderRadius: '8px', overflow: 'hidden', marginBottom: '12px' }}>
+              <div style={{ width: `${onlinePct}%`, background: C.primary, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <span style={{ color: C.primaryText, fontSize: '11px', fontWeight: 800 }}>{onlinePct}%</span>
+              </div>
+              <div style={{ flex: 1, background: C.blue, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <span style={{ color: '#FFF', fontSize: '11px', fontWeight: 800 }}>{retailPct}%</span>
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div style={{ background: C.bg, borderRadius: '8px', padding: '12px', border: `2px solid ${C.primary}` }}>
+                <p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 600, margin: '0 0 4px 0' }}>ONLINE</p>
+                <p style={{ color: C.text, fontSize: '18px', fontWeight: 800, margin: 0 }}>{fmtCurrency(totals.onlineTurnover)}</p>
+              </div>
+              <div style={{ background: C.bg, borderRadius: '8px', padding: '12px', border: `2px solid ${C.blue}` }}>
+                <p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 600, margin: '0 0 4px 0' }}>RETAIL</p>
+                <p style={{ color: C.text, fontSize: '18px', fontWeight: 800, margin: 0 }}>{fmtCurrency(totals.retailTurnover)}</p>
+              </div>
+            </div>
+          </div>
+          <div>
+            <h4 style={{ color: C.textSec, fontSize: '12px', fontWeight: 700, margin: '0 0 12px 0', textTransform: 'uppercase' }}>Pre-Match vs Live</h4>
+            <div style={{ display: 'flex', height: '32px', borderRadius: '8px', overflow: 'hidden', marginBottom: '12px' }}>
+              <div style={{ width: `${preMatchPct}%`, background: C.success, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <span style={{ color: '#FFF', fontSize: '11px', fontWeight: 800 }}>{preMatchPct}%</span>
+              </div>
+              <div style={{ flex: 1, background: C.danger, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <span style={{ color: '#FFF', fontSize: '11px', fontWeight: 800 }}>{livePct}%</span>
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div style={{ background: C.bg, borderRadius: '8px', padding: '12px', border: `2px solid ${C.success}` }}>
+                <p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 600, margin: '0 0 4px 0' }}>PRE-MATCH</p>
+                <p style={{ color: C.text, fontSize: '18px', fontWeight: 800, margin: 0 }}>{fmtCurrency(totals.preMatchTurnover)}</p>
+              </div>
+              <div style={{ background: C.bg, borderRadius: '8px', padding: '12px', border: `2px solid ${C.danger}` }}>
+                <p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 600, margin: '0 0 4px 0' }}>LIVE</p>
+                <p style={{ color: C.text, fontSize: '18px', fontWeight: 800, margin: 0 }}>{fmtCurrency(totals.liveTurnover)}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Section>
+      
+      {/* ═══ CHANNEL TREND ═══ */}
+      <Section title="Trend per Canale" theme={C}>
+        <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '1fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
+          <ChartCard title="Online vs Retail Trend" height={250} theme={C}>
+            <BarChart data={channelTrend}>
+              <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
+              <XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} />
+              <YAxis tick={{ fill: C.textMuted, fontSize: 10 }} tickFormatter={v => `€${(v/1000).toFixed(0)}K`} />
+              <Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} />
+              <Legend />
+              <Bar dataKey="Online" stackId="a" fill={C.primary} />
+              <Bar dataKey="Retail" stackId="a" fill={C.blue} />
+            </BarChart>
+          </ChartCard>
+          <ChartCard title="Pre-Match vs Live Trend" height={250} theme={C}>
+            <BarChart data={typeTrend}>
+              <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
+              <XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} />
+              <YAxis tick={{ fill: C.textMuted, fontSize: 10 }} tickFormatter={v => `€${(v/1000).toFixed(0)}K`} />
+              <Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} />
+              <Legend />
+              <Bar dataKey="Pre-Match" stackId="a" fill={C.success} />
+              <Bar dataKey="Live" stackId="a" fill={C.danger} />
+            </BarChart>
+          </ChartCard>
+        </div>
+      </Section>
+      
+      {/* ═══ CHANNEL PERFORMANCE ═══ */}
+      {channelData.length > 0 && (
+        <Section title="Channel Performance Aggregato" theme={C}>
+          <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '1.5fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
+            <Table cols={[
+              { header: 'Channel', accessor: 'channel', format: v => <span style={{ fontWeight: 700 }}>{v}</span> },
+              { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
+              { header: '% T/O', accessor: 'pctTotal', align: 'center', format: v => <span style={{ color: C.accent, fontWeight: 700 }}>{v}%</span> },
+              { header: 'GGR', accessor: 'ggr', align: 'right', format: v => <span style={{ color: v >= 0 ? C.success : C.danger, fontWeight: 700 }}>{fmtCurrency(v)}</span> },
+              { header: 'GWM%', accessor: 'gwm', align: 'center', format: v => `${v}%` },
+              { header: 'Rev Share', accessor: 'revShare', align: 'center', format: v => <span style={{ color: C.purple, fontWeight: 700 }}>{v}%</span> }
+            ]} data={channelData} theme={C} />
+            <ChartCard title="Revenue Share" height={220} theme={C}>
+              <PieChart>
+                <Pie data={channelData.filter(c => c.revShare > 0)} cx="50%" cy="50%" innerRadius={50} outerRadius={85} paddingAngle={2} dataKey="revShare" nameKey="channel">
+                  {channelData.map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}
+                </Pie>
+                <Tooltip content={<Tip theme={C} />} /><Legend />
+              </PieChart>
+            </ChartCard>
+          </div>
+        </Section>
+      )}
+      
+      {/* ═══ TOP SPORTS ═══ */}
+      {topSportsData.length > 0 && (
+        <Section title="Top Sport Aggregati" theme={C}>
+          <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '1fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
+            <Table cols={[
+              { header: 'Sport', accessor: 'name', format: v => <span style={{ fontWeight: 700 }}>{v}</span> },
+              { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
+              { header: '% T/O', accessor: 'pctTotal', align: 'center', format: v => <span style={{ color: C.accent, fontWeight: 700 }}>{v}%</span> },
+              { header: 'GGR', accessor: 'ggr', align: 'right', format: v => <span style={{ color: v >= 0 ? C.success : C.danger, fontWeight: 700 }}>{fmtCurrency(v)}</span> }
+            ]} data={topSportsData} theme={C} />
+            <ChartCard title="Turnover per Sport" height={250} theme={C}>
+              <BarChart data={topSportsData} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
+                <XAxis type="number" tick={{ fill: C.textMuted, fontSize: 10 }} tickFormatter={v => `€${(v/1000).toFixed(0)}K`} />
+                <YAxis type="category" dataKey="name" width={80} tick={{ fill: C.text, fontSize: 10, fontWeight: 600 }} />
+                <Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} />
+                <Bar dataKey="turnover" fill={C.primary} radius={[0, 4, 4, 0]}>
+                  {topSportsData.map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}
+                </Bar>
+              </BarChart>
+            </ChartCard>
+          </div>
+        </Section>
+      )}
+      
+      {/* ═══ AGE DISTRIBUTION ═══ */}
+      <Section title="Distribuzione Età Aggregata" theme={C}>
+        <ChartCard title="Fascia d'Età" height={200} theme={C}>
+          <BarChart data={ageData}>
             <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
-            <XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} />
-            <YAxis yAxisId="left" tick={{ fill: C.textMuted, fontSize: 10 }} tickFormatter={v => fmtCurrency(v, false)} />
-            <YAxis yAxisId="right" orientation="right" tick={{ fill: C.textMuted, fontSize: 10 }} tickFormatter={v => fmtCurrency(v, false)} />
-            <Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} />
-            <Legend />
-            <Bar yAxisId="left" dataKey="turnover" name="Turnover" fill={C.primary} radius={[4, 4, 0, 0]} />
-            <Line yAxisId="right" type="monotone" dataKey="ggr" name="GGR" stroke={C.success} strokeWidth={3} dot={{ fill: C.success, r: 4 }} />
-          </ComposedChart>
+            <XAxis dataKey="range" tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} />
+            <YAxis tick={{ fill: C.textMuted, fontSize: 11 }} />
+            <Tooltip content={<Tip theme={C} />} />
+            <Bar dataKey="count" fill={C.primary} radius={[4, 4, 0, 0]}>
+              {ageData.map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}
+            </Bar>
+          </BarChart>
         </ChartCard>
       </Section>
       
+      {/* ═══ DETTAGLIO SETTIMANALE ═══ */}
       <Section title="Dettaglio Settimanale" theme={C}>
         <Table cols={[
-          { header: 'Settimana', accessor: 'week', format: v => <span style={{ fontWeight: 700 }}>{v}</span> },
+          { header: 'Sett', accessor: 'week', format: v => <span style={{ color: C.accent, fontWeight: 800 }}>{v}</span> },
           { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
           { header: 'GGR', accessor: 'ggr', align: 'right', format: v => <span style={{ color: v >= 0 ? C.success : C.danger, fontWeight: 700 }}>{fmtCurrency(v)}</span> },
+          { header: 'GWM%', accessor: 'gwm', align: 'center', format: v => `${v}%` },
           { header: 'Biglietti', accessor: 'tickets', align: 'right', format: v => fmtNum(v) },
-          { header: 'Attivi', accessor: 'actives', align: 'right', format: v => fmtNum(v) }
+          { header: 'Attivi', accessor: 'actives', align: 'right', format: v => fmtNum(v) },
+          { header: 'Avg Ticket', accessor: 'avgTicket', align: 'right', format: v => fmtCurrency(v) },
+          { header: 'ARPU', accessor: 'arpu', align: 'right', format: v => fmtCurrency(v) },
+          { header: 'Calcio%', accessor: 'calcioPct', align: 'center', format: v => `${v}%` },
+          { header: 'Live%', accessor: 'livePct', align: 'center', format: v => `${v}%` }
         ]} data={[...trendData].reverse()} theme={C} />
       </Section>
     </div>
