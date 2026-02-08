@@ -484,7 +484,7 @@ const processSessionData = (rows) => {
     tk: 0, g: 0, ggr: 0, acc: new Set(),
     h: Array.from({length:24}, () => ({t:0,g:0,r:0})),
     d: Array.from({length:7}, () => ({t:0,g:0,r:0})),
-    dur: [0,0,0,0,0,0,0,0], durS: 0, durN: 0,
+    dur: [0,0,0,0,0,0,0,0], durArr: [], // durArr for median calculation
     hm: Array.from({length:7}, () => Array(6).fill(0)),
     pr: {}
   })
@@ -507,7 +507,11 @@ const processSessionData = (rows) => {
     const di = dw === 0 ? 6 : dw - 1
     const bi = Math.min(Math.floor(hr / 4), 5)
     let dm = null
-    if (ed instanceof Date && !isNaN(ed.getTime())) { dm = (ed - sd) / 60000; if (dm < 0) dm = null }
+    if (ed instanceof Date && !isNaN(ed.getTime())) { 
+      dm = (ed - sd) / 60000
+      // Exclude negative and extreme outliers (> 4 hours = likely data errors)
+      if (dm < 0 || dm > 240) dm = null 
+    }
     const isO = ONLINE.includes(pr)
     const tgts = [S.gen, isO ? S.onl : S.pvr]
     for (let j = 0; j < 2; j++) {
@@ -516,8 +520,8 @@ const processSessionData = (rows) => {
       s.h[hr].t++; s.h[hr].g += gi; s.h[hr].r += gr
       s.d[di].t++; s.d[di].g += gi; s.d[di].r += gr
       s.hm[di][bi]++
-      if (dm !== null && dm >= 0) {
-        s.durS += dm; s.durN++
+      if (dm !== null) {
+        s.durArr.push(dm)
         s.dur[dm<1?0:dm<5?1:dm<15?2:dm<30?3:dm<60?4:dm<120?5:dm<240?6:7]++
       }
       if (pr) s.pr[pr] = (s.pr[pr] || 0) + 1
@@ -526,7 +530,14 @@ const processSessionData = (rows) => {
 
   const fin = (s) => {
     const acc = s.acc.size
-    const avg = s.durN > 0 ? Math.round(s.durS / s.durN * 10) / 10 : 0
+    // Calculate MEDIAN duration (much more representative than mean with outliers)
+    let medianDur = 0
+    if (s.durArr.length > 0) {
+      s.durArr.sort((a, b) => a - b)
+      const mid = Math.floor(s.durArr.length / 2)
+      medianDur = s.durArr.length % 2 !== 0 ? s.durArr[mid] : (s.durArr[mid - 1] + s.durArr[mid]) / 2
+      medianDur = Math.round(medianDur * 10) / 10
+    }
     const gwm = s.g > 0 ? Math.round(s.ggr / s.g * 1000) / 10 : 0
     const tb = [{n:'Night',r:'00-06',t:0,g:0,rr:0},{n:'Morning',r:'06-12',t:0,g:0,rr:0},{n:'Afternoon',r:'12-18',t:0,g:0,rr:0},{n:'Evening',r:'18-24',t:0,g:0,rr:0}]
     s.h.forEach((h,i) => { const x = i<6?0:i<12?1:i<18?2:3; tb[x].t+=h.t; tb[x].g+=h.g; tb[x].rr+=h.r })
@@ -535,13 +546,14 @@ const processSessionData = (rows) => {
     const hourly = s.h.map((h,i) => ({hour:String(i).padStart(2,'0')+':00',tickets:h.t,giocato:Math.round(h.g),ggr:Math.round(h.r),pct:s.tk>0?Math.round(h.t/s.tk*1000)/10:0}))
     const daily = s.d.map((d,i) => ({day:DAYS[i],tickets:d.t,giocato:Math.round(d.g),ggr:Math.round(d.r),pct:s.tk>0?Math.round(d.t/s.tk*1000)/10:0}))
     const DL = ['<1m','1-5m','5-15m','15-30m','30-60m','1-2h','2-4h','4h+']
-    const duration = DL.map((l,i) => ({range:l,count:s.dur[i],percent:s.durN>0?Math.round(s.dur[i]/s.durN*1000)/10:0}))
+    const durTotal = s.dur.reduce((a,b)=>a+b,0)
+    const duration = DL.map((l,i) => ({range:l,count:s.dur[i],percent:durTotal>0?Math.round(s.dur[i]/durTotal*1000)/10:0}))
     const heatmap = DAYS.map((dy,di) => ({day:dy,blocks:BLOCKS.map((bl,bi) => ({block:bl,tickets:s.hm[di][bi],pct:s.tk>0?Math.round(s.hm[di][bi]/s.tk*1000)/10:0}))}))
     const promoters = Object.entries(s.pr).map(([n,c])=>({name:n,count:c,pct:s.tk>0?Math.round(c/s.tk*1000)/10:0})).sort((a,b)=>b.count-a.count)
     const pH = hourly.reduce((b,h)=>h.tickets>b.tickets?h:b,hourly[0])
     const gH = hourly.reduce((b,h)=>h.ggr>b.ggr?h:b,hourly[0])
     const tD = daily.reduce((b,d)=>d.tickets>b.tickets?d:b,daily[0])
-    return { tickets:s.tk, giocato:Math.round(s.g), ggr:Math.round(s.ggr), accounts:acc, gwm, avgDuration:avg, hourly, daily, timeBlocks, duration, heatmap, promoters,
+    return { tickets:s.tk, giocato:Math.round(s.g), ggr:Math.round(s.ggr), accounts:acc, gwm, medianDuration:medianDur, hourly, daily, timeBlocks, duration, heatmap, promoters,
       insights:{peakHour:pH.hour,peakHourPct:pH.pct,bestGgrHour:gH.hour,bestGgrAmount:gH.ggr,topDay:tD.day,topDayPct:tD.pct}
     }
   }
@@ -1924,7 +1936,7 @@ const CasinoSessions = ({ sessionData, theme }) => {
     { label: 'Peak Hour', value: ins.peakHour, sub: `${ins.peakHourPct}% of tickets`, color: C.primary },
     { label: 'Best GGR Hour', value: ins.bestGgrHour, sub: `€${fmtNum(ins.bestGgrAmount)}`, color: C.success },
     { label: 'Top Day', value: ins.topDay, sub: `${ins.topDayPct}% of tickets`, color: C.accent },
-    { label: 'Avg Duration', value: `${data.avgDuration} min`, sub: 'per session', color: C.blue }
+    { label: 'Median Duration', value: `${data.medianDuration} min`, sub: 'per session', color: C.blue }
   ]
 
   return (
@@ -1964,7 +1976,7 @@ const CasinoSessions = ({ sessionData, theme }) => {
           <KPI label="Unique Accounts" value={data.accounts} icon="users" theme={C} />
           <KPI label="Turnover" value={data.giocato} cur icon="wallet" theme={C} />
           <KPI label="GGR" value={data.ggr} cur icon="trending" sub={`GWM: ${data.gwm}%`} theme={C} />
-          <KPI label="Avg Duration (min)" value={data.avgDuration} icon="clock" theme={C} />
+          <KPI label="Median Duration (min)" value={data.medianDuration} icon="clock" theme={C} />
           <KPI label="Ticket/Account" value={data.accounts > 0 ? Math.round(data.tickets / data.accounts) : 0} icon="card" theme={C} />
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr 1fr' : 'repeat(4, 1fr)', gap: '12px' }}>
@@ -2076,7 +2088,7 @@ const CasinoSessions = ({ sessionData, theme }) => {
                   <span style={{ marginLeft: 'auto', background: C.primary+'22', color: C.primary, padding: '2px 8px', borderRadius: '12px', fontSize: '10px', fontWeight: 800 }}>{(s.d.tickets / data.tickets * 100).toFixed(1)}%</span>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '16px' }}>
-                  {[{l:'Tickets',v:fmtNum(s.d.tickets)},{l:'Accounts',v:fmtNum(s.d.accounts)},{l:'GGR',v:fmtCurrency(s.d.ggr)},{l:'GWM',v:`${s.d.gwm}%`},{l:'Avg Duration',v:`${s.d.avgDuration} min`},{l:'Peak Hour',v:s.d.insights.peakHour}].map(m => (
+                  {[{l:'Tickets',v:fmtNum(s.d.tickets)},{l:'Accounts',v:fmtNum(s.d.accounts)},{l:'GGR',v:fmtCurrency(s.d.ggr)},{l:'GWM',v:`${s.d.gwm}%`},{l:'Median Duration',v:`${s.d.medianDuration} min`},{l:'Peak Hour',v:s.d.insights.peakHour}].map(m => (
                     <div key={m.l}><p style={{ margin: 0, fontSize: '9px', fontWeight: 700, color: C.textMuted, textTransform: 'uppercase' }}>{m.l}</p><p style={{ margin: '2px 0 0', fontSize: '16px', fontWeight: 900, color: C.text }}>{m.v}</p></div>
                   ))}
                 </div>
@@ -2415,12 +2427,12 @@ const CasinoMonthly = ({ weeksData, theme }) => {
           aggSes.accounts += s.accounts || 0
           aggSes.giocato += s.giocato || 0
           aggSes.ggr += s.ggr || 0
-          if (s.avgDuration > 0) { aggSes.durSum += s.avgDuration * s.tickets; aggSes.durCount += s.tickets }
+          if (s.medianDuration > 0) { aggSes.durSum += s.medianDuration * s.tickets; aggSes.durCount += s.tickets }
           s.hourly?.forEach((h, i) => { aggSes.hourly[i] += h.tickets || 0 })
           s.daily?.forEach((d, i) => { aggSes.daily[i] += d.tickets || 0 })
         })
         
-        const avgDur = aggSes.durCount > 0 ? Math.round(aggSes.durSum / aggSes.durCount * 10) / 10 : 0
+        const medianDur = aggSes.durCount > 0 ? Math.round(aggSes.durSum / aggSes.durCount * 10) / 10 : 0
         const gwm = aggSes.giocato > 0 ? Math.round(aggSes.ggr / aggSes.giocato * 1000) / 10 : 0
         const peakHourIdx = aggSes.hourly.indexOf(Math.max(...aggSes.hourly))
         const peakHour = `${String(peakHourIdx).padStart(2,'0')}:00`
@@ -2441,7 +2453,7 @@ const CasinoMonthly = ({ weeksData, theme }) => {
           { label: 'Peak Hour', value: peakHour, sub: `${peakHourPct}% of tickets`, color: C.primary },
           { label: 'Best GGR Hour', value: bestGgrHour, sub: `€${fmtNum(Math.round(bestGgrAmount))}`, color: C.success },
           { label: 'Top Day', value: topDay, sub: `${topDayPct}% of tickets`, color: C.accent },
-          { label: 'Avg Duration', value: `${avgDur} min`, sub: 'per session', color: C.blue }
+          { label: 'Median Duration', value: `${medianDur} min`, sub: 'per session', color: C.blue }
         ]
         
         return (
