@@ -1177,8 +1177,8 @@ const UploadPage = ({ weeksData, casinoWeeksData, sportWeeksData, onUpload, onCa
     if (fname.includes('sport_numeventi') || fname.includes('sport_num_eventi')) return 'sportNumEventi'
     if (fname.includes('sport_scommesse')) return 'sportScommesse'
     if (fname.includes('sport_puntovendita') || fname.includes('sport_punto_vendita')) return 'sportPuntoVendita'
-    // SKIN_Total_Sport.xlsx - Sport-specific skin data (no Categoria needed)
-    if (fname.includes('skin_total_sport') || fname.includes('skin_totalsport')) return 'sportSkin'
+    // SKIN_Total_Sport.xlsx - Sport-specific skin data (multiple naming variants)
+    if (fname.includes('skin_total_sport') || fname.includes('skin_totalsport') || fname.includes('skintotalsport') || (fname.includes('skin') && fname.includes('sport'))) return 'sportSkin'
     // Academy - both old and new names
     if (fname.includes('accademy_totalsport') || fname.includes('academy_totalsport') || fname.includes('anagrafica_accademy_total')) return 'sportAcademyTotal'
     // Organic - both old and new names
