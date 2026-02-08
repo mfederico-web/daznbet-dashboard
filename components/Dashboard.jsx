@@ -104,10 +104,10 @@ const SPORT_FILES = [
   { key: 'sportNumEventi', name: 'Sport_NumEventi.xlsx', path: 'Bookmaker → Report Sport → Num Eventi' },
   { key: 'sportScommesse', name: 'Sport_Scommesse.xlsx', path: 'Bookmaker → Report Sport → Scommesse' },
   { key: 'sportPuntoVendita', name: 'Sport_PuntoVendita.xlsx', path: 'Bookmaker → Report Sport → Punti Vendita' },
-  { key: 'sportSkinTotal', name: 'SKIN_TOTALSPORT.xlsx', path: 'Stats Multilivello → SCOMMESSE → GRID Skin' },
-  { key: 'sportAcademyTotal', name: 'ACCADEMY_TOTALSPORT.xlsx', path: 'Academy Total Sport' },
-  { key: 'sportOrganicTotal', name: 'ORGANIC_TOTALSPORT.xlsx', path: 'Organic Total Sport' },
-  { key: 'sportDaznbet', name: 'DAZNBETSPORT.xlsx', path: 'DAZNBET Sport per conto' }
+  { key: 'sportSkin', name: 'Anagrafica_SKIN.xlsx', path: 'Stats Multilivello → GRID Skin + Categoria' },
+  { key: 'sportAcademyTotal', name: 'Anagrafica_ACCADEMY_TOTAL.xlsx', path: 'Stats Multi → vivabet promoter' },
+  { key: 'sportOrganicTotal', name: 'Anagrafica_ORGANIC_TOTAL.xlsx', path: 'Stats Multi → daznbet www.daznbet.it' },
+  { key: 'sportDaznbet', name: 'Anagrafica_DAZNBET.xlsx', path: 'Stats Multi → daznbet per conto' }
 ]
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -612,8 +612,8 @@ const processSportData = (files, weekNum, dateRange) => {
   const chanPerf = []
   let totChGgr = 0
   
-  // SKIN_TOTALSPORT.xlsx - raw skin data
-  const skinRows = files.sportSkinTotal || []
+  // Anagrafica_SKIN.xlsx - filter for SCOMMESSE category only
+  const skinRows = (files.sportSkin || []).filter(r => String(r['Categoria'] || '').toUpperCase() === 'SCOMMESSE')
   const skinMap = {}
   for (const row of skinRows) {
     const skin = String(row['Skin'] || '').toLowerCase()
@@ -1149,10 +1149,14 @@ const UploadPage = ({ weeksData, casinoWeeksData, sportWeeksData, onUpload, onCa
     if (fname.includes('sport_numeventi') || fname.includes('sport_num_eventi')) return 'sportNumEventi'
     if (fname.includes('sport_scommesse')) return 'sportScommesse'
     if (fname.includes('sport_puntovendita') || fname.includes('sport_punto_vendita')) return 'sportPuntoVendita'
-    if (fname.includes('skin_totalsport')) return 'sportSkinTotal'
-    if (fname.includes('accademy_totalsport') || fname.includes('academy_totalsport')) return 'sportAcademyTotal'
-    if (fname.includes('organic_totalsport')) return 'sportOrganicTotal'
-    if (fname.includes('daznbetsport')) return 'sportDaznbet'
+    // Anagrafica_SKIN.xlsx - contains Categoria + Skin + conti attivi
+    if (fname.includes('anagrafica_skin') && !fname.includes('total')) return 'sportSkin'
+    // Academy - both old and new names
+    if (fname.includes('accademy_totalsport') || fname.includes('academy_totalsport') || fname.includes('anagrafica_accademy_total')) return 'sportAcademyTotal'
+    // Organic - both old and new names
+    if (fname.includes('organic_totalsport') || fname.includes('anagrafica_organic_total')) return 'sportOrganicTotal'
+    // DAZNBET - both old and new names
+    if (fname.includes('daznbetsport') || fname.includes('anagrafica_daznbet')) return 'sportDaznbet'
     return null
   }
 
@@ -2465,6 +2469,7 @@ const SportWeekly = ({ data, prev, theme }) => {
       <Section title="Channel Performance" theme={C}>
         <Table cols={[
           { header: 'Channel', accessor: 'channel', format: v => <span style={{ fontWeight: 700 }}>{v}</span> },
+          { header: 'Actives', accessor: 'actives', align: 'right', format: v => <span style={{ color: C.blue, fontWeight: 700 }}>{fmtNum(v)}</span> },
           { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
           { header: '% T/O', accessor: 'pctTotal', align: 'center', format: v => <span style={{ color: C.accent, fontWeight: 700 }}>{v}%</span> },
           { header: 'GGR', accessor: 'ggr', align: 'right', format: v => <span style={{ color: v >= 0 ? C.success : C.danger, fontWeight: 700 }}>{fmtCurrency(v)}</span> },
@@ -2732,12 +2737,17 @@ const SportMonthly = ({ weeksData, theme }) => {
   // Channel Performance aggregated
   const channelAgg = {}
   weeks.forEach(w => (w.channelPerformance || []).forEach(ch => {
-    if (!channelAgg[ch.channel]) channelAgg[ch.channel] = { channel: ch.channel, turnover: 0, ggr: 0 }
+    if (!channelAgg[ch.channel]) channelAgg[ch.channel] = { channel: ch.channel, turnover: 0, ggr: 0, activesSum: 0, weeksCount: 0 }
     channelAgg[ch.channel].turnover += ch.turnover || 0
     channelAgg[ch.channel].ggr += ch.ggr || 0
+    channelAgg[ch.channel].activesSum += ch.actives || 0
+    channelAgg[ch.channel].weeksCount++
   }))
   const channelData = Object.values(channelAgg).map(ch => ({
-    ...ch,
+    channel: ch.channel,
+    turnover: ch.turnover,
+    ggr: ch.ggr,
+    actives: ch.weeksCount > 0 ? Math.round(ch.activesSum / ch.weeksCount) : 0, // average actives per week
     gwm: ch.turnover > 0 ? Math.round(ch.ggr / ch.turnover * 1000) / 10 : 0,
     pctTotal: totals.turnover > 0 ? Math.round(ch.turnover / totals.turnover * 1000) / 10 : 0
   })).sort((a, b) => b.turnover - a.turnover)
@@ -2909,6 +2919,7 @@ const SportMonthly = ({ weeksData, theme }) => {
           <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '1.5fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
             <Table cols={[
               { header: 'Channel', accessor: 'channel', format: v => <span style={{ fontWeight: 700 }}>{v}</span> },
+              { header: 'Avg Actives', accessor: 'actives', align: 'right', format: v => <span style={{ color: C.blue, fontWeight: 700 }}>{fmtNum(v)}</span> },
               { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
               { header: '% T/O', accessor: 'pctTotal', align: 'center', format: v => <span style={{ color: C.accent, fontWeight: 700 }}>{v}%</span> },
               { header: 'GGR', accessor: 'ggr', align: 'right', format: v => <span style={{ color: v >= 0 ? C.success : C.danger, fontWeight: 700 }}>{fmtCurrency(v)}</span> },
