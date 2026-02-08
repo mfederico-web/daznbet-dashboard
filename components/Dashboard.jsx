@@ -40,7 +40,7 @@ const THEMES = {
     text: '#000000',
     textSec: '#444444',
     textMuted: '#888888',
-    hover: '#E8E8E8',         // Hover righe tabella (grigio più visibile)
+    hover: '#F0F0F0',         // Hover righe tabella (grigio chiaro)
     success: '#00A854',
     successDim: 'rgba(0,168,84,0.1)',
     danger: '#D93025',
@@ -1046,10 +1046,9 @@ const ChartCard = ({ title, children, height = 280, theme }) => {
 
 const Table = ({ cols, data, compact = false, theme }) => {
   const C = theme
-  const [hovered, setHovered] = useState(null)
   return (
     <div style={{ overflowX: 'auto', borderRadius: '10px', border: `1px solid ${C.border}` }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: compact ? '12px' : 'clamp(12px, 1.2vw, 14px)' }}>
+      <table className="dazn-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: compact ? '12px' : 'clamp(12px, 1.2vw, 14px)' }}>
         <thead>
           <tr style={{ background: C.bg }}>
             {cols.map((c, i) => <th key={i} style={{ padding: compact ? '10px 12px' : 'clamp(10px, 1.4vw, 14px) clamp(12px, 1.5vw, 18px)', textAlign: c.align || 'left', color: C.accent, fontWeight: 700, fontSize: compact ? '10px' : 'clamp(10px, 1vw, 12px)', textTransform: 'uppercase', letterSpacing: '0.3px', borderBottom: `2px solid ${C.accent}` }}>{c.header}</th>)}
@@ -1057,10 +1056,9 @@ const Table = ({ cols, data, compact = false, theme }) => {
         </thead>
         <tbody>
           {data.map((r, ri) => {
-            const isHov = hovered === ri && !r.isTotal
             const baseBg = r.isTotal ? C.accent + '12' : ri % 2 === 0 ? C.card : C.bg
             return (
-              <tr key={ri} onMouseEnter={() => setHovered(ri)} onMouseLeave={() => setHovered(null)} style={{ background: isHov ? C.hover : baseBg, transition: 'background 0.15s', cursor: 'default' }}>
+              <tr key={ri} className={r.isTotal ? 'total-row' : ''} style={{ background: baseBg, transition: 'background 0.15s', cursor: 'default' }}>
                 {cols.map((c, ci) => { const v = c.accessor ? r[c.accessor] : ''; return <td key={ci} style={{ padding: compact ? '8px 12px' : 'clamp(10px, 1.3vw, 12px) clamp(12px, 1.5vw, 18px)', textAlign: c.align || 'left', color: r.isTotal ? C.accent : C.text, fontWeight: r.isTotal ? 800 : 400, borderBottom: `1px solid ${C.border}` }}>{c.format ? c.format(v, ri, r) : v}</td> })}
               </tr>
             )
@@ -3353,7 +3351,7 @@ export default function Dashboard() {
   )
 
   return (
-    <div style={{ minHeight: '100vh', background: C.bg, fontFamily: "Oscine, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", color: C.text, transition: 'background 0.3s, color 0.3s', overflowX: 'hidden' }}>
+    <div style={{ minHeight: '100vh', background: C.bg, fontFamily: "Oscine, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", color: C.text, transition: 'background 0.3s, color 0.3s', overflowX: 'hidden', '--hover-bg': C.hover, '--hover-text': C.text }}>
       <style>{`
         @font-face { font-family: Oscine; src: url(https://www.daznbet.it/external_css/DAZNBET/font/DAZN_Oscine_W_Rg.woff) format("woff"), url(https://www.daznbet.it/external_css/DAZNBET/font/DAZN_Oscine_W_Rg.woff2) format("woff2"); font-weight: 400; }
         @font-face { font-family: Oscine; src: url(https://www.daznbet.it/external_css/DAZNBET/font/DAZN_Oscine_W_Bd.woff) format("woff"), url(https://www.daznbet.it/external_css/DAZNBET/font/DAZN_Oscine_W_Bd.woff2) format("woff2"); font-weight: 700; }
@@ -3361,6 +3359,8 @@ export default function Dashboard() {
         body { margin: 0; overflow-x: hidden; }
         .recharts-wrapper { max-width: 100% !important; }
         .recharts-surface { max-width: 100% !important; }
+        .dazn-table tbody tr:not(.total-row):hover { background: var(--hover-bg) !important; }
+        .dazn-table tbody tr:not(.total-row):hover td { color: var(--hover-text) !important; }
         @media (max-width: 480px) {
           table { font-size: 11px !important; }
           th, td { padding: 6px 8px !important; }
