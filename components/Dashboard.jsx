@@ -110,6 +110,11 @@ const SPORT_FILES = [
   { key: 'sportDaznbet', name: 'Anagrafica_DAZNBET.xlsx', path: 'Stats Multi → daznbet per conto' }
 ]
 
+const DAILY_FILES = [
+  { key: 'meseTotal', name: 'Anagrafica_Mese_Total.xlsx', path: 'Stats Multilivello + Data' },
+  { key: 'meseTotalPadre', name: 'Anagrafica_Mese_Total_Padre.xlsx', path: 'Stats Multilivello + Data + Padre' }
+]
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // CHANNEL CONFIG — Allowlist dei Cod Punto DAZN Direct (canali proprietari DAZN)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -216,6 +221,24 @@ const classifyChannel = row => {
   if (skin.includes("SCOMMETTENDO")) return "PVR"
 
   // ── Tutte le altre SKIN → PVR ──
+  return "PVR"
+}
+
+// Channel classification for Padre file (uses Skin + Cod liv 1 hierarchy)
+const classifyChannelPadre = row => {
+  const skin = String(row["Skin"] || "").toUpperCase().trim()
+  const codLiv1 = String(row["Cod liv 1"] || "").toUpperCase().trim()
+
+  if (skin.includes("VIVABET")) {
+    if (["ILGLADIATORE", "VIVABET"].includes(codLiv1) || codLiv1.includes("GLADIATORE")) return "VIVABET/GLAD"
+    return "Tipster Academy"
+  }
+  if (skin.includes("DAZNBET")) {
+    if (codLiv1 === "DAZNBET") return "DAZNBET Organic"
+    if (codLiv1.startsWith("DAZN_") || DAZN_DIRECT_COD_PUNTI.has(codLiv1)) return "DAZN Direct"
+    return "AFFILIATES"
+  }
+  if (skin.includes("SCOMMETTENDO")) return "PVR"
   return "PVR"
 }
 
@@ -961,6 +984,97 @@ const processSportData = (files, weekNum, dateRange) => {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// DAILY MONTH DATA PROCESSOR
+// ═══════════════════════════════════════════════════════════════════════════════
+const processDailyMonthData = (files, monthKey, monthLabel) => {
+  const meseTotal = files.meseTotal || []
+  const mesePadre = files.meseTotalPadre || []
+
+  // ── Parse Mese_Total: daily rows + total row ──
+  const dailyRows = meseTotal.filter(r => typeof r["Data"] === 'number' || (r["Data"] && !String(r["Data"]).includes(',')))
+  const totalRow = meseTotal.find(r => !r["Data"] || typeof r["Giocato"] === 'string')
+
+  const dailyStats = dailyRows.map(r => {
+    const dateKey = normalizeDate(r["Data"])
+    return {
+      dateKey,
+      date: formatDateLabel(dateKey),
+      turnover: parseNum(r["Giocato"]) || 0,
+      vinto: parseNum(r["vinto"]) || 0,
+      ggr: parseNum(r["ggr"]) || 0,
+      payout: parseNum(String(r["% payout"] || "0").replace(",", ".")) || 0,
+      betBonus: parseNum(r["bet bonus"]) || 0,
+      numTicket: parseNum(r["num ticket"]) || 0,
+      contiAttivi: parseNum(r["conti attivi"]) || 0
+    }
+  }).filter(d => d.dateKey).sort((a, b) => a.dateKey.localeCompare(b.dateKey))
+
+  // Monthly totals (sum daily for additive KPIs)
+  const turnover = dailyStats.reduce((s, d) => s + d.turnover, 0)
+  const ggr = dailyStats.reduce((s, d) => s + d.ggr, 0)
+  const betBonus = dailyStats.reduce((s, d) => s + d.betBonus, 0)
+  const numTicket = dailyStats.reduce((s, d) => s + d.numTicket, 0)
+  // Conti attivi totale mese: dalla riga TOTALE (non somma giornaliera)
+  const activeUsersMonth = totalRow ? parseNum(totalRow["conti attivi"]) : 0
+  const gwm = turnover > 0 ? parseFloat((ggr / turnover * 100).toFixed(1)) : 0
+
+  // ── Parse Mese_Total_Padre: channel breakdown ──
+  const padreDaily = mesePadre.filter(r => typeof r["Data"] === 'number')
+
+  // Aggregate by channel (full month)
+  const channelAgg = {}
+  padreDaily.forEach(r => {
+    const ch = classifyChannelPadre(r)
+    if (!channelAgg[ch]) channelAgg[ch] = { channel: ch, turnover: 0, ggr: 0, betBonus: 0, numTicket: 0, _activeDays: {} }
+    channelAgg[ch].turnover += parseNum(r["Giocato"]) || 0
+    channelAgg[ch].ggr += parseNum(r["ggr"]) || 0
+    channelAgg[ch].betBonus += parseNum(r["bet bonus"]) || 0
+    channelAgg[ch].numTicket += parseNum(r["num ticket"]) || 0
+    // Track unique days for avg daily actives
+    const dk = normalizeDate(r["Data"])
+    if (dk) {
+      if (!channelAgg[ch]._activeDays[dk]) channelAgg[ch]._activeDays[dk] = 0
+      channelAgg[ch]._activeDays[dk] += parseNum(r["conti attivi"]) || 0
+    }
+  })
+  const channelPerformance = Object.values(channelAgg).map(ch => ({
+    channel: ch.channel,
+    turnover: ch.turnover,
+    ggr: ch.ggr,
+    gwm: ch.turnover > 0 ? parseFloat((ch.ggr / ch.turnover * 100).toFixed(1)) : 0,
+    betBonus: ch.betBonus,
+    numTicket: ch.numTicket,
+    avgDailyActives: Math.round(Object.values(ch._activeDays).reduce((s, v) => s + v, 0) / Math.max(Object.keys(ch._activeDays).length, 1))
+  })).sort((a, b) => b.ggr - a.ggr)
+  const totalChGgr = channelPerformance.reduce((s, c) => s + c.ggr, 0)
+  channelPerformance.forEach(ch => { ch.revShare = totalChGgr > 0 ? parseFloat((ch.ggr / totalChGgr * 100).toFixed(1)) : 0 })
+
+  // Aggregate by channel per day (for daily channel trends)
+  const channelDaily = {}
+  padreDaily.forEach(r => {
+    const dk = normalizeDate(r["Data"])
+    if (!dk) return
+    const ch = classifyChannelPadre(r)
+    if (!channelDaily[dk]) channelDaily[dk] = {}
+    if (!channelDaily[dk][ch]) channelDaily[dk][ch] = { turnover: 0, ggr: 0 }
+    channelDaily[dk][ch].turnover += parseNum(r["Giocato"]) || 0
+    channelDaily[dk][ch].ggr += parseNum(r["ggr"]) || 0
+  })
+
+  return {
+    monthKey,
+    monthLabel,
+    days: dailyStats.length,
+    turnover, ggr, gwm, betBonus, numTicket,
+    activeUsers: activeUsersMonth,
+    dailyStats,
+    channelPerformance,
+    channelDaily,
+    _isRealDailyData: true
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // SVG ICONS (monochrome, theme-aware)
 // ═══════════════════════════════════════════════════════════════════════════════
 const ICON_PATHS = {
@@ -1112,7 +1226,7 @@ const LoginGate = ({ onLogin, theme }) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // UPLOAD PAGE - CON UPLOAD MASSIVO
 // ═══════════════════════════════════════════════════════════════════════════════
-const UploadPage = ({ weeksData, casinoWeeksData, sportWeeksData, onUpload, onCasinoUpload, onSportUpload, onDelete, onCasinoDelete, onSportDelete, onLogout, onAdminAuth, theme }) => {
+const UploadPage = ({ weeksData, casinoWeeksData, sportWeeksData, dailyMonthsData, onUpload, onCasinoUpload, onSportUpload, onDailyUpload, onDelete, onCasinoDelete, onSportDelete, onDailyDelete, onLogout, onAdminAuth, theme }) => {
   const C = theme
   const ww = useWindowWidth()
   const mob = ww < 768
@@ -1126,19 +1240,25 @@ const UploadPage = ({ weeksData, casinoWeeksData, sportWeeksData, onUpload, onCa
   const [files, setFiles] = useState({})
   const [casinoFiles, setCasinoFiles] = useState({})
   const [sportFiles, setSportFiles] = useState({})
+  const [dailyFiles, setDailyFiles] = useState({})
+  const [dailyMonth, setDailyMonth] = useState(String(new Date().getMonth() + 1).padStart(2, '0'))
+  const [dailyYear, setDailyYear] = useState(String(new Date().getFullYear()))
   const [loading, setLoading] = useState(false)
   const [msg, setMsg] = useState(null)
   const bulkInputRef = useRef(null)
   const casinoBulkRef = useRef(null)
   const sportBulkRef = useRef(null)
+  const dailyBulkRef = useRef(null)
   const isMain = uploadSection === 'main'
   const isCasino = uploadSection === 'casino'
   const isSport = uploadSection === 'sport'
-  const curFILES = isMain ? FILES : isCasino ? CASINO_FILES : SPORT_FILES
-  const curFiles = isMain ? files : isCasino ? casinoFiles : sportFiles
-  const setCurFiles = isMain ? setFiles : isCasino ? setCasinoFiles : setSportFiles
-  const curWeeksData = isMain ? weeksData : isCasino ? (casinoWeeksData || {}) : (sportWeeksData || {})
-  const exists = week && curWeeksData[parseInt(week)]
+  const isDaily = uploadSection === 'daily'
+  const curFILES = isMain ? FILES : isCasino ? CASINO_FILES : isSport ? SPORT_FILES : DAILY_FILES
+  const curFiles = isMain ? files : isCasino ? casinoFiles : isSport ? sportFiles : dailyFiles
+  const setCurFiles = isMain ? setFiles : isCasino ? setCasinoFiles : isSport ? setSportFiles : setDailyFiles
+  const curWeeksData = isMain ? weeksData : isCasino ? (casinoWeeksData || {}) : isSport ? (sportWeeksData || {}) : (dailyMonthsData || {})
+  const dailyMonthKey = `${dailyYear}-${dailyMonth}`
+  const exists = isDaily ? (dailyMonthsData || {})[dailyMonthKey] : (week && curWeeksData[parseInt(week)])
 
   useEffect(() => { if (localStorage.getItem('dazn_upload_auth') === 'true') setUploadAuth(true) }, [])
 
@@ -1224,6 +1344,11 @@ const UploadPage = ({ weeksData, casinoWeeksData, sportWeeksData, onUpload, onCa
     if (fname.includes('daznbetsport') || fname.includes('anagrafica_daznbet')) return 'sportDaznbet'
     return null
   }
+  const matchDailyFile = (fname) => {
+    if (fname.includes('mese_total_padre') || fname.includes('mesetotal_padre') || fname.includes('mese_totalpadre')) return 'meseTotalPadre'
+    if (fname.includes('mese_total') || fname.includes('mesetotal')) return 'meseTotal'
+    return null
+  }
 
   // UPLOAD MASSIVO - Match file names automaticamente
   const handleBulkUpload = async (e) => {
@@ -1238,7 +1363,7 @@ const UploadPage = ({ weeksData, casinoWeeksData, sportWeeksData, onUpload, onCa
     for (const f of fileList) {
       const fname = f.name.toLowerCase()
       // Match based on current section
-      let key = isMain ? matchMainFile(fname) : isCasino ? matchCasinoFile(fname) : matchSportFile(fname)
+      let key = isMain ? matchMainFile(fname) : isCasino ? matchCasinoFile(fname) : isSport ? matchSportFile(fname) : matchDailyFile(fname)
       
       // Track which section files belong to
       if (matchSportFile(fname)) sportMatches++
@@ -1254,7 +1379,7 @@ const UploadPage = ({ weeksData, casinoWeeksData, sportWeeksData, onUpload, onCa
     console.log('[Upload Debug] Matched files:', Object.keys(newFiles))
     setCurFiles(newFiles)
     setLoading(false)
-    const sectionLabel = isMain ? 'General' : isCasino ? 'Casino' : 'Sport'
+    const sectionLabel = isMain ? 'General' : isCasino ? 'Casino' : isSport ? 'Sport' : 'Daily'
     if (matched === 0 && fileList.length > 0) {
       // Suggest the correct section
       let suggestion = ''
@@ -1268,6 +1393,24 @@ const UploadPage = ({ weeksData, casinoWeeksData, sportWeeksData, onUpload, onCa
   }
 
   const handleUpload = async () => {
+    if (isDaily) {
+      // Daily month upload
+      if (!dailyMonth || !dailyYear) { setMsg({ t: 'error', m: 'Select month and year' }); return }
+      const missing = DAILY_FILES.filter(f => !dailyFiles[f.key])
+      if (missing.length) { setMsg({ t: 'error', m: `${missing.length} files missing: ${missing.map(f => f.name).join(', ')}` }); return }
+      setLoading(true)
+      try {
+        const fd = {}; Object.entries(dailyFiles).forEach(([k, v]) => fd[k] = v.data)
+        const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+        const mLabel = `${monthNames[parseInt(dailyMonth) - 1]} ${dailyYear}`
+        const proc = processDailyMonthData(fd, dailyMonthKey, mLabel)
+        await onDailyUpload(proc)
+        setMsg({ t: 'success', m: `${mLabel} uploaded! (${proc.days} days)` })
+        setDailyFiles({})
+      } catch (err) { console.error(err); setMsg({ t: 'error', m: 'Error: ' + err.message }) }
+      setLoading(false)
+      return
+    }
     if (!week || !dateFrom || !dateTo) { setMsg({ t: 'error', m: 'Enter week number and select dates' }); return }
     const missing = curFILES.filter(f => !curFiles[f.key])
     console.log('[Sport Debug] Upload - Section:', uploadSection)
@@ -1299,7 +1442,7 @@ const UploadPage = ({ weeksData, casinoWeeksData, sportWeeksData, onUpload, onCa
       <Section title="Upload Week Data" theme={C}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
           <div style={{ display: 'flex', gap: '4px' }}>
-            {[{ id: 'main', label: 'Main Dashboard', icon: 'chart' }, { id: 'casino', label: 'Casino', icon: 'casino' }, { id: 'sport', label: 'Sport', icon: 'sport' }].map(s => (
+            {[{ id: 'main', label: 'Main Dashboard', icon: 'chart' }, { id: 'casino', label: 'Casino', icon: 'casino' }, { id: 'sport', label: 'Sport', icon: 'sport' }, { id: 'daily', label: 'Daily', icon: 'calendar' }].map(s => (
               <button key={s.id} onClick={() => { setUploadSection(s.id); setMsg(null) }} style={{ background: uploadSection === s.id ? C.primary : 'transparent', color: uploadSection === s.id ? C.primaryText : C.textSec, border: `1px solid ${uploadSection === s.id ? C.primary : C.border}`, borderRadius: '6px', padding: '8px 16px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}><Icon name={s.icon} size={14} color={uploadSection === s.id ? C.primaryText : C.textSec} />{!mob && s.label}</button>
             ))}
           </div>
@@ -1308,20 +1451,46 @@ const UploadPage = ({ weeksData, casinoWeeksData, sportWeeksData, onUpload, onCa
         
         {/* UPLOAD MASSIVO - Separate inputs for each section */}
         <div style={{ background: C.primary + '10', border: `2px dashed ${C.primary}`, borderRadius: '12px', padding: '24px', marginBottom: '24px', textAlign: 'center' }}>
-          <h3 style={{ color: C.accent, margin: '0 0 8px 0', fontSize: '16px', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}><Icon name="upload" size={18} color={C.accent} /> Bulk Upload {isCasino ? '(Casino)' : isSport ? '(Sport)' : ''}</h3>
+          <h3 style={{ color: C.accent, margin: '0 0 8px 0', fontSize: '16px', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}><Icon name="upload" size={18} color={C.accent} /> Bulk Upload {isCasino ? '(Casino)' : isSport ? '(Sport)' : isDaily ? '(Daily / Monthly)' : ''}</h3>
           <p style={{ color: C.textMuted, fontSize: '13px', margin: '0 0 16px 0' }}>Select all {totalRequired} Excel files at once — they will be matched automatically</p>
           {isMain && <input ref={bulkInputRef} type="file" accept=".xlsx,.xls" multiple onChange={handleBulkUpload} style={{ display: 'none' }} />}
           {isCasino && <input ref={casinoBulkRef} type="file" accept=".xlsx,.xls" multiple onChange={handleBulkUpload} style={{ display: 'none' }} />}
           {isSport && <input ref={sportBulkRef} type="file" accept=".xlsx,.xls" multiple onChange={handleBulkUpload} style={{ display: 'none' }} />}
+          {isDaily && <input ref={dailyBulkRef} type="file" accept=".xlsx,.xls" multiple onChange={handleBulkUpload} style={{ display: 'none' }} />}
           <button onClick={() => {
             if (isMain) bulkInputRef.current?.click();
             else if (isCasino) casinoBulkRef.current?.click();
             else if (isSport) sportBulkRef.current?.click();
+            else if (isDaily) dailyBulkRef.current?.click();
           }} disabled={loading} style={{ background: C.primary, color: C.primaryText, border: 'none', borderRadius: '8px', padding: '12px 32px', fontSize: '14px', fontWeight: 800, cursor: 'pointer' }}>
             {loading ? 'Processing...' : 'Select All Files'}
           </button>
         </div>
 
+        {isDaily ? (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+            <div>
+              <label style={{ color: C.textMuted, fontSize: '11px', display: 'block', marginBottom: '6px', textTransform: 'uppercase', fontWeight: 600 }}>Month</label>
+              <select value={dailyMonth} onChange={e => setDailyMonth(e.target.value)} style={{ width: '100%', background: C.bg, border: `1px solid ${C.border}`, borderRadius: '8px', padding: '12px', color: C.text, fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}>
+                {['01','02','03','04','05','06','07','08','09','10','11','12'].map((m, i) => (
+                  <option key={m} value={m}>{['January','February','March','April','May','June','July','August','September','October','November','December'][i]}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label style={{ color: C.textMuted, fontSize: '11px', display: 'block', marginBottom: '6px', textTransform: 'uppercase', fontWeight: 600 }}>Year</label>
+              <select value={dailyYear} onChange={e => setDailyYear(e.target.value)} style={{ width: '100%', background: C.bg, border: `1px solid ${C.border}`, borderRadius: '8px', padding: '12px', color: C.text, fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}>
+                {['2025', '2026', '2027'].map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{ color: C.textMuted, fontSize: '11px', display: 'block', marginBottom: '6px', textTransform: 'uppercase', fontWeight: 600 }}>Preview</label>
+              <div style={{ background: C.card, border: `1px solid ${exists ? C.orange : C.primary}`, borderRadius: '8px', padding: '12px', color: exists ? C.orange : C.accent, fontSize: '14px', fontWeight: 700 }}>
+                📅 {dailyMonthKey}{exists ? ' ⚠ Will overwrite' : ''}
+              </div>
+            </div>
+          </div>
+        ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '16px', marginBottom: '24px' }}>
           <div>
             <label style={{ color: C.textMuted, fontSize: '11px', display: 'block', marginBottom: '6px', textTransform: 'uppercase', fontWeight: 600 }}>Week</label>
@@ -1338,6 +1507,7 @@ const UploadPage = ({ weeksData, casinoWeeksData, sportWeeksData, onUpload, onCa
           </div>
           {dates && <div><label style={{ color: C.textMuted, fontSize: '11px', display: 'block', marginBottom: '6px', textTransform: 'uppercase', fontWeight: 600 }}>Preview</label><div style={{ background: C.card, border: `1px solid ${C.primary}`, borderRadius: '8px', padding: '12px', color: C.accent, fontSize: '14px', fontWeight: 700 }}>{dates}</div></div>}
         </div>
+        )}
 
         <details style={{ marginBottom: '24px' }}>
           <summary style={{ color: C.textSec, fontSize: '13px', cursor: 'pointer', fontWeight: 700, marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}><Icon name="box" size={14} color={C.textSec} /> Single File Upload (click to expand)</summary>
@@ -1362,7 +1532,7 @@ const UploadPage = ({ weeksData, casinoWeeksData, sportWeeksData, onUpload, onCa
 
         <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginBottom: '40px' }}>
           <button onClick={handleUpload} disabled={loading || uploadedCount < totalRequired} style={{ background: uploadedCount >= totalRequired ? C.primary : C.border, color: C.primaryText, border: 'none', borderRadius: '8px', padding: '14px 32px', fontSize: '14px', fontWeight: 800, cursor: uploadedCount >= totalRequired ? 'pointer' : 'not-allowed' }}>
-            {loading ? 'Processing...' : exists ? `Update Week ${week}` : `Upload Week ${week || '?'}`}
+            {loading ? 'Processing...' : isDaily ? (exists ? `Update ${dailyMonthKey}` : `Upload ${dailyMonthKey}`) : exists ? `Update Week ${week}` : `Upload Week ${week || '?'}`}
           </button>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <div style={{ width: '120px', height: '6px', background: C.border, borderRadius: '3px', overflow: 'hidden' }}><div style={{ width: `${(uploadedCount / totalRequired) * 100}%`, height: '100%', background: C.primary, transition: 'width 0.3s' }} /></div>
@@ -1372,9 +1542,24 @@ const UploadPage = ({ weeksData, casinoWeeksData, sportWeeksData, onUpload, onCa
 
         {Object.keys(curWeeksData).length > 0 && (
           <>
-            <h3 style={{ color: C.text, fontSize: '16px', margin: '0 0 16px 0', fontWeight: 700 }}>Uploaded Weeks {isCasino ? '(Casino)' : isSport ? '(Sport)' : ''}</h3>
+            <h3 style={{ color: C.text, fontSize: '16px', margin: '0 0 16px 0', fontWeight: 700 }}>{isDaily ? 'Uploaded Months (Daily)' : `Uploaded Weeks ${isCasino ? '(Casino)' : isSport ? '(Sport)' : ''}`}</h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
-              {Object.values(curWeeksData).sort((a, b) => b.weekNumber - a.weekNumber).map(w => (
+              {isDaily ? (
+                Object.values(curWeeksData).sort((a, b) => (b.monthKey || '').localeCompare(a.monthKey || '')).map(m => (
+                  <div key={m.monthKey} style={{ background: C.card, borderRadius: '10px', padding: '16px', border: `1px solid ${C.border}`, position: 'relative' }}>
+                    <button onClick={() => onDailyDelete(m.monthKey)} style={{ position: 'absolute', top: '10px', right: '10px', background: 'transparent', color: C.danger, border: 'none', fontSize: '14px', cursor: 'pointer', opacity: 0.6 }}>✕</button>
+                    <h4 style={{ color: C.accent, margin: '0 0 4px 0', fontSize: '18px', fontWeight: 800 }}>📅 {m.monthLabel}</h4>
+                    <p style={{ color: C.textMuted, margin: '0 0 12px 0', fontSize: '12px' }}>{m.days} days • Real daily data</p>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '12px' }}>
+                      <div><span style={{ color: C.textMuted }}>Turnover</span><p style={{ color: C.text, margin: 0, fontWeight: 700 }}>{fmtCurrency(m.turnover)}</p></div>
+                      <div><span style={{ color: C.textMuted }}>GGR</span><p style={{ color: C.success, margin: 0, fontWeight: 700 }}>{fmtCurrency(m.ggr)}</p></div>
+                      <div><span style={{ color: C.textMuted }}>GWM</span><p style={{ color: C.text, margin: 0, fontWeight: 700 }}>{m.gwm}%</p></div>
+                      <div><span style={{ color: C.textMuted }}>Actives</span><p style={{ color: C.text, margin: 0, fontWeight: 700 }}>{fmtNum(m.activeUsers)}</p></div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+              Object.values(curWeeksData).sort((a, b) => b.weekNumber - a.weekNumber).map(w => (
                 <div key={w.weekNumber} style={{ background: C.card, borderRadius: '10px', padding: '16px', border: `1px solid ${C.border}`, position: 'relative' }}>
                   <button onClick={() => isMain ? onDelete(w.weekNumber) : isCasino ? onCasinoDelete(w.weekNumber) : onSportDelete(w.weekNumber)} style={{ position: 'absolute', top: '10px', right: '10px', background: 'transparent', color: C.danger, border: 'none', fontSize: '14px', cursor: 'pointer', opacity: 0.6 }}>✕</button>
                   <h4 style={{ color: C.accent, margin: '0 0 4px 0', fontSize: '20px', fontWeight: 800 }}>W{w.weekNumber}</h4>
@@ -1391,7 +1576,8 @@ const UploadPage = ({ weeksData, casinoWeeksData, sportWeeksData, onUpload, onCa
                     <div><span style={{ color: C.textMuted }}>Actives</span><p style={{ color: C.text, margin: 0, fontWeight: 700 }}>{fmtNum(w.activeUsers)}</p></div>
                   </div>
                 </div>
-              ))}
+              ))
+              )}
             </div>
           </>
         )}
@@ -1403,7 +1589,7 @@ const UploadPage = ({ weeksData, casinoWeeksData, sportWeeksData, onUpload, onCa
 // ═══════════════════════════════════════════════════════════════════════════════
 // GENERAL SUMMARY — ALL + MONTH (Calendar) + CUSTOM
 // ═══════════════════════════════════════════════════════════════════════════════
-const Monthly = ({ weeksData, theme }) => {
+const Monthly = ({ weeksData, dailyMonthsData = {}, theme }) => {
   const C = theme
   const ww = useWindowWidth()
   const mob = ww < 768
@@ -1415,7 +1601,7 @@ const Monthly = ({ weeksData, theme }) => {
   const [selectedMonth, setSelectedMonth] = useState('')
   const [qaChannel, setQaChannel] = useState('ALL')
 
-  if (!allWeeks.length) return <div style={{ padding: '60px', textAlign: 'center' }}><p style={{ color: C.textMuted, fontSize: '16px' }}>No data available</p></div>
+  if (!allWeeks.length && !Object.keys(dailyMonthsData).length) return <div style={{ padding: '60px', textAlign: 'center' }}><p style={{ color: C.textMuted, fontSize: '16px' }}>No data available</p></div>
 
   // ── Build calendar month options from dailyStats ──
   const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
@@ -1431,6 +1617,14 @@ const Monthly = ({ weeksData, theme }) => {
     })
   })
   const calMonthOptions = Object.values(calendarMonths).sort((a, b) => a.key.localeCompare(b.key))
+  // Also add months from dailyMonthsData that might not be in weekly data
+  Object.values(dailyMonthsData).forEach(dm => {
+    if (dm.monthKey && !calendarMonths[dm.monthKey]) {
+      const [y, m] = dm.monthKey.split('-')
+      calMonthOptions.push({ key: dm.monthKey, label: dm.monthLabel || `${monthNames[parseInt(m) - 1]} ${y}`, year: parseInt(y), month: parseInt(m) })
+    }
+  })
+  calMonthOptions.sort((a, b) => a.key.localeCompare(b.key))
 
   // ── Aggregazione helper ──
   const aggregateWeeks = (weeks) => {
@@ -1530,54 +1724,122 @@ const Monthly = ({ weeksData, theme }) => {
     current = aggregateWeeks(filtered.length ? filtered : allWeeks)
     periodLabel = customFrom && customTo ? `Week ${customFrom} - ${customTo}` : `All Weeks`
   } else if (filterMode === 'month' && selectedMonth) {
-    // Calendar month: filter weeks that have any days in the selected month
-    const ym = selectedMonth // "YYYY-MM"
-    const weeksInMonth = allWeeks.filter(w =>
-      (w.dailyStats || []).some(d => d.dateKey && d.dateKey.startsWith(ym))
-    )
-    if (weeksInMonth.length) {
-      // Aggregate only the daily data that falls within the calendar month
-      const monthDailyAgg = { reg: 0, ftds: 0, dep: 0, wit: 0, bonus: 0, logins: 0, days: [] }
+    const ym = selectedMonth
+    const realDaily = dailyMonthsData[ym]
+
+    if (realDaily && realDaily._isRealDailyData) {
+      // ═══ USE REAL DAILY DATA ═══
+      // Get weekly REG/FTD data from weekly uploads that overlap this month
+      const weeksInMonth = allWeeks.filter(w =>
+        (w.dailyStats || []).some(d => d.dateKey && d.dateKey.startsWith(ym))
+      )
+      // Aggregate daily REG/FTDs/Deposits/Withdrawals from weekly dailyStats
+      const weeklyDailyAgg = { reg: 0, ftds: 0, dep: 0, wit: 0, bonus: 0, logins: 0 }
+      const weeklyDailyDays = []
       weeksInMonth.forEach(w => {
         (w.dailyStats || []).forEach(d => {
           if (d.dateKey && d.dateKey.startsWith(ym)) {
-            monthDailyAgg.reg += d.registrations || 0
-            monthDailyAgg.ftds += d.ftds || 0
-            monthDailyAgg.dep += d.deposits || 0
-            monthDailyAgg.wit += d.withdrawals || 0
-            monthDailyAgg.bonus += d.bonus || 0
-            monthDailyAgg.logins += d.logins || 0
-            monthDailyAgg.days.push(d)
+            weeklyDailyAgg.reg += d.registrations || 0
+            weeklyDailyAgg.ftds += d.ftds || 0
+            weeklyDailyAgg.dep += d.deposits || 0
+            weeklyDailyAgg.wit += d.withdrawals || 0
+            weeklyDailyAgg.bonus += d.bonus || 0
+            weeklyDailyAgg.logins += d.logins || 0
+            weeklyDailyDays.push(d)
           }
         })
       })
-      // For weekly-only KPIs, assign week to month if majority of days (>=4) fall in it
+      // Quality Acquisition from weekly data (best available)
       const weeksAssigned = allWeeks.filter(w => {
         const daysInMonth = (w.dailyStats || []).filter(d => d.dateKey && d.dateKey.startsWith(ym)).length
         return daysInMonth >= 4
       })
-      // Use standard aggregation for weekly KPIs, override daily-based ones
-      const base = aggregateWeeks(weeksAssigned.length ? weeksAssigned : weeksInMonth)
-      if (base) {
-        base.reg = monthDailyAgg.reg
-        base.ftds = monthDailyAgg.ftds
-        base.dep = monthDailyAgg.dep
-        base.wit = monthDailyAgg.wit
-        base.netDep = monthDailyAgg.dep - monthDailyAgg.wit
-        base.bonus = monthDailyAgg.bonus
-        base.logins = monthDailyAgg.logins
-        base.conv = base.reg > 0 ? parseFloat((base.ftds / base.reg * 100).toFixed(1)) : 0
-        base.bonusRoi = base.bonus > 0 ? parseFloat((base.ggr / base.bonus).toFixed(1)) : 0
-        base.bonusPctGgr = base.ggr > 0 ? parseFloat((base.bonus / base.ggr * 100).toFixed(1)) : 0
-        base._isCalendarMonth = true
-        base._monthDays = monthDailyAgg.days.sort((a, b) => (a.dateKey || '').localeCompare(b.dateKey || ''))
+      const weeklyBase = aggregateWeeks(weeksAssigned.length ? weeksAssigned : weeksInMonth.length ? weeksInMonth : allWeeks.slice(0, 1))
+
+      current = {
+        weeks: weeksAssigned.length ? weeksAssigned : weeksInMonth,
+        weekCount: (weeksAssigned.length || weeksInMonth.length),
+        // From real daily data (precise)
+        turnover: realDaily.turnover,
+        ggr: realDaily.ggr,
+        gwm: realDaily.gwm,
+        betBonus: realDaily.betBonus,
+        numTicket: realDaily.numTicket,
+        activeUsers: realDaily.activeUsers,
+        turn: realDaily.turnover,
+        // From weekly dailyStats (precise for calendar month)
+        reg: weeklyDailyAgg.reg,
+        ftds: weeklyDailyAgg.ftds,
+        dep: weeklyDailyAgg.dep,
+        wit: weeklyDailyAgg.wit,
+        netDep: weeklyDailyAgg.dep - weeklyDailyAgg.wit,
+        bonus: weeklyDailyAgg.bonus,
+        logins: weeklyDailyAgg.logins,
+        conv: weeklyDailyAgg.reg > 0 ? parseFloat((weeklyDailyAgg.ftds / weeklyDailyAgg.reg * 100).toFixed(1)) : 0,
+        bonusRoi: realDaily.betBonus > 0 ? parseFloat((realDaily.ggr / realDaily.betBonus).toFixed(1)) : 0,
+        bonusPctGgr: realDaily.ggr > 0 ? parseFloat((realDaily.betBonus / realDaily.ggr * 100).toFixed(1)) : 0,
+        avgAct: realDaily.activeUsers,
+        // Channel performance from Padre file (precise)
+        channelData: realDaily.channelPerformance || [],
+        // From weekly aggregation (best available)
+        qualityData: weeklyBase ? weeklyBase.qualityData : [],
+        productData: weeklyBase ? weeklyBase.productData : [],
+        gender: weeklyBase ? weeklyBase.gender : { male: 0, female: 0, _maleCount: 0, _femaleCount: 0 },
+        ageGroups: weeklyBase ? weeklyBase.ageGroups : [],
+        // Real daily chart data
+        _isRealDailyData: true,
+        _dailyStats: realDaily.dailyStats,
+        _channelDaily: realDaily.channelDaily,
+        _isCalendarMonth: true,
+        _monthDays: realDaily.dailyStats
       }
-      current = base
+      periodLabel = realDaily.monthLabel || ym
     } else {
-      current = null
+      // ═══ WEEKLY FALLBACK (no real daily data) ═══
+      const weeksInMonth = allWeeks.filter(w =>
+        (w.dailyStats || []).some(d => d.dateKey && d.dateKey.startsWith(ym))
+      )
+      if (weeksInMonth.length) {
+        const monthDailyAgg = { reg: 0, ftds: 0, dep: 0, wit: 0, bonus: 0, logins: 0, days: [] }
+        weeksInMonth.forEach(w => {
+          (w.dailyStats || []).forEach(d => {
+            if (d.dateKey && d.dateKey.startsWith(ym)) {
+              monthDailyAgg.reg += d.registrations || 0
+              monthDailyAgg.ftds += d.ftds || 0
+              monthDailyAgg.dep += d.deposits || 0
+              monthDailyAgg.wit += d.withdrawals || 0
+              monthDailyAgg.bonus += d.bonus || 0
+              monthDailyAgg.logins += d.logins || 0
+              monthDailyAgg.days.push(d)
+            }
+          })
+        })
+        const weeksAssigned = allWeeks.filter(w => {
+          const daysInMonth = (w.dailyStats || []).filter(d => d.dateKey && d.dateKey.startsWith(ym)).length
+          return daysInMonth >= 4
+        })
+        const base = aggregateWeeks(weeksAssigned.length ? weeksAssigned : weeksInMonth)
+        if (base) {
+          base.reg = monthDailyAgg.reg
+          base.ftds = monthDailyAgg.ftds
+          base.dep = monthDailyAgg.dep
+          base.wit = monthDailyAgg.wit
+          base.netDep = monthDailyAgg.dep - monthDailyAgg.wit
+          base.bonus = monthDailyAgg.bonus
+          base.logins = monthDailyAgg.logins
+          base.conv = base.reg > 0 ? parseFloat((base.ftds / base.reg * 100).toFixed(1)) : 0
+          base.bonusRoi = base.bonus > 0 ? parseFloat((base.ggr / base.bonus).toFixed(1)) : 0
+          base.bonusPctGgr = base.ggr > 0 ? parseFloat((base.bonus / base.ggr * 100).toFixed(1)) : 0
+          base._isCalendarMonth = true
+          base._monthDays = monthDailyAgg.days.sort((a, b) => (a.dateKey || '').localeCompare(b.dateKey || ''))
+        }
+        current = base
+      } else {
+        current = null
+      }
+      const mo = calMonthOptions.find(m => m.key === ym)
+      periodLabel = mo ? mo.label : ym
     }
-    const mo = calMonthOptions.find(m => m.key === ym)
-    periodLabel = mo ? mo.label : ym
   }
 
   if (filterMode === 'month' && !selectedMonth) {
@@ -1587,14 +1849,32 @@ const Monthly = ({ weeksData, theme }) => {
 
   if (!current) return <div style={{ padding: '60px', textAlign: 'center' }}><p style={{ color: C.textMuted }}>No data for selection</p></div>
 
-  // Chart data
-  const trend = current.weeks.map(w => ({ week: `W${w.weekNumber}`, REG: w.registrations, FTDs: w.ftds, GGR: Math.round(w.ggr / 1000), Actives: w.activeUsers }))
-  const cashFlowTrend = current.weeks.map(w => ({ week: `W${w.weekNumber}`, Deposits: w.totalDeposits || 0, Withdrawals: w.totalWithdrawals || 0, NetDeposit: (w.totalDeposits || 0) - (w.totalWithdrawals || 0) }))
-  const bonusTrend = current.weeks.map(w => ({ week: `W${w.weekNumber}`, Bonus: w.totalBonus || 0 }))
+  // Chart data — use real daily data if available, otherwise weekly trend
+  let trend, cashFlowTrend, bonusTrend, dailyTurnoverTrend
+  if (current._isRealDailyData && current._dailyStats) {
+    const ds = current._dailyStats
+    trend = ds.map(d => ({ week: d.date, REG: d.registrations || 0, FTDs: d.ftds || 0 }))
+    // Merge weekly daily data for REG/FTDs with real daily data for Turnover/GGR
+    const weeklyDayMap = {}
+    ;(current._monthDays || []).forEach(d => { if (d.dateKey) weeklyDayMap[d.dateKey] = d })
+    dailyTurnoverTrend = ds.map(d => {
+      const wd = weeklyDayMap[d.dateKey] || {}
+      return { week: d.date, Turnover: Math.round(d.turnover / 1000), GGR: Math.round(d.ggr / 1000), Attivi: d.contiAttivi, REG: wd.registrations || 0, FTDs: wd.ftds || 0 }
+    })
+    cashFlowTrend = (current._monthDays || []).filter(d => d.dateKey).sort((a, b) => a.dateKey.localeCompare(b.dateKey)).map(d => ({
+      week: formatDateLabel(d.dateKey), Deposits: d.deposits || 0, Withdrawals: d.withdrawals || 0, NetDeposit: (d.deposits || 0) - (d.withdrawals || 0)
+    }))
+    bonusTrend = ds.map(d => ({ week: d.date, Bonus: d.betBonus || 0 }))
+  } else {
+    trend = (current.weeks || []).map(w => ({ week: `W${w.weekNumber}`, REG: w.registrations, FTDs: w.ftds, GGR: Math.round(w.ggr / 1000), Actives: w.activeUsers }))
+    cashFlowTrend = (current.weeks || []).map(w => ({ week: `W${w.weekNumber}`, Deposits: w.totalDeposits || 0, Withdrawals: w.totalWithdrawals || 0, NetDeposit: (w.totalDeposits || 0) - (w.totalWithdrawals || 0) }))
+    bonusTrend = (current.weeks || []).map(w => ({ week: `W${w.weekNumber}`, Bonus: w.totalBonus || 0 }))
+    dailyTurnoverTrend = null
+  }
 
   // QA per-week comparison
-  const qaWeeks = current.weeks.slice(-10)
-  const qaChannelList = current.qualityData.filter(c => !c.isTotal).map(c => c.channel)
+  const qaWeeks = (current.weeks || []).slice(-10)
+  const qaChannelList = (current.qualityData || []).filter(c => !c.isTotal).map(c => c.channel)
   const qaCompareData = qaWeeks.map(w => {
     const qa = w.qualityAcquisition || []
     if (qaChannel === 'ALL') {
@@ -1639,8 +1919,9 @@ const Monthly = ({ weeksData, theme }) => {
 
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           <span style={{ color: C.accent, fontSize: '14px', fontWeight: 800 }}>{periodLabel}</span>
-          <span style={{ color: C.textMuted, fontSize: '11px', background: C.bg, padding: '4px 10px', borderRadius: '4px', fontWeight: 700 }}>{current.weekCount}w{current._isCalendarMonth ? ` • ${current._monthDays?.length || 0}d` : ''}</span>
-          {current._isCalendarMonth && <span style={{ color: C.orange, fontSize: '10px', fontWeight: 600 }}>📅 Calendar Month</span>}
+          <span style={{ color: C.textMuted, fontSize: '11px', background: C.bg, padding: '4px 10px', borderRadius: '4px', fontWeight: 700 }}>{current._isRealDailyData ? `${current._dailyStats?.length || 0}d` : `${current.weekCount || 0}w`}{current._isCalendarMonth && !current._isRealDailyData ? ` • ${current._monthDays?.length || 0}d` : ''}</span>
+          {current._isRealDailyData && <span style={{ color: C.success, fontSize: '10px', fontWeight: 700, background: C.successDim, padding: '3px 8px', borderRadius: '4px' }}>📊 Real Daily Data</span>}
+          {current._isCalendarMonth && !current._isRealDailyData && <span style={{ color: C.orange, fontSize: '10px', fontWeight: 600 }}>📅 Weekly Approx</span>}
         </div>
       </div>
 
@@ -1656,25 +1937,50 @@ const Monthly = ({ weeksData, theme }) => {
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : 'repeat(auto-fit, minmax(380px, 1fr))', gap: 'clamp(16px, 2vw, 24px)', marginBottom: 'clamp(24px, 3vw, 40px)' }}>
-          <ChartCard title="Registration & FTD Trend" theme={C}>
-            <AreaChart data={trend}><defs><linearGradient id="gR" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.primary} stopOpacity={0.3} /><stop offset="95%" stopColor={C.primary} stopOpacity={0} /></linearGradient><linearGradient id="gF" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.success} stopOpacity={0.3} /><stop offset="95%" stopColor={C.success} stopOpacity={0} /></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} /><YAxis tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} /><Tooltip content={<Tip theme={C} />} /><Legend /><Area type="monotone" dataKey="REG" stroke={C.primary} fill="url(#gR)" strokeWidth={2} /><Area type="monotone" dataKey="FTDs" stroke={C.success} fill="url(#gF)" strokeWidth={2} /></AreaChart>
-          </ChartCard>
-          <ChartCard title="GGR Trend (€K)" theme={C}>
-            <ComposedChart data={trend}><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} /><YAxis tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} /><Tooltip content={<Tip theme={C} />} /><Bar dataKey="GGR" fill={C.primary} radius={[4, 4, 0, 0]} /><Line type="monotone" dataKey="Actives" stroke={C.blue} strokeWidth={2} dot={{ fill: C.blue, r: 3 }} /></ComposedChart>
-          </ChartCard>
+          {dailyTurnoverTrend ? (
+            <>
+              <ChartCard title="Daily Turnover & GGR (€K)" theme={C}>
+                <ComposedChart data={dailyTurnoverTrend}><defs><linearGradient id="gTurn" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.primary} stopOpacity={0.3} /><stop offset="95%" stopColor={C.primary} stopOpacity={0} /></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 9, fontWeight: 700 }} interval={2} /><YAxis tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><Tooltip content={<Tip theme={C} />} /><Legend /><Area type="monotone" dataKey="Turnover" stroke={C.primary} fill="url(#gTurn)" strokeWidth={2} name="Turnover €K" /><Line type="monotone" dataKey="GGR" stroke={C.success} strokeWidth={2} dot={{ fill: C.success, r: 2 }} name="GGR €K" /></ComposedChart>
+              </ChartCard>
+              <ChartCard title="Daily REG & FTDs" theme={C}>
+                <AreaChart data={dailyTurnoverTrend}><defs><linearGradient id="gRd" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.blue} stopOpacity={0.3} /><stop offset="95%" stopColor={C.blue} stopOpacity={0} /></linearGradient><linearGradient id="gFd" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.success} stopOpacity={0.3} /><stop offset="95%" stopColor={C.success} stopOpacity={0} /></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 9, fontWeight: 700 }} interval={2} /><YAxis tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><Tooltip content={<Tip theme={C} />} /><Legend /><Area type="monotone" dataKey="REG" stroke={C.blue} fill="url(#gRd)" strokeWidth={2} /><Area type="monotone" dataKey="FTDs" stroke={C.success} fill="url(#gFd)" strokeWidth={2} /></AreaChart>
+              </ChartCard>
+            </>
+          ) : (
+            <>
+              <ChartCard title="Registration & FTD Trend" theme={C}>
+                <AreaChart data={trend}><defs><linearGradient id="gR" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.primary} stopOpacity={0.3} /><stop offset="95%" stopColor={C.primary} stopOpacity={0} /></linearGradient><linearGradient id="gF" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.success} stopOpacity={0.3} /><stop offset="95%" stopColor={C.success} stopOpacity={0} /></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} /><YAxis tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} /><Tooltip content={<Tip theme={C} />} /><Legend /><Area type="monotone" dataKey="REG" stroke={C.primary} fill="url(#gR)" strokeWidth={2} /><Area type="monotone" dataKey="FTDs" stroke={C.success} fill="url(#gF)" strokeWidth={2} /></AreaChart>
+              </ChartCard>
+              <ChartCard title="GGR Trend (€K)" theme={C}>
+                <ComposedChart data={trend}><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} /><YAxis tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} /><Tooltip content={<Tip theme={C} />} /><Bar dataKey="GGR" fill={C.primary} radius={[4, 4, 0, 0]} /><Line type="monotone" dataKey="Actives" stroke={C.blue} strokeWidth={2} dot={{ fill: C.blue, r: 3 }} /></ComposedChart>
+              </ChartCard>
+            </>
+          )}
         </div>
 
-        <Table cols={[
-          { header: 'Week', accessor: 'weekNumber', format: v => <span style={{ color: C.accent, fontWeight: 800 }}>W{v}</span> },
-          { header: 'Date', accessor: 'dateRange' },
-          { header: 'REG', accessor: 'registrations', align: 'right', format: v => <b>{fmtNum(v)}</b> },
-          { header: 'FTDs', accessor: 'ftds', align: 'right', format: v => <b>{fmtNum(v)}</b> },
-          { header: 'Conv%', accessor: 'conversionRate', align: 'center', format: v => <b>{v}%</b> },
-          { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
-          { header: 'GGR', accessor: 'ggr', align: 'right', format: v => <span style={{ color: C.success, fontWeight: 800 }}>{fmtCurrency(v)}</span> },
-          { header: 'GWM', accessor: 'gwm', align: 'center', format: v => <b>{v}%</b> },
-          { header: 'Actives', accessor: 'activeUsers', align: 'right', format: v => <b>{fmtNum(v)}</b> }
-        ]} data={current.weeks} theme={C} />
+        {current._isRealDailyData && current._dailyStats ? (
+          <Table cols={[
+            { header: 'Date', accessor: 'date', format: v => <span style={{ color: C.accent, fontWeight: 800 }}>{v}</span> },
+            { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
+            { header: 'GGR', accessor: 'ggr', align: 'right', format: v => <span style={{ color: v >= 0 ? C.success : C.danger, fontWeight: 800 }}>{fmtCurrency(v)}</span> },
+            { header: 'Payout%', accessor: 'payout', align: 'center', format: v => <b>{v}%</b> },
+            { header: 'Tickets', accessor: 'numTicket', align: 'right', format: v => <b>{fmtNum(v)}</b> },
+            { header: 'Attivi', accessor: 'contiAttivi', align: 'right', format: v => <b>{fmtNum(v)}</b> },
+            { header: 'Bet Bonus', accessor: 'betBonus', align: 'right', format: v => <b>{fmtCurrency(v)}</b> }
+          ]} data={current._dailyStats} theme={C} />
+        ) : (
+          <Table cols={[
+            { header: 'Week', accessor: 'weekNumber', format: v => <span style={{ color: C.accent, fontWeight: 800 }}>W{v}</span> },
+            { header: 'Date', accessor: 'dateRange' },
+            { header: 'REG', accessor: 'registrations', align: 'right', format: v => <b>{fmtNum(v)}</b> },
+            { header: 'FTDs', accessor: 'ftds', align: 'right', format: v => <b>{fmtNum(v)}</b> },
+            { header: 'Conv%', accessor: 'conversionRate', align: 'center', format: v => <b>{v}%</b> },
+            { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
+            { header: 'GGR', accessor: 'ggr', align: 'right', format: v => <span style={{ color: C.success, fontWeight: 800 }}>{fmtCurrency(v)}</span> },
+            { header: 'GWM', accessor: 'gwm', align: 'center', format: v => <b>{v}%</b> },
+            { header: 'Actives', accessor: 'activeUsers', align: 'right', format: v => <b>{fmtNum(v)}</b> }
+          ]} data={current.weeks || []} theme={C} />
+        )}
       </Section>
 
       {/* ═══ CASH FLOW ═══ */}
@@ -3622,6 +3928,7 @@ export default function Dashboard() {
   const [weeks, setWeeks] = useState({})
   const [casinoWeeks, setCasinoWeeks] = useState({})
   const [sportWeeks, setSportWeeks] = useState({})
+  const [dailyMonths, setDailyMonths] = useState({})
   const [selected, setSelected] = useState(null)
   const [loading, setLoading] = useState(true)
   const [db, setDb] = useState({ connected: false })
@@ -3653,14 +3960,16 @@ export default function Dashboard() {
         const c = await checkConnection(); setDb(c)
         const r = await loadAllWeeksData()
         if (r.data && Object.keys(r.data).length) {
-          const mainW = {}, casinoW = {}, sportW = {}
+          const mainW = {}, casinoW = {}, sportW = {}, dailyM = {}
+          const dailyNumToKey = n => { const yr = 2025 + Math.floor((n - 1) / 12); const mo = ((n - 1) % 12) + 1; return `${yr}-${String(mo).padStart(2, '0')}` }
           Object.entries(r.data).forEach(([k, v]) => {
             const n = Number(k)
-            if (n >= 2000) sportW[n - 2000] = { ...v, weekNumber: n - 2000 }
+            if (n >= 3000) { const mk = dailyNumToKey(n - 3000); dailyM[mk] = { ...v, monthKey: mk } }
+            else if (n >= 2000) sportW[n - 2000] = { ...v, weekNumber: n - 2000 }
             else if (n >= 1000) casinoW[n - 1000] = { ...v, weekNumber: n - 1000 }
             else mainW[n] = v
           })
-          setWeeks(mainW); setCasinoWeeks(casinoW); setSportWeeks(sportW)
+          setWeeks(mainW); setCasinoWeeks(casinoW); setSportWeeks(sportW); setDailyMonths(dailyM)
           const mainKeys = Object.keys(mainW).map(Number); if (mainKeys.length) setSelected(Math.max(...mainKeys))
         }
       } catch (e) { console.error(e) }
@@ -3681,6 +3990,9 @@ export default function Dashboard() {
   const handleCasinoDelete = async n => { if (!confirm(`Delete Casino Week ${n}?`)) return; const { [n]: _, ...rest } = casinoWeeks; setCasinoWeeks(rest); await deleteWeekData(n + 1000) }
   const handleSportUpload = async d => { const u = { ...sportWeeks, [d.weekNumber]: d }; setSportWeeks(u); await saveWeekData({ ...d, weekNumber: d.weekNumber + 2000 }); setTab('sport') }
   const handleSportDelete = async n => { if (!confirm(`Delete Sport Week ${n}?`)) return; const { [n]: _, ...rest } = sportWeeks; setSportWeeks(rest); await deleteWeekData(n + 2000) }
+  const dailyKeyToNum = mk => { const [y, m] = mk.split('-').map(Number); return 3000 + (y - 2025) * 12 + m }
+  const handleDailyUpload = async d => { const u = { ...dailyMonths, [d.monthKey]: d }; setDailyMonths(u); await saveWeekData({ ...d, weekNumber: dailyKeyToNum(d.monthKey) }); setTab('general') }
+  const handleDailyDelete = async mk => { if (!confirm(`Delete ${mk}?`)) return; const { [mk]: _, ...rest } = dailyMonths; setDailyMonths(rest); await deleteWeekData(dailyKeyToNum(mk)) }
 
   const weekNums = Object.keys(weeks).map(Number).sort((a, b) => b - a)
   const current = selected ? weeks[selected] : null
@@ -3748,10 +4060,10 @@ export default function Dashboard() {
       </header>
       <main>
         {tab === 'weekly' && <Weekly data={current} prev={prev} allWeeks={weeks} theme={C} isAdmin={isAdmin} onSaveNote={handleSaveNote} />}
-        {tab === 'general' && <Monthly weeksData={weeks} theme={C} />}
+        {tab === 'general' && <Monthly weeksData={weeks} dailyMonthsData={dailyMonths} theme={C} />}
         {tab === 'casino' && <CasinoSection weeksData={casinoWeeks} theme={C} />}
         {tab === 'sport' && <SportSection weeksData={sportWeeks} theme={C} />}
-        {tab === 'upload' && <UploadPage weeksData={weeks} casinoWeeksData={casinoWeeks} sportWeeksData={sportWeeks} onUpload={handleUpload} onCasinoUpload={handleCasinoUpload} onSportUpload={handleSportUpload} onDelete={handleDelete} onCasinoDelete={handleCasinoDelete} onSportDelete={handleSportDelete} onLogout={handleLogout} onAdminAuth={() => setIsAdmin(true)} theme={C} />}
+        {tab === 'upload' && <UploadPage weeksData={weeks} casinoWeeksData={casinoWeeks} sportWeeksData={sportWeeks} dailyMonthsData={dailyMonths} onUpload={handleUpload} onCasinoUpload={handleCasinoUpload} onSportUpload={handleSportUpload} onDailyUpload={handleDailyUpload} onDelete={handleDelete} onCasinoDelete={handleCasinoDelete} onSportDelete={handleSportDelete} onDailyDelete={handleDailyDelete} onLogout={handleLogout} onAdminAuth={() => setIsAdmin(true)} theme={C} />}
       </main>
       {showTop && <button onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} style={{ position: 'fixed', bottom: '24px', right: '24px', width: '44px', height: '44px', borderRadius: '50%', background: C.primary, color: C.primaryText, border: 'none', fontSize: '20px', fontWeight: 800, cursor: 'pointer', boxShadow: '0 4px 12px rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999, transition: 'opacity 0.3s', opacity: 0.85 }} title="Back to top">↑</button>}
     </div>
