@@ -1978,19 +1978,7 @@ const Monthly = ({ weeksData, dailyMonthsData = {}, theme }) => {
           )}
         </div>
 
-        {current._isRealDailyData && current._dailyStats ? (
-          <Table cols={[
-            { header: 'Date', accessor: 'date', format: v => <span style={{ color: C.accent, fontWeight: 800 }}>{v}</span> },
-            { header: 'REG', accessor: 'registrations', align: 'right', format: v => <b>{fmtNum(v)}</b> },
-            { header: 'FTDs', accessor: 'ftds', align: 'right', format: v => <b>{fmtNum(v)}</b> },
-            { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
-            { header: 'GGR', accessor: 'ggr', align: 'right', format: v => <span style={{ color: v >= 0 ? C.success : C.danger, fontWeight: 800 }}>{fmtCurrency(v)}</span> },
-            { header: 'Payout%', accessor: 'payout', align: 'center', format: v => <b>{v}%</b> },
-            { header: 'Attivi', accessor: 'contiAttivi', align: 'right', format: v => <b>{fmtNum(v)}</b> },
-            { header: 'Deposits', accessor: 'deposits', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
-            { header: 'Withdrawals', accessor: 'withdrawals', align: 'right', format: v => <b style={{ color: C.danger }}>{fmtCurrency(v)}</b> }
-          ]} data={current._dailyStats} theme={C} />
-        ) : (
+        {current._isRealDailyData && current._dailyStats ? null : (
           <Table cols={[
             { header: 'Week', accessor: 'weekNumber', format: v => <span style={{ color: C.accent, fontWeight: 800 }}>W{v}</span> },
             { header: 'Date', accessor: 'dateRange' },
@@ -2005,8 +1993,24 @@ const Monthly = ({ weeksData, dailyMonthsData = {}, theme }) => {
         )}
       </Section>
 
+      {/* ═══ CHANNEL PERFORMANCE ═══ */}
+      <Section title="Channel Performance" theme={C}>
+        <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '1.5fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
+          <Table cols={[
+            { header: 'Channel', accessor: 'channel', format: v => <span style={{ fontWeight: 700 }}>{v}</span> },
+            { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
+            { header: 'GGR', accessor: 'ggr', align: 'right', format: v => <span style={{ color: C.success, fontWeight: 800 }}>{fmtCurrency(v)}</span> },
+            { header: 'GWM', accessor: 'gwm', align: 'center', format: v => <b>{v}%</b> },
+            { header: 'Rev Share', accessor: 'revShare', align: 'center', format: v => <span style={{ color: C.accent, fontWeight: 800 }}>{v}%</span> }
+          ]} data={current.channelData} theme={C} />
+          <ChartCard title="Revenue Share" height={220} theme={C}>
+            <PieChart><Pie data={current.channelData.filter(c => c.revShare > 0)} cx="50%" cy="50%" innerRadius={50} outerRadius={85} paddingAngle={2} dataKey="revShare" nameKey="channel">{current.channelData.map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}</Pie><Tooltip content={<Tip theme={C} />} /><Legend /></PieChart>
+          </ChartCard>
+        </div>
+      </Section>
+
       {/* ═══ CASH FLOW ═══ */}
-      <Section title="Weekly Cash Flow" theme={C}>
+      <Section title={current._isRealDailyData ? "Daily Cash Flow" : "Weekly Cash Flow"} theme={C}>
         <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : 'repeat(auto-fit, minmax(380px, 1fr))', gap: 'clamp(16px, 2vw, 24px)' }}>
           <ChartCard title="Deposits vs Withdrawals" height={300} theme={C}>
             <BarChart data={cashFlowTrend}><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} /><YAxis tick={{ fill: C.textMuted, fontSize: 11, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} /><Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} /><Legend /><Bar dataKey="Deposits" fill={C.success} radius={[4, 4, 0, 0]} /><Bar dataKey="Withdrawals" fill={C.danger} radius={[4, 4, 0, 0]} /></BarChart>
@@ -2035,110 +2039,22 @@ const Monthly = ({ weeksData, dailyMonthsData = {}, theme }) => {
         </div>
       </Section>
 
-      {/* ═══ QUALITY ACQUISITION ═══ */}
-      <Section title="Quality Acquisition" theme={C}>
-        <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '1.5fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
+      {/* ═══ DAILY DATA TABLE (bottom) ═══ */}
+      {current._isRealDailyData && current._dailyStats && current._dailyStats.length > 0 && (
+        <Section title="Daily Breakdown" theme={C}>
           <Table cols={[
-            { header: 'Channel', accessor: 'channel', format: (v, r) => <span style={{ fontWeight: r.isTotal ? 900 : 700, color: r.isTotal ? C.accent : C.text }}>{v}</span> },
-            { header: 'REG', accessor: 'reg', align: 'right', format: v => <b>{fmtNum(v)}</b> },
+            { header: 'Date', accessor: 'date', format: v => <span style={{ color: C.accent, fontWeight: 800 }}>{v}</span> },
+            { header: 'REG', accessor: 'registrations', align: 'right', format: v => <b>{fmtNum(v)}</b> },
             { header: 'FTDs', accessor: 'ftds', align: 'right', format: v => <b>{fmtNum(v)}</b> },
-            { header: 'Conv%', accessor: 'conv', align: 'center', format: (v, r) => <span style={{ color: r.isTotal ? C.accent : v >= 55 ? C.success : v >= 45 ? C.orange : C.danger, fontWeight: 800 }}>{v}%</span> }
-          ]} data={current.qualityData} theme={C} />
-          <div style={{ background: C.card, borderRadius: '12px', padding: 'clamp(16px, 2vw, 24px)', border: `1px solid ${C.border}` }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
-              <h4 style={{ color: C.textSec, margin: 0, fontSize: 'clamp(11px, 1.2vw, 13px)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>REG & FTDs per Week</h4>
-              <select value={qaChannel} onChange={e => setQaChannel(e.target.value)} style={{ background: C.bg, color: C.text, border: `1px solid ${C.primary}`, borderRadius: '6px', padding: '5px 10px', fontSize: '11px', fontWeight: 700, cursor: 'pointer', outline: 'none' }}>
-                <option value="ALL">All Channels</option>
-                {qaChannelList.map(ch => <option key={ch} value={ch}>{ch}</option>)}
-              </select>
-            </div>
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={qaCompareData} barGap={2} barCategoryGap="20%">
-                <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
-                <XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} />
-                <YAxis tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} />
-                <Tooltip content={<Tip theme={C} />} />
-                <Legend wrapperStyle={{ fontSize: '11px', fontWeight: 700 }} />
-                <Bar dataKey="REG" fill={C.primary} radius={[4, 4, 0, 0]} />
-                <Bar dataKey="FTDs" fill={C.success} radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      </Section>
-
-      {/* ═══ CHANNEL PERFORMANCE ═══ */}
-      <Section title="Channel Performance" theme={C}>
-        <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '1.5fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
-          <Table cols={[
-            { header: 'Channel', accessor: 'channel', format: v => <span style={{ fontWeight: 700 }}>{v}</span> },
             { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
-            { header: 'GGR', accessor: 'ggr', align: 'right', format: v => <span style={{ color: C.success, fontWeight: 800 }}>{fmtCurrency(v)}</span> },
-            { header: 'GWM', accessor: 'gwm', align: 'center', format: v => <b>{v}%</b> },
-            { header: 'Rev Share', accessor: 'revShare', align: 'center', format: v => <span style={{ color: C.accent, fontWeight: 800 }}>{v}%</span> }
-          ]} data={current.channelData} theme={C} />
-          <ChartCard title="Revenue Share" height={220} theme={C}>
-            <PieChart><Pie data={current.channelData.filter(c => c.revShare > 0)} cx="50%" cy="50%" innerRadius={50} outerRadius={85} paddingAngle={2} dataKey="revShare" nameKey="channel">{current.channelData.map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}</Pie><Tooltip content={<Tip theme={C} />} /><Legend /></PieChart>
-          </ChartCard>
-        </div>
-      </Section>
-
-      {/* ═══ PRODUCT PERFORMANCE ═══ */}
-      <Section title="Product Performance" theme={C}>
-        <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '1.5fr 1fr', gap: 'clamp(16px, 2vw, 24px)' }}>
-          <Table cols={[
-            { header: 'Product', accessor: 'product', format: v => <span style={{ fontWeight: 700 }}>{v}</span> },
-            { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
-            { header: 'GGR', accessor: 'ggr', align: 'right', format: v => <span style={{ color: C.success, fontWeight: 800 }}>{fmtCurrency(v)}</span> },
-            { header: 'Avg Active', accessor: 'actives', align: 'right', format: v => <b>{fmtNum(v)}</b> }
-          ]} data={current.productData} compact theme={C} />
-          <ChartCard title="GGR by Product" height={220} theme={C}>
-            <BarChart data={current.productData.slice(0, 6)} layout="vertical"><XAxis type="number" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} /><YAxis dataKey="product" type="category" width={mob ? 55 : 80} tick={{ fill: C.textMuted, fontSize: 9, fontWeight: 700 }} /><Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} /><Bar dataKey="ggr" fill={C.primary} radius={[0, 4, 4, 0]}>{current.productData.map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}</Bar></BarChart>
-          </ChartCard>
-        </div>
-      </Section>
-
-      {/* ═══ DEMOGRAPHICS ═══ */}
-      <Section title="Demographics" theme={C}>
-        <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '1fr 1.5fr', gap: 'clamp(16px, 2vw, 24px)' }}>
-          <div style={{ background: C.card, borderRadius: '12px', padding: 'clamp(20px, 3vw, 32px)', border: `1px solid ${C.border}` }}>
-            <h4 style={{ color: C.textMuted, margin: '0 0 24px 0', fontSize: '11px', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '1px' }}>Gender Split</h4>
-            <div style={{ display: 'flex', justifyContent: 'center', gap: '48px', marginBottom: '24px' }}>
-              <div style={{ textAlign: 'center' }}>
-                <p style={{ color: C.text, fontSize: 'clamp(32px, 4vw, 44px)', fontWeight: 900, margin: 0 }}>{current.gender.male}%</p>
-                <p style={{ color: C.textMuted, fontSize: '12px', fontWeight: 700, margin: '4px 0 0 0', textTransform: 'uppercase' }}>Male</p>
-                <p style={{ color: C.textMuted, fontSize: '11px', margin: '2px 0 0 0' }}>{fmtNum(current.gender._maleCount)}</p>
-              </div>
-              <div style={{ width: '1px', background: C.border }} />
-              <div style={{ textAlign: 'center' }}>
-                <p style={{ color: C.text, fontSize: 'clamp(32px, 4vw, 44px)', fontWeight: 900, margin: 0 }}>{current.gender.female}%</p>
-                <p style={{ color: C.textMuted, fontSize: '12px', fontWeight: 700, margin: '4px 0 0 0', textTransform: 'uppercase' }}>Female</p>
-                <p style={{ color: C.textMuted, fontSize: '11px', margin: '2px 0 0 0' }}>{fmtNum(current.gender._femaleCount)}</p>
-              </div>
-            </div>
-            <div style={{ display: 'flex', height: '8px', borderRadius: '4px', overflow: 'hidden' }}>
-              <div style={{ width: `${current.gender.male}%`, background: C.text, transition: 'width 0.5s' }} />
-              <div style={{ width: `${current.gender.female}%`, background: C.textMuted, transition: 'width 0.5s' }} />
-            </div>
-          </div>
-
-          <div style={{ background: C.card, borderRadius: '12px', padding: 'clamp(20px, 3vw, 32px)', border: `1px solid ${C.border}` }}>
-            <h4 style={{ color: C.textMuted, margin: '0 0 24px 0', fontSize: '11px', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '1px' }}>Age Distribution</h4>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {current.ageGroups.map((ag, i) => (
-                <div key={ag.range} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <span style={{ color: C.textMuted, fontSize: '12px', fontWeight: 700, minWidth: '50px' }}>{ag.range}</span>
-                  <div style={{ flex: 1, height: '24px', background: C.bg, borderRadius: '4px', overflow: 'hidden', position: 'relative' }}>
-                    <div style={{ width: `${Math.max(ag.percent, 2)}%`, height: '100%', background: C.chart[i % C.chart.length], borderRadius: '4px', transition: 'width 0.5s' }} />
-                  </div>
-                  <span style={{ color: C.text, fontSize: '13px', fontWeight: 800, minWidth: '40px', textAlign: 'right' }}>{ag.percent}%</span>
-                  <span style={{ color: C.textMuted, fontSize: '11px', minWidth: '45px', textAlign: 'right' }}>{fmtNum(ag.count)}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </Section>
+            { header: 'GGR', accessor: 'ggr', align: 'right', format: v => <span style={{ color: v >= 0 ? C.success : C.danger, fontWeight: 800 }}>{fmtCurrency(v)}</span> },
+            { header: 'Payout%', accessor: 'payout', align: 'center', format: v => <b>{v}%</b> },
+            { header: 'Attivi', accessor: 'contiAttivi', align: 'right', format: v => <b>{fmtNum(v)}</b> },
+            { header: 'Deposits', accessor: 'deposits', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
+            { header: 'Withdrawals', accessor: 'withdrawals', align: 'right', format: v => <b style={{ color: C.danger }}>{fmtCurrency(v)}</b> }
+          ]} data={current._dailyStats} theme={C} />
+        </Section>
+      )}
     </div>
   )
 }
