@@ -1748,6 +1748,13 @@ const Weekly = ({ data, prev, allWeeks = {}, theme, isAdmin = false, onSaveNote 
   const [timeRange, setTimeRange] = useState('daily')
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo] = useState('')
+  const [qaTimeRange, setQaTimeRange] = useState('daily')
+  const [qaCustomFrom, setQaCustomFrom] = useState('')
+  const [qaCustomTo, setQaCustomTo] = useState('')
+  const [cpTimeRange, setCpTimeRange] = useState('daily')
+  const [cpCustomFrom, setCpCustomFrom] = useState('')
+  const [cpCustomTo, setCpCustomTo] = useState('')
+  const [cpMetric, setCpMetric] = useState('ggr')
   const [editingNote, setEditingNote] = useState(false)
   const [noteText, setNoteText] = useState('')
 
@@ -1786,6 +1793,39 @@ const Weekly = ({ data, prev, allWeeks = {}, theme, isAdmin = false, onSaveNote 
   const prevCasinoGgr = prevCasinoProds.reduce((s, p) => s + (p.ggr || 0), 0)
   const prevGwmSport = prevSportTurn > 0 ? parseFloat((prevSportGgr / prevSportTurn * 100).toFixed(1)) : 0
   const prevGwmCasino = prevCasinoTurn > 0 ? parseFloat((prevCasinoGgr / prevCasinoTurn * 100).toFixed(1)) : 0
+
+  // Helper: get sorted & filtered weeks for trend charts
+  const getFilteredWeeks = (tr, cFrom, cTo) => {
+    const sorted = Object.values(allWeeks).sort((a, b) => a.weekNumber - b.weekNumber)
+    if (tr === 'custom' && cFrom && cTo) return sorted.filter(w => w.weekNumber >= parseInt(cFrom) && w.weekNumber <= parseInt(cTo))
+    return sorted
+  }
+  const availWeekNums = Object.keys(allWeeks).map(Number).sort((a, b) => a - b)
+
+  // Reusable custom week range selector
+  const WeekRangeSelector = ({ from, setFrom, to, setTo }) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
+      <span style={{ color: C.textMuted, fontSize: '11px', fontWeight: 600 }}>From W</span>
+      <select value={from} onChange={e => setFrom(e.target.value)} style={{ background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: '5px', padding: '4px 8px', fontSize: '11px', fontWeight: 700, cursor: 'pointer', outline: 'none' }}>
+        <option value="">--</option>
+        {availWeekNums.map(w => <option key={w} value={w}>{w}</option>)}
+      </select>
+      <span style={{ color: C.textMuted, fontSize: '11px', fontWeight: 600 }}>to W</span>
+      <select value={to} onChange={e => setTo(e.target.value)} style={{ background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: '5px', padding: '4px 8px', fontSize: '11px', fontWeight: 700, cursor: 'pointer', outline: 'none' }}>
+        <option value="">--</option>
+        {availWeekNums.map(w => <option key={w} value={w}>{w}</option>)}
+      </select>
+    </div>
+  )
+
+  // Reusable time range toggle buttons
+  const TimeToggle = ({ value, onChange }) => (
+    <div style={{ display: 'flex', gap: '4px' }}>
+      {['daily', 'weekly', 'custom'].map(tr => (
+        <button key={tr} onClick={() => onChange(tr)} style={{ background: value === tr ? C.primary : 'transparent', color: value === tr ? C.primaryText : C.textSec, border: `1px solid ${value === tr ? C.primary : C.border}`, borderRadius: '5px', padding: '4px 10px', fontSize: '10px', fontWeight: 700, cursor: 'pointer', textTransform: 'uppercase' }}>{tr}</button>
+      ))}
+    </div>
+  )
 
   return (
     <div id="weekly-report" style={{ padding: 'clamp(20px, 3vw, 48px)' }}>
@@ -1890,32 +1930,12 @@ const Weekly = ({ data, prev, allWeeks = {}, theme, isAdmin = false, onSaveNote 
         <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : 'repeat(auto-fit, minmax(380px, 1fr))', gap: 'clamp(16px, 2vw, 24px)', marginBottom: 'clamp(20px, 2.5vw, 28px)' }}>
           <div style={{ background: C.card, borderRadius: '12px', padding: 'clamp(16px, 2vw, 24px)', border: `1px solid ${C.border}` }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                {['daily', 'weekly', 'custom'].map(tr => (
-                  <button key={tr} onClick={() => setTimeRange(tr)} style={{ background: timeRange === tr ? C.primary : 'transparent', color: timeRange === tr ? C.primaryText : C.textSec, border: `1px solid ${timeRange === tr ? C.primary : C.border}`, borderRadius: '5px', padding: '4px 10px', fontSize: '10px', fontWeight: 700, cursor: 'pointer', textTransform: 'uppercase' }}>{tr}</button>
-                ))}
-              </div>
+              <TimeToggle value={timeRange} onChange={setTimeRange} />
               <select value={dailyMetric} onChange={e => setDailyMetric(e.target.value)} style={{ background: C.bg, color: C.text, border: `1px solid ${C.primary}`, borderRadius: '6px', padding: '5px 10px', fontSize: '11px', fontWeight: 700, cursor: 'pointer', outline: 'none' }}>
                 {[{ k: 'regftd', l: 'REG & FTDs' }, { k: 'depwit', l: 'Deposits & Withdrawals' }, { k: 'logins', l: 'Logins' }, { k: 'bonus', l: 'Bonus' }].map(o => <option key={o.k} value={o.k}>{o.l}</option>)}
               </select>
             </div>
-            {timeRange === 'custom' && (() => {
-              const availWeeks = Object.keys(allWeeks).map(Number).sort((a, b) => a - b)
-              return (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
-                  <span style={{ color: C.textMuted, fontSize: '11px', fontWeight: 600 }}>From W</span>
-                  <select value={customFrom} onChange={e => setCustomFrom(e.target.value)} style={{ background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: '5px', padding: '4px 8px', fontSize: '11px', fontWeight: 700, cursor: 'pointer', outline: 'none' }}>
-                    <option value="">--</option>
-                    {availWeeks.map(w => <option key={w} value={w}>{w}</option>)}
-                  </select>
-                  <span style={{ color: C.textMuted, fontSize: '11px', fontWeight: 600 }}>to W</span>
-                  <select value={customTo} onChange={e => setCustomTo(e.target.value)} style={{ background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: '5px', padding: '4px 8px', fontSize: '11px', fontWeight: 700, cursor: 'pointer', outline: 'none' }}>
-                    <option value="">--</option>
-                    {availWeeks.map(w => <option key={w} value={w}>{w}</option>)}
-                  </select>
-                </div>
-              )
-            })()}
+            {timeRange === 'custom' && <WeekRangeSelector from={customFrom} setFrom={setCustomFrom} to={customTo} setTo={setCustomTo} />}
             {(() => {
               // Build chart data based on timeRange
               if (timeRange === 'daily') {
@@ -2001,33 +2021,74 @@ const Weekly = ({ data, prev, allWeeks = {}, theme, isAdmin = false, onSaveNote 
             { header: 'Avg Age', accessor: 'avgAge', align: 'center', format: v => <b>{v}</b> }
           ]} data={data.qualityAcquisition || []} theme={C} />
           <div style={{ background: C.card, borderRadius: '12px', padding: 'clamp(16px, 2vw, 24px)', border: `1px solid ${C.border}` }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
               <h4 style={{ color: C.textSec, margin: 0, fontSize: 'clamp(11px, 1.2vw, 13px)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Top Performance KPI</h4>
+              <TimeToggle value={qaTimeRange} onChange={setQaTimeRange} />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
               <select value={qaMetric} onChange={e => setQaMetric(e.target.value)} style={{ background: C.bg, color: C.text, border: `1px solid ${C.primary}`, borderRadius: '6px', padding: '5px 10px', fontSize: '11px', fontWeight: 700, cursor: 'pointer', outline: 'none' }}>
                 {[{ k: 'reg', l: 'Registrations' }, { k: 'ftds', l: 'FTDs' }, { k: 'conv', l: 'Conversion %' }, { k: 'activated', l: 'Activated %' }, { k: 'avgAge', l: 'Avg Age' }].map(o => <option key={o.k} value={o.k}>{o.l}</option>)}
               </select>
             </div>
+            {qaTimeRange === 'custom' && <WeekRangeSelector from={qaCustomFrom} setFrom={setQaCustomFrom} to={qaCustomTo} setTo={setQaCustomTo} />}
             {(() => {
-              const isPct = qaMetric === 'conv' || qaMetric === 'activated'
-              const sorted = (data.qualityAcquisition || []).filter(c => !c.isTotal).sort((a, b) => (b[qaMetric] || 0) - (a[qaMetric] || 0)).slice(0, 10)
-              const maxVal = sorted.length ? Math.max(...sorted.map(c => c[qaMetric] || 0)) : 100
-              const getColor = (val) => {
-                if (qaMetric === 'conv') return val >= 55 ? C.success : val >= 45 ? C.orange : C.danger
-                if (qaMetric === 'activated') return val >= 70 ? C.success : val >= 40 ? C.orange : C.danger
-                return C.chart[0]
+              if (qaTimeRange === 'daily') {
+                // === DAILY: existing horizontal bar chart ===
+                const isPct = qaMetric === 'conv' || qaMetric === 'activated'
+                const sorted = (data.qualityAcquisition || []).filter(c => !c.isTotal).sort((a, b) => (b[qaMetric] || 0) - (a[qaMetric] || 0)).slice(0, 10)
+                const getColor = (val) => {
+                  if (qaMetric === 'conv') return val >= 55 ? C.success : val >= 45 ? C.orange : C.danger
+                  if (qaMetric === 'activated') return val >= 70 ? C.success : val >= 40 ? C.orange : C.danger
+                  return C.chart[0]
+                }
+                return (
+                  <ResponsiveContainer width="100%" height={Math.max(220, sorted.length * 32)}>
+                    <BarChart data={sorted} layout="vertical" barSize={16}>
+                      <XAxis type="number" domain={[0, isPct ? 100 : 'auto']} tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} tickFormatter={v => isPct ? `${v}%` : fmtNum(v)} />
+                      <YAxis dataKey="channel" type="category" width={mob ? 75 : 110} tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} />
+                      <Tooltip content={<Tip theme={C} />} formatter={v => isPct ? `${v}%` : fmtNum(v)} />
+                      <Bar dataKey={qaMetric} name={qaMetric === 'conv' ? 'Conv%' : qaMetric === 'activated' ? 'Activated%' : qaMetric === 'avgAge' ? 'Avg Age' : qaMetric === 'ftds' ? 'FTDs' : 'REG'} fill={C.primary} radius={[0, 4, 4, 0]}>
+                        {sorted.map((e, i) => <Cell key={i} fill={isPct ? getColor(e[qaMetric]) : C.chart[i % C.chart.length]} />)}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                )
+              } else {
+                // === WEEKLY / CUSTOM: AreaChart trend per channel ===
+                const weeks = getFilteredWeeks(qaTimeRange, qaCustomFrom, qaCustomTo)
+                const isPct = qaMetric === 'conv' || qaMetric === 'activated'
+                // Get all unique channels
+                const channelSet = new Set()
+                weeks.forEach(w => (w.qualityAcquisition || []).filter(c => !c.isTotal).forEach(c => channelSet.add(c.channel)))
+                const channels = [...channelSet]
+                // Build trend data: [{week: 'W1', PVR: 10, AFFILIATES: 5, ...}, ...]
+                const trendData = weeks.map(w => {
+                  const row = { week: `W${w.weekNumber}` }
+                  const qa = w.qualityAcquisition || []
+                  channels.forEach(ch => {
+                    const found = qa.find(c => c.channel === ch)
+                    row[ch] = found ? (found[qaMetric] || 0) : 0
+                  })
+                  return row
+                })
+                return (
+                  <ResponsiveContainer width="100%" height={280}>
+                    <AreaChart data={trendData}>
+                      <defs>{channels.map((ch, i) => (
+                        <linearGradient key={ch} id={`qaG${i}`} x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.chart[i % C.chart.length]} stopOpacity={0.3} /><stop offset="95%" stopColor={C.chart[i % C.chart.length]} stopOpacity={0} /></linearGradient>
+                      ))}</defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
+                      <XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} />
+                      <YAxis tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} tickFormatter={v => isPct ? `${v}%` : fmtNum(v)} />
+                      <Tooltip content={<Tip theme={C} />} formatter={v => isPct ? `${v}%` : fmtNum(v)} />
+                      <Legend />
+                      {channels.map((ch, i) => (
+                        <Area key={ch} type="monotone" dataKey={ch} name={ch} stroke={C.chart[i % C.chart.length]} fill={`url(#qaG${i})`} strokeWidth={2} dot={{ fill: C.chart[i % C.chart.length], r: 3 }} />
+                      ))}
+                    </AreaChart>
+                  </ResponsiveContainer>
+                )
               }
-              return (
-                <ResponsiveContainer width="100%" height={Math.max(220, sorted.length * 32)}>
-                  <BarChart data={sorted} layout="vertical" barSize={16}>
-                    <XAxis type="number" domain={[0, isPct ? Math.min(Math.ceil(maxVal / 10) * 10 + 10, 100) : 'auto']} tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} tickFormatter={v => isPct ? `${v}%` : fmtNum(v)} />
-                    <YAxis dataKey="channel" type="category" width={mob ? 75 : 110} tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} />
-                    <Tooltip content={<Tip theme={C} />} formatter={v => isPct ? `${v}%` : fmtNum(v)} />
-                    <Bar dataKey={qaMetric} name={qaMetric === 'conv' ? 'Conv%' : qaMetric === 'activated' ? 'Activated%' : qaMetric === 'avgAge' ? 'Avg Age' : qaMetric === 'ftds' ? 'FTDs' : 'REG'} fill={C.primary} radius={[0, 4, 4, 0]}>
-                      {sorted.map((e, i) => <Cell key={i} fill={isPct ? getColor(e[qaMetric]) : C.chart[i % C.chart.length]} />)}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              )
             })()}
           </div>
         </div>
@@ -2043,9 +2104,63 @@ const Weekly = ({ data, prev, allWeeks = {}, theme, isAdmin = false, onSaveNote 
             { header: 'Actives', accessor: 'actives', align: 'right', format: v => <b>{fmtNum(v)}</b> },
             { header: 'Rev Share', accessor: 'revShare', align: 'center', format: v => <span style={{ color: C.accent, fontWeight: 800 }}>{v}%</span> }
           ]} data={data.channelPerformance || []} theme={C} />
-          <ChartCard title="Revenue Share" height={220} theme={C}>
-            <PieChart><Pie data={(data.channelPerformance || []).filter(c => c.revShare > 0)} cx="50%" cy="50%" innerRadius={50} outerRadius={85} paddingAngle={2} dataKey="revShare" nameKey="channel">{(data.channelPerformance || []).map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}</Pie><Tooltip content={<Tip theme={C} />} /><Legend /></PieChart>
-          </ChartCard>
+          <div style={{ background: C.card, borderRadius: '12px', padding: 'clamp(16px, 2vw, 24px)', border: `1px solid ${C.border}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+              <h4 style={{ color: C.textSec, margin: 0, fontSize: 'clamp(11px, 1.2vw, 13px)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Channel Trend</h4>
+              <TimeToggle value={cpTimeRange} onChange={setCpTimeRange} />
+            </div>
+            {cpTimeRange !== 'daily' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
+                <select value={cpMetric} onChange={e => setCpMetric(e.target.value)} style={{ background: C.bg, color: C.text, border: `1px solid ${C.primary}`, borderRadius: '6px', padding: '5px 10px', fontSize: '11px', fontWeight: 700, cursor: 'pointer', outline: 'none' }}>
+                  {[{ k: 'ggr', l: 'GGR' }, { k: 'turnover', l: 'Turnover' }, { k: 'actives', l: 'Actives' }].map(o => <option key={o.k} value={o.k}>{o.l}</option>)}
+                </select>
+              </div>
+            )}
+            {cpTimeRange === 'custom' && <WeekRangeSelector from={cpCustomFrom} setFrom={setCpCustomFrom} to={cpCustomTo} setTo={setCpCustomTo} />}
+            {(() => {
+              if (cpTimeRange === 'daily') {
+                // === DAILY: existing PieChart ===
+                return (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <PieChart><Pie data={(data.channelPerformance || []).filter(c => c.revShare > 0)} cx="50%" cy="50%" innerRadius={50} outerRadius={85} paddingAngle={2} dataKey="revShare" nameKey="channel">{(data.channelPerformance || []).map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}</Pie><Tooltip content={<Tip theme={C} />} /><Legend /></PieChart>
+                  </ResponsiveContainer>
+                )
+              } else {
+                // === WEEKLY / CUSTOM: AreaChart trend per channel ===
+                const weeks = getFilteredWeeks(cpTimeRange, cpCustomFrom, cpCustomTo)
+                const isCur = cpMetric === 'ggr' || cpMetric === 'turnover'
+                const channelSet = new Set()
+                weeks.forEach(w => (w.channelPerformance || []).forEach(c => channelSet.add(c.channel)))
+                const channels = [...channelSet]
+                const trendData = weeks.map(w => {
+                  const row = { week: `W${w.weekNumber}` }
+                  const cp = w.channelPerformance || []
+                  channels.forEach(ch => {
+                    const found = cp.find(c => c.channel === ch)
+                    row[ch] = found ? (found[cpMetric] || 0) : 0
+                  })
+                  return row
+                })
+                return (
+                  <ResponsiveContainer width="100%" height={280}>
+                    <AreaChart data={trendData}>
+                      <defs>{channels.map((ch, i) => (
+                        <linearGradient key={ch} id={`cpG${i}`} x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.chart[i % C.chart.length]} stopOpacity={0.3} /><stop offset="95%" stopColor={C.chart[i % C.chart.length]} stopOpacity={0} /></linearGradient>
+                      ))}</defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
+                      <XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} />
+                      <YAxis tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} tickFormatter={v => isCur ? fmtCurrency(v) : fmtNum(v)} />
+                      <Tooltip content={<Tip theme={C} />} formatter={v => isCur ? fmtCurrency(v) : fmtNum(v)} />
+                      <Legend />
+                      {channels.map((ch, i) => (
+                        <Area key={ch} type="monotone" dataKey={ch} name={ch} stroke={C.chart[i % C.chart.length]} fill={`url(#cpG${i})`} strokeWidth={2} dot={{ fill: C.chart[i % C.chart.length], r: 3 }} />
+                      ))}
+                    </AreaChart>
+                  </ResponsiveContainer>
+                )
+              }
+            })()}
+          </div>
         </div>
       </Section>
 
