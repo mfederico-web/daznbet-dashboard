@@ -112,7 +112,8 @@ const SPORT_FILES = [
 
 const DAILY_FILES = [
   { key: 'meseTotal', name: 'Anagrafica_Mese_Total.xlsx', path: 'Stats Multilivello + Data' },
-  { key: 'meseTotalPadre', name: 'Anagrafica_Mese_Total_Padre.xlsx', path: 'Stats Multilivello + Data + Padre' }
+  { key: 'meseTotalPadre', name: 'Anagrafica_Mese_Total_Padre.xlsx', path: 'Stats Multilivello + Data + Padre' },
+  { key: 'mese2', name: 'Anagrafica_Mese_2.xlsx', path: 'Statistica Conti (mensile)' }
 ]
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -989,16 +990,16 @@ const processSportData = (files, weekNum, dateRange) => {
 const processDailyMonthData = (files, monthKey, monthLabel) => {
   const meseTotal = files.meseTotal || []
   const mesePadre = files.meseTotalPadre || []
+  const mese2 = files.mese2 || []
 
-  // ── Parse Mese_Total: daily rows + total row ──
-  const dailyRows = meseTotal.filter(r => typeof r["Data"] === 'number' || (r["Data"] && !String(r["Data"]).includes(',')))
-  const totalRow = meseTotal.find(r => !r["Data"] || typeof r["Giocato"] === 'string')
+  // ── Parse Mese_Total: daily rows (turnover, ggr, tickets, conti attivi) ──
+  const dailyRows = meseTotal.filter(r => typeof r["Data"] === 'number')
 
-  const dailyStats = dailyRows.map(r => {
+  const totalDailyMap = {}
+  dailyRows.forEach(r => {
     const dateKey = normalizeDate(r["Data"])
-    return {
-      dateKey,
-      date: formatDateLabel(dateKey),
+    if (!dateKey) return
+    totalDailyMap[dateKey] = {
       turnover: parseNum(r["Giocato"]) || 0,
       vinto: parseNum(r["vinto"]) || 0,
       ggr: parseNum(r["ggr"]) || 0,
@@ -1007,16 +1008,67 @@ const processDailyMonthData = (files, monthKey, monthLabel) => {
       numTicket: parseNum(r["num ticket"]) || 0,
       contiAttivi: parseNum(r["conti attivi"]) || 0
     }
-  }).filter(d => d.dateKey).sort((a, b) => a.dateKey.localeCompare(b.dateKey))
+  })
 
-  // Monthly totals (sum daily for additive KPIs)
+  // ── Parse Mese_2: daily rows (REG, FTDs, Deposits, Withdrawals, Logins, Bonus) ──
+  const mese2Rows = mese2.filter(r => typeof r["Data"] === 'number')
+  const mese2DailyMap = {}
+  mese2Rows.forEach(r => {
+    const dateKey = normalizeDate(r["Data"])
+    if (!dateKey) return
+    mese2DailyMap[dateKey] = {
+      registrations: parseNum(r["Registrati AAMS"]) || 0,
+      ftds: parseNum(r["Primo deposito"]) || 0,
+      deposits: parseNum(r["Importo depositi"]) || 0,
+      withdrawals: parseNum(r["Importo prelievi processati"]) || 0,
+      logins: parseNum(r["Login"]) || 0,
+      bonus: parseNum(r["Importo bonus"]) || 0,
+      depositanti: parseNum(r["Depositanti unici"]) || 0,
+      importoPrimoDeposito: parseNum(r["Importo primo deposito"]) || 0
+    }
+  })
+
+  // ── Merge daily data from both sources ──
+  const allDateKeys = [...new Set([...Object.keys(totalDailyMap), ...Object.keys(mese2DailyMap)])].sort()
+  const dailyStats = allDateKeys.map(dateKey => {
+    const t = totalDailyMap[dateKey] || {}
+    const m = mese2DailyMap[dateKey] || {}
+    return {
+      dateKey,
+      date: formatDateLabel(dateKey),
+      // From Mese_Total
+      turnover: t.turnover || 0,
+      vinto: t.vinto || 0,
+      ggr: t.ggr || 0,
+      payout: t.payout || 0,
+      betBonus: t.betBonus || 0,
+      numTicket: t.numTicket || 0,
+      contiAttivi: t.contiAttivi || 0,
+      // From Mese_2
+      registrations: m.registrations || 0,
+      ftds: m.ftds || 0,
+      deposits: m.deposits || 0,
+      withdrawals: m.withdrawals || 0,
+      logins: m.logins || 0,
+      bonus: m.bonus || 0
+    }
+  })
+
+  // Monthly totals (sum daily for all additive KPIs)
   const turnover = dailyStats.reduce((s, d) => s + d.turnover, 0)
   const ggr = dailyStats.reduce((s, d) => s + d.ggr, 0)
   const betBonus = dailyStats.reduce((s, d) => s + d.betBonus, 0)
   const numTicket = dailyStats.reduce((s, d) => s + d.numTicket, 0)
-  // Conti attivi totale mese: dalla riga TOTALE (non somma giornaliera)
-  const activeUsersMonth = totalRow ? parseNum(totalRow["conti attivi"]) : 0
+  const reg = dailyStats.reduce((s, d) => s + d.registrations, 0)
+  const ftds = dailyStats.reduce((s, d) => s + d.ftds, 0)
+  const dep = dailyStats.reduce((s, d) => s + d.deposits, 0)
+  const wit = dailyStats.reduce((s, d) => s + d.withdrawals, 0)
+  const logins = dailyStats.reduce((s, d) => s + d.logins, 0)
+  const bonusMese2 = dailyStats.reduce((s, d) => s + d.bonus, 0)
   const gwm = turnover > 0 ? parseFloat((ggr / turnover * 100).toFixed(1)) : 0
+  // Avg Actives = somma conti attivi giornalieri / numero giorni
+  const sumDailyActives = dailyStats.reduce((s, d) => s + d.contiAttivi, 0)
+  const avgActives = dailyStats.length > 0 ? Math.round(sumDailyActives / dailyStats.length) : 0
 
   // ── Parse Mese_Total_Padre: channel breakdown ──
   const padreDaily = mesePadre.filter(r => typeof r["Data"] === 'number')
@@ -1030,7 +1082,6 @@ const processDailyMonthData = (files, monthKey, monthLabel) => {
     channelAgg[ch].ggr += parseNum(r["ggr"]) || 0
     channelAgg[ch].betBonus += parseNum(r["bet bonus"]) || 0
     channelAgg[ch].numTicket += parseNum(r["num ticket"]) || 0
-    // Track unique days for avg daily actives
     const dk = normalizeDate(r["Data"])
     if (dk) {
       if (!channelAgg[ch]._activeDays[dk]) channelAgg[ch]._activeDays[dk] = 0
@@ -1066,7 +1117,12 @@ const processDailyMonthData = (files, monthKey, monthLabel) => {
     monthLabel,
     days: dailyStats.length,
     turnover, ggr, gwm, betBonus, numTicket,
-    activeUsers: activeUsersMonth,
+    reg, ftds, dep, wit, logins, bonus: bonusMese2,
+    netDep: dep - wit,
+    conv: reg > 0 ? parseFloat((ftds / reg * 100).toFixed(1)) : 0,
+    activeUsers: avgActives,
+    bonusRoi: betBonus > 0 ? parseFloat((ggr / betBonus).toFixed(1)) : 0,
+    bonusPctGgr: ggr > 0 ? parseFloat((betBonus / ggr * 100).toFixed(1)) : 0,
     dailyStats,
     channelPerformance,
     channelDaily,
@@ -1346,6 +1402,7 @@ const UploadPage = ({ weeksData, casinoWeeksData, sportWeeksData, dailyMonthsDat
   }
   const matchDailyFile = (fname) => {
     if (fname.includes('mese_total_padre') || fname.includes('mesetotal_padre') || fname.includes('mese_totalpadre')) return 'meseTotalPadre'
+    if (fname.includes('mese_2') || fname.includes('mese2')) return 'mese2'
     if (fname.includes('mese_total') || fname.includes('mesetotal')) return 'meseTotal'
     return null
   }
@@ -1728,64 +1785,36 @@ const Monthly = ({ weeksData, dailyMonthsData = {}, theme }) => {
     const realDaily = dailyMonthsData[ym]
 
     if (realDaily && realDaily._isRealDailyData) {
-      // ═══ USE REAL DAILY DATA ═══
-      // Get weekly REG/FTD data from weekly uploads that overlap this month
-      const weeksInMonth = allWeeks.filter(w =>
-        (w.dailyStats || []).some(d => d.dateKey && d.dateKey.startsWith(ym))
-      )
-      // Aggregate daily REG/FTDs/Deposits/Withdrawals from weekly dailyStats
-      const weeklyDailyAgg = { reg: 0, ftds: 0, dep: 0, wit: 0, bonus: 0, logins: 0 }
-      const weeklyDailyDays = []
-      weeksInMonth.forEach(w => {
-        (w.dailyStats || []).forEach(d => {
-          if (d.dateKey && d.dateKey.startsWith(ym)) {
-            weeklyDailyAgg.reg += d.registrations || 0
-            weeklyDailyAgg.ftds += d.ftds || 0
-            weeklyDailyAgg.dep += d.deposits || 0
-            weeklyDailyAgg.wit += d.withdrawals || 0
-            weeklyDailyAgg.bonus += d.bonus || 0
-            weeklyDailyAgg.logins += d.logins || 0
-            weeklyDailyDays.push(d)
-          }
-        })
-      })
-      // Quality Acquisition from weekly data (best available)
-      const weeksAssigned = allWeeks.filter(w => {
-        const daysInMonth = (w.dailyStats || []).filter(d => d.dateKey && d.dateKey.startsWith(ym)).length
-        return daysInMonth >= 4
-      })
-      const weeklyBase = aggregateWeeks(weeksAssigned.length ? weeksAssigned : weeksInMonth.length ? weeksInMonth : allWeeks.slice(0, 1))
-
+      // ═══ ALL DATA FROM DAILY FILES — NO WEEKLY FALLBACK ═══
       current = {
-        weeks: weeksAssigned.length ? weeksAssigned : weeksInMonth,
-        weekCount: (weeksAssigned.length || weeksInMonth.length),
-        // From real daily data (precise)
+        weeks: [],
+        weekCount: 0,
+        // From Mese_Total (precise daily)
         turnover: realDaily.turnover,
+        turn: realDaily.turnover,
         ggr: realDaily.ggr,
         gwm: realDaily.gwm,
         betBonus: realDaily.betBonus,
         numTicket: realDaily.numTicket,
         activeUsers: realDaily.activeUsers,
-        turn: realDaily.turnover,
-        // From weekly dailyStats (precise for calendar month)
-        reg: weeklyDailyAgg.reg,
-        ftds: weeklyDailyAgg.ftds,
-        dep: weeklyDailyAgg.dep,
-        wit: weeklyDailyAgg.wit,
-        netDep: weeklyDailyAgg.dep - weeklyDailyAgg.wit,
-        bonus: weeklyDailyAgg.bonus,
-        logins: weeklyDailyAgg.logins,
-        conv: weeklyDailyAgg.reg > 0 ? parseFloat((weeklyDailyAgg.ftds / weeklyDailyAgg.reg * 100).toFixed(1)) : 0,
-        bonusRoi: realDaily.betBonus > 0 ? parseFloat((realDaily.ggr / realDaily.betBonus).toFixed(1)) : 0,
-        bonusPctGgr: realDaily.ggr > 0 ? parseFloat((realDaily.betBonus / realDaily.ggr * 100).toFixed(1)) : 0,
         avgAct: realDaily.activeUsers,
+        // From Mese_2 (precise daily)
+        reg: realDaily.reg || 0,
+        ftds: realDaily.ftds || 0,
+        dep: realDaily.dep || 0,
+        wit: realDaily.wit || 0,
+        netDep: realDaily.netDep || 0,
+        bonus: realDaily.bonus || 0,
+        logins: realDaily.logins || 0,
+        conv: realDaily.conv || 0,
+        bonusRoi: realDaily.bonusRoi || 0,
+        bonusPctGgr: realDaily.bonusPctGgr || 0,
         // Channel performance from Padre file (precise)
         channelData: realDaily.channelPerformance || [],
-        // From weekly aggregation (best available)
-        qualityData: weeklyBase ? weeklyBase.qualityData : [],
-        productData: weeklyBase ? weeklyBase.productData : [],
-        gender: weeklyBase ? weeklyBase.gender : { male: 0, female: 0, _maleCount: 0, _femaleCount: 0 },
-        ageGroups: weeklyBase ? weeklyBase.ageGroups : [],
+        qualityData: [],
+        productData: [],
+        gender: { male: 0, female: 0, _maleCount: 0, _femaleCount: 0 },
+        ageGroups: [],
         // Real daily chart data
         _isRealDailyData: true,
         _dailyStats: realDaily.dailyStats,
@@ -1795,74 +1824,59 @@ const Monthly = ({ weeksData, dailyMonthsData = {}, theme }) => {
       }
       periodLabel = realDaily.monthLabel || ym
     } else {
-      // ═══ WEEKLY FALLBACK (no real daily data) ═══
-      const weeksInMonth = allWeeks.filter(w =>
-        (w.dailyStats || []).some(d => d.dateKey && d.dateKey.startsWith(ym))
-      )
-      if (weeksInMonth.length) {
-        const monthDailyAgg = { reg: 0, ftds: 0, dep: 0, wit: 0, bonus: 0, logins: 0, days: [] }
-        weeksInMonth.forEach(w => {
-          (w.dailyStats || []).forEach(d => {
-            if (d.dateKey && d.dateKey.startsWith(ym)) {
-              monthDailyAgg.reg += d.registrations || 0
-              monthDailyAgg.ftds += d.ftds || 0
-              monthDailyAgg.dep += d.deposits || 0
-              monthDailyAgg.wit += d.withdrawals || 0
-              monthDailyAgg.bonus += d.bonus || 0
-              monthDailyAgg.logins += d.logins || 0
-              monthDailyAgg.days.push(d)
-            }
-          })
-        })
-        const weeksAssigned = allWeeks.filter(w => {
-          const daysInMonth = (w.dailyStats || []).filter(d => d.dateKey && d.dateKey.startsWith(ym)).length
-          return daysInMonth >= 4
-        })
-        const base = aggregateWeeks(weeksAssigned.length ? weeksAssigned : weeksInMonth)
-        if (base) {
-          base.reg = monthDailyAgg.reg
-          base.ftds = monthDailyAgg.ftds
-          base.dep = monthDailyAgg.dep
-          base.wit = monthDailyAgg.wit
-          base.netDep = monthDailyAgg.dep - monthDailyAgg.wit
-          base.bonus = monthDailyAgg.bonus
-          base.logins = monthDailyAgg.logins
-          base.conv = base.reg > 0 ? parseFloat((base.ftds / base.reg * 100).toFixed(1)) : 0
-          base.bonusRoi = base.bonus > 0 ? parseFloat((base.ggr / base.bonus).toFixed(1)) : 0
-          base.bonusPctGgr = base.ggr > 0 ? parseFloat((base.bonus / base.ggr * 100).toFixed(1)) : 0
-          base._isCalendarMonth = true
-          base._monthDays = monthDailyAgg.days.sort((a, b) => (a.dateKey || '').localeCompare(b.dateKey || ''))
-        }
-        current = base
-      } else {
-        current = null
-      }
+      // No daily data uploaded for this month
+      current = null
       const mo = calMonthOptions.find(m => m.key === ym)
       periodLabel = mo ? mo.label : ym
     }
   }
 
   if (filterMode === 'month' && !selectedMonth) {
-    current = aggregateWeeks(allWeeks)
+    current = null
     periodLabel = 'Select a month'
   }
 
-  if (!current) return <div style={{ padding: '60px', textAlign: 'center' }}><p style={{ color: C.textMuted }}>No data for selection</p></div>
+  if (!current) return (
+    <div style={{ padding: 'clamp(20px, 3vw, 48px)' }}>
+      <div id="general-report" style={{ marginBottom: '24px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '24px' }}>
+          {['all', 'month', 'custom'].map(mode => (
+            <button key={mode} onClick={() => setFilterMode(mode)} style={{ background: filterMode === mode ? C.primary : 'transparent', color: filterMode === mode ? C.primaryText : C.textSec, border: `1px solid ${filterMode === mode ? C.primary : C.border}`, borderRadius: '6px', padding: '8px 16px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', textTransform: 'uppercase' }}>{mode}</button>
+          ))}
+          {filterMode === 'month' && (
+            <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} style={{ background: C.bg, color: C.text, border: `1px solid ${C.primary}`, borderRadius: '6px', padding: '8px 12px', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}>
+              <option value="">Select month...</option>
+              {calMonthOptions.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
+            </select>
+          )}
+        </div>
+        <div style={{ padding: '60px 20px', textAlign: 'center', background: C.card, borderRadius: '12px', border: `1px dashed ${C.border}` }}>
+          <div style={{ fontSize: '48px', marginBottom: '16px' }}>📅</div>
+          <p style={{ color: C.text, fontSize: '18px', fontWeight: 700, margin: '0 0 8px 0' }}>{filterMode === 'month' && selectedMonth ? `No daily data for ${periodLabel}` : 'Select a month'}</p>
+          <p style={{ color: C.textMuted, fontSize: '13px', margin: 0 }}>{filterMode === 'month' && selectedMonth ? 'Upload the 3 monthly files from the Daily section in Admin' : 'Choose a month to view real daily data'}</p>
+        </div>
+      </div>
+    </div>
+  )
 
   // Chart data — use real daily data if available, otherwise weekly trend
   let trend, cashFlowTrend, bonusTrend, dailyTurnoverTrend
   if (current._isRealDailyData && current._dailyStats) {
     const ds = current._dailyStats
     trend = ds.map(d => ({ week: d.date, REG: d.registrations || 0, FTDs: d.ftds || 0 }))
-    // Merge weekly daily data for REG/FTDs with real daily data for Turnover/GGR
-    const weeklyDayMap = {}
-    ;(current._monthDays || []).forEach(d => { if (d.dateKey) weeklyDayMap[d.dateKey] = d })
-    dailyTurnoverTrend = ds.map(d => {
-      const wd = weeklyDayMap[d.dateKey] || {}
-      return { week: d.date, Turnover: Math.round(d.turnover / 1000), GGR: Math.round(d.ggr / 1000), Attivi: d.contiAttivi, REG: wd.registrations || 0, FTDs: wd.ftds || 0 }
-    })
-    cashFlowTrend = (current._monthDays || []).filter(d => d.dateKey).sort((a, b) => a.dateKey.localeCompare(b.dateKey)).map(d => ({
-      week: formatDateLabel(d.dateKey), Deposits: d.deposits || 0, Withdrawals: d.withdrawals || 0, NetDeposit: (d.deposits || 0) - (d.withdrawals || 0)
+    dailyTurnoverTrend = ds.map(d => ({
+      week: d.date,
+      Turnover: Math.round(d.turnover / 1000),
+      GGR: Math.round(d.ggr / 1000),
+      Attivi: d.contiAttivi,
+      REG: d.registrations || 0,
+      FTDs: d.ftds || 0
+    }))
+    cashFlowTrend = ds.map(d => ({
+      week: d.date,
+      Deposits: d.deposits || 0,
+      Withdrawals: d.withdrawals || 0,
+      NetDeposit: (d.deposits || 0) - (d.withdrawals || 0)
     }))
     bonusTrend = ds.map(d => ({ week: d.date, Bonus: d.betBonus || 0 }))
   } else {
@@ -1919,9 +1933,8 @@ const Monthly = ({ weeksData, dailyMonthsData = {}, theme }) => {
 
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           <span style={{ color: C.accent, fontSize: '14px', fontWeight: 800 }}>{periodLabel}</span>
-          <span style={{ color: C.textMuted, fontSize: '11px', background: C.bg, padding: '4px 10px', borderRadius: '4px', fontWeight: 700 }}>{current._isRealDailyData ? `${current._dailyStats?.length || 0}d` : `${current.weekCount || 0}w`}{current._isCalendarMonth && !current._isRealDailyData ? ` • ${current._monthDays?.length || 0}d` : ''}</span>
+          <span style={{ color: C.textMuted, fontSize: '11px', background: C.bg, padding: '4px 10px', borderRadius: '4px', fontWeight: 700 }}>{current._isRealDailyData ? `${current._dailyStats?.length || 0} days` : `${current.weekCount || 0}w`}</span>
           {current._isRealDailyData && <span style={{ color: C.success, fontSize: '10px', fontWeight: 700, background: C.successDim, padding: '3px 8px', borderRadius: '4px' }}>📊 Real Daily Data</span>}
-          {current._isCalendarMonth && !current._isRealDailyData && <span style={{ color: C.orange, fontSize: '10px', fontWeight: 600 }}>📅 Weekly Approx</span>}
         </div>
       </div>
 
@@ -1961,12 +1974,14 @@ const Monthly = ({ weeksData, dailyMonthsData = {}, theme }) => {
         {current._isRealDailyData && current._dailyStats ? (
           <Table cols={[
             { header: 'Date', accessor: 'date', format: v => <span style={{ color: C.accent, fontWeight: 800 }}>{v}</span> },
+            { header: 'REG', accessor: 'registrations', align: 'right', format: v => <b>{fmtNum(v)}</b> },
+            { header: 'FTDs', accessor: 'ftds', align: 'right', format: v => <b>{fmtNum(v)}</b> },
             { header: 'Turnover', accessor: 'turnover', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
             { header: 'GGR', accessor: 'ggr', align: 'right', format: v => <span style={{ color: v >= 0 ? C.success : C.danger, fontWeight: 800 }}>{fmtCurrency(v)}</span> },
             { header: 'Payout%', accessor: 'payout', align: 'center', format: v => <b>{v}%</b> },
-            { header: 'Tickets', accessor: 'numTicket', align: 'right', format: v => <b>{fmtNum(v)}</b> },
             { header: 'Attivi', accessor: 'contiAttivi', align: 'right', format: v => <b>{fmtNum(v)}</b> },
-            { header: 'Bet Bonus', accessor: 'betBonus', align: 'right', format: v => <b>{fmtCurrency(v)}</b> }
+            { header: 'Deposits', accessor: 'deposits', align: 'right', format: v => <b>{fmtCurrency(v)}</b> },
+            { header: 'Withdrawals', accessor: 'withdrawals', align: 'right', format: v => <b style={{ color: C.danger }}>{fmtCurrency(v)}</b> }
           ]} data={current._dailyStats} theme={C} />
         ) : (
           <Table cols={[
@@ -2005,7 +2020,7 @@ const Monthly = ({ weeksData, dailyMonthsData = {}, theme }) => {
             <h4 style={{ color: C.textMuted, margin: '0 0 16px 0', fontSize: '11px', textTransform: 'uppercase', fontWeight: 700 }}>Bonus Summary</h4>
             <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '1fr 1fr', gap: '20px' }}>
               <div><p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', textTransform: 'uppercase' }}>Total Bonus</p><p style={{ color: C.orange, fontSize: '28px', fontWeight: 900, margin: 0 }}>{fmtCurrency(current.bonus)}</p></div>
-              <div><p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', textTransform: 'uppercase' }}>Avg Weekly</p><p style={{ color: C.text, fontSize: '28px', fontWeight: 900, margin: 0 }}>{fmtCurrency(current.bonus / current.weekCount)}</p></div>
+              <div><p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', textTransform: 'uppercase' }}>{current._isRealDailyData ? 'Avg Daily' : 'Avg Weekly'}</p><p style={{ color: C.text, fontSize: '28px', fontWeight: 900, margin: 0 }}>{fmtCurrency(current._isRealDailyData ? current.bonus / Math.max(current._dailyStats?.length || 1, 1) : current.bonus / Math.max(current.weekCount || 1, 1))}</p></div>
               <div><p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', textTransform: 'uppercase' }}>Bonus ROI</p><p style={{ color: C.success, fontSize: '28px', fontWeight: 900, margin: 0 }}>{current.bonusRoi}x</p></div>
               <div><p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', textTransform: 'uppercase' }}>% of GGR</p><p style={{ color: C.text, fontSize: '28px', fontWeight: 900, margin: 0 }}>{current.bonusPctGgr}%</p></div>
             </div>
