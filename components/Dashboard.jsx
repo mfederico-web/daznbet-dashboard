@@ -1401,7 +1401,7 @@ const UploadPage = ({ weeksData, casinoWeeksData, sportWeeksData, onUpload, onCa
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// MONTHLY SUMMARY — ALL + CUSTOM
+// GENERAL SUMMARY — ALL + MONTH (Calendar) + CUSTOM
 // ═══════════════════════════════════════════════════════════════════════════════
 const Monthly = ({ weeksData, theme }) => {
   const C = theme
@@ -1412,9 +1412,25 @@ const Monthly = ({ weeksData, theme }) => {
   const [filterMode, setFilterMode] = useState('all')
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo] = useState('')
+  const [selectedMonth, setSelectedMonth] = useState('')
   const [qaChannel, setQaChannel] = useState('ALL')
 
   if (!allWeeks.length) return <div style={{ padding: '60px', textAlign: 'center' }}><p style={{ color: C.textMuted, fontSize: '16px' }}>No data available</p></div>
+
+  // ── Build calendar month options from dailyStats ──
+  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+  const calendarMonths = {}
+  allWeeks.forEach(w => {
+    (w.dailyStats || []).forEach(d => {
+      if (!d.dateKey) return
+      const ym = d.dateKey.substring(0, 7) // "YYYY-MM"
+      if (!calendarMonths[ym]) {
+        const [y, m] = ym.split('-')
+        calendarMonths[ym] = { key: ym, label: `${monthNames[parseInt(m) - 1]} ${y}`, year: parseInt(y), month: parseInt(m) }
+      }
+    })
+  })
+  const calMonthOptions = Object.values(calendarMonths).sort((a, b) => a.key.localeCompare(b.key))
 
   // ── Aggregazione helper ──
   const aggregateWeeks = (weeks) => {
@@ -1513,6 +1529,60 @@ const Monthly = ({ weeksData, theme }) => {
     const filtered = allWeeks.filter(w => w.weekNumber >= from && w.weekNumber <= to)
     current = aggregateWeeks(filtered.length ? filtered : allWeeks)
     periodLabel = customFrom && customTo ? `Week ${customFrom} - ${customTo}` : `All Weeks`
+  } else if (filterMode === 'month' && selectedMonth) {
+    // Calendar month: filter weeks that have any days in the selected month
+    const ym = selectedMonth // "YYYY-MM"
+    const weeksInMonth = allWeeks.filter(w =>
+      (w.dailyStats || []).some(d => d.dateKey && d.dateKey.startsWith(ym))
+    )
+    if (weeksInMonth.length) {
+      // Aggregate only the daily data that falls within the calendar month
+      const monthDailyAgg = { reg: 0, ftds: 0, dep: 0, wit: 0, bonus: 0, logins: 0, days: [] }
+      weeksInMonth.forEach(w => {
+        (w.dailyStats || []).forEach(d => {
+          if (d.dateKey && d.dateKey.startsWith(ym)) {
+            monthDailyAgg.reg += d.registrations || 0
+            monthDailyAgg.ftds += d.ftds || 0
+            monthDailyAgg.dep += d.deposits || 0
+            monthDailyAgg.wit += d.withdrawals || 0
+            monthDailyAgg.bonus += d.bonus || 0
+            monthDailyAgg.logins += d.logins || 0
+            monthDailyAgg.days.push(d)
+          }
+        })
+      })
+      // For weekly-only KPIs, assign week to month if majority of days (>=4) fall in it
+      const weeksAssigned = allWeeks.filter(w => {
+        const daysInMonth = (w.dailyStats || []).filter(d => d.dateKey && d.dateKey.startsWith(ym)).length
+        return daysInMonth >= 4
+      })
+      // Use standard aggregation for weekly KPIs, override daily-based ones
+      const base = aggregateWeeks(weeksAssigned.length ? weeksAssigned : weeksInMonth)
+      if (base) {
+        base.reg = monthDailyAgg.reg
+        base.ftds = monthDailyAgg.ftds
+        base.dep = monthDailyAgg.dep
+        base.wit = monthDailyAgg.wit
+        base.netDep = monthDailyAgg.dep - monthDailyAgg.wit
+        base.bonus = monthDailyAgg.bonus
+        base.logins = monthDailyAgg.logins
+        base.conv = base.reg > 0 ? parseFloat((base.ftds / base.reg * 100).toFixed(1)) : 0
+        base.bonusRoi = base.bonus > 0 ? parseFloat((base.ggr / base.bonus).toFixed(1)) : 0
+        base.bonusPctGgr = base.ggr > 0 ? parseFloat((base.bonus / base.ggr * 100).toFixed(1)) : 0
+        base._isCalendarMonth = true
+        base._monthDays = monthDailyAgg.days.sort((a, b) => (a.dateKey || '').localeCompare(b.dateKey || ''))
+      }
+      current = base
+    } else {
+      current = null
+    }
+    const mo = calMonthOptions.find(m => m.key === ym)
+    periodLabel = mo ? mo.label : ym
+  }
+
+  if (filterMode === 'month' && !selectedMonth) {
+    current = aggregateWeeks(allWeeks)
+    periodLabel = 'Select a month'
   }
 
   if (!current) return <div style={{ padding: '60px', textAlign: 'center' }}><p style={{ color: C.textMuted }}>No data for selection</p></div>
@@ -1540,14 +1610,23 @@ const Monthly = ({ weeksData, theme }) => {
   const weekNums = allWeeks.map(w => w.weekNumber)
 
   return (
-    <div id="monthly-report" style={{ padding: 'clamp(20px, 3vw, 48px)' }}>
+    <div id="general-report" style={{ padding: 'clamp(20px, 3vw, 48px)' }}>
       {/* ═══ FILTER BAR ═══ */}
       <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}`, marginBottom: '32px', display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', gap: '8px' }}>
-          {['all', 'custom'].map(mode => (
-            <button key={mode} onClick={() => setFilterMode(mode)} style={{ background: filterMode === mode ? C.primary : 'transparent', color: filterMode === mode ? C.primaryText : C.textSec, border: `1px solid ${filterMode === mode ? C.primary : C.border}`, borderRadius: '6px', padding: '8px 16px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>{mode === 'all' ? 'All' : 'Custom'}</button>
+          {['all', 'month', 'custom'].map(mode => (
+            <button key={mode} onClick={() => setFilterMode(mode)} style={{ background: filterMode === mode ? C.primary : 'transparent', color: filterMode === mode ? C.primaryText : C.textSec, border: `1px solid ${filterMode === mode ? C.primary : C.border}`, borderRadius: '6px', padding: '8px 16px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', textTransform: 'uppercase' }}>{mode}</button>
           ))}
         </div>
+
+        {filterMode === 'month' && (
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} style={{ background: C.bg, color: C.text, border: `1px solid ${C.primary}`, borderRadius: '6px', padding: '8px 12px', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}>
+              <option value="">Select month...</option>
+              {calMonthOptions.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
+            </select>
+          </div>
+        )}
 
         {filterMode === 'custom' && (
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -1558,9 +1637,10 @@ const Monthly = ({ weeksData, theme }) => {
           </div>
         )}
 
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           <span style={{ color: C.accent, fontSize: '14px', fontWeight: 800 }}>{periodLabel}</span>
-          <span style={{ color: C.textMuted, fontSize: '11px', background: C.bg, padding: '4px 10px', borderRadius: '4px', fontWeight: 700 }}>{current.weekCount}w</span>
+          <span style={{ color: C.textMuted, fontSize: '11px', background: C.bg, padding: '4px 10px', borderRadius: '4px', fontWeight: 700 }}>{current.weekCount}w{current._isCalendarMonth ? ` • ${current._monthDays?.length || 0}d` : ''}</span>
+          {current._isCalendarMonth && <span style={{ color: C.orange, fontSize: '10px', fontWeight: 600 }}>📅 Calendar Month</span>}
         </div>
       </div>
 
@@ -3647,7 +3727,7 @@ export default function Dashboard() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: mob ? '6px' : '12px', flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', gap: '4px' }}>
-              {[{ id: 'weekly', icon: 'chart', label: 'Weekly' }, { id: 'monthly', icon: 'calendar', label: 'Monthly' }, { id: 'casino', icon: 'casino', label: 'Casino' }, { id: 'sport', icon: 'sport', label: 'Sport' }].map(t => (
+              {[{ id: 'weekly', icon: 'chart', label: 'Weekly' }, { id: 'general', icon: 'calendar', label: 'General' }, { id: 'casino', icon: 'casino', label: 'Casino' }, { id: 'sport', icon: 'sport', label: 'Sport' }].map(t => (
                 <button key={t.id} onClick={() => setTab(t.id)} style={{ background: tab === t.id ? C.primary : 'transparent', color: tab === t.id ? C.primaryText : C.textSec, border: `1px solid ${tab === t.id ? C.primary : C.border}`, borderRadius: '6px', padding: mob ? '8px 12px' : 'clamp(8px, 1vw, 10px) clamp(14px, 2vw, 20px)', fontSize: mob ? '12px' : 'clamp(11px, 1.2vw, 13px)', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '6px' }}><Icon name={t.icon} size={14} color={tab === t.id ? C.primaryText : C.textSec} />{!mob && t.label}</button>
               ))}
             </div>
@@ -3668,7 +3748,7 @@ export default function Dashboard() {
       </header>
       <main>
         {tab === 'weekly' && <Weekly data={current} prev={prev} allWeeks={weeks} theme={C} isAdmin={isAdmin} onSaveNote={handleSaveNote} />}
-        {tab === 'monthly' && <Monthly weeksData={weeks} theme={C} />}
+        {tab === 'general' && <Monthly weeksData={weeks} theme={C} />}
         {tab === 'casino' && <CasinoSection weeksData={casinoWeeks} theme={C} />}
         {tab === 'sport' && <SportSection weeksData={sportWeeks} theme={C} />}
         {tab === 'upload' && <UploadPage weeksData={weeks} casinoWeeksData={casinoWeeks} sportWeeksData={sportWeeks} onUpload={handleUpload} onCasinoUpload={handleCasinoUpload} onSportUpload={handleSportUpload} onDelete={handleDelete} onCasinoDelete={handleCasinoDelete} onSportDelete={handleSportDelete} onLogout={handleLogout} onAdminAuth={() => setIsAdmin(true)} theme={C} />}
