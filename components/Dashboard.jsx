@@ -229,10 +229,12 @@ const classifyChannel = row => {
 const classifyChannelPadre = row => {
   const skin = String(row["Skin"] || "").toUpperCase().trim()
   const codLiv1 = String(row["Cod liv 1"] || "").toUpperCase().trim()
+  const codLiv3 = String(row["Cod liv 3"] || "").toUpperCase().trim()
 
   if (skin.includes("VIVABET")) {
     if (["ILGLADIATORE", "VIVABET"].includes(codLiv1) || codLiv1.includes("GLADIATORE")) return "VIVABET/GLAD"
-    return "Tipster Academy"
+    if (codLiv3.includes("SBOZZA")) return "SBOZZA (Academy)"
+    return "Tipster"
   }
   if (skin.includes("DAZNBET")) {
     if (codLiv1 === "DAZNBET") return "DAZNBET Organic"
