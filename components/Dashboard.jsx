@@ -1112,7 +1112,7 @@ const LoginGate = ({ onLogin, theme }) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // UPLOAD PAGE - CON UPLOAD MASSIVO
 // ═══════════════════════════════════════════════════════════════════════════════
-const UploadPage = ({ weeksData, casinoWeeksData, sportWeeksData, onUpload, onCasinoUpload, onSportUpload, onDelete, onCasinoDelete, onSportDelete, onLogout, theme }) => {
+const UploadPage = ({ weeksData, casinoWeeksData, sportWeeksData, onUpload, onCasinoUpload, onSportUpload, onDelete, onCasinoDelete, onSportDelete, onLogout, onAdminAuth, theme }) => {
   const C = theme
   const ww = useWindowWidth()
   const mob = ww < 768
@@ -1143,7 +1143,7 @@ const UploadPage = ({ weeksData, casinoWeeksData, sportWeeksData, onUpload, onCa
   useEffect(() => { if (localStorage.getItem('dazn_upload_auth') === 'true') setUploadAuth(true) }, [])
 
   const handleUploadLogin = () => {
-    if (uploadPwd === UPLOAD_PASSWORD) { setUploadAuth(true); localStorage.setItem('dazn_upload_auth', 'true') }
+    if (uploadPwd === UPLOAD_PASSWORD) { setUploadAuth(true); localStorage.setItem('dazn_upload_auth', 'true'); onAdminAuth?.() }
     else { setUploadError(true); setTimeout(() => setUploadError(false), 2000) }
   }
 
@@ -1739,12 +1739,17 @@ const Monthly = ({ weeksData, theme }) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // WEEKLY REPORT
 // ═══════════════════════════════════════════════════════════════════════════════
-const Weekly = ({ data, prev, theme }) => {
+const Weekly = ({ data, prev, theme, isAdmin = false, onSaveNote }) => {
   const C = theme
   const ww = useWindowWidth()
   const mob = ww < 768
   const [qaMetric, setQaMetric] = useState('conv')
   const [dailyMetric, setDailyMetric] = useState('regftd')
+  const [editingNote, setEditingNote] = useState(false)
+  const [noteText, setNoteText] = useState('')
+
+  useEffect(() => { if (data?.weekNote !== undefined) setNoteText(data.weekNote || ''); else setNoteText('') }, [data?.weekNumber, data?.weekNote])
+
   if (!data) return <div style={{ padding: '60px', textAlign: 'center' }}><p style={{ color: C.textMuted, fontSize: '16px' }}>Select or upload a week</p></div>
 
   const regCh = prev ? calcChange(data.registrations, prev.registrations) : null
@@ -1811,16 +1816,58 @@ const Weekly = ({ data, prev, theme }) => {
           </div>
         </div>
 
-        <div style={{ background: `linear-gradient(135deg, ${C.card} 0%, ${C.bg} 100%)`, borderRadius: '12px', padding: 'clamp(20px, 3vw, 32px)', border: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '24px' }}>
+        <div style={{ background: `linear-gradient(135deg, ${C.card} 0%, ${C.bg} 100%)`, borderRadius: '12px', padding: 'clamp(20px, 3vw, 32px)', border: `1px solid ${C.border}`, display: 'grid', gridTemplateColumns: mob ? '1fr' : '1fr 1.2fr auto', gap: 'clamp(16px, 2vw, 24px)', alignItems: 'start' }}>
+          {/* LEFT — Active Users + Product breakdown */}
           <div>
             <p style={{ color: C.textMuted, fontSize: 'clamp(11px, 1.2vw, 14px)', fontWeight: 700, textTransform: 'uppercase', margin: '0 0 6px 0' }}>Weekly Active Users</p>
-            <p style={{ color: C.accent, fontSize: mob ? '32px' : 'clamp(36px, 5vw, 56px)', fontWeight: 900, margin: 0 }}>{fmtNum(data.activeUsers)}</p>
-            {actCh && <p style={{ color: parseFloat(actCh) >= 0 ? C.success : C.danger, fontSize: '14px', fontWeight: 700, margin: '8px 0 0 0' }}>{parseFloat(actCh) > 0 ? '▲' : '▼'} {Math.abs(parseFloat(actCh))}% vs prev</p>}
+            <p style={{ color: C.accent, fontSize: mob ? '32px' : 'clamp(36px, 5vw, 48px)', fontWeight: 900, margin: 0 }}>{fmtNum(data.activeUsers)}</p>
+            {actCh && <p style={{ color: parseFloat(actCh) >= 0 ? C.success : C.danger, fontSize: '13px', fontWeight: 700, margin: '6px 0 0 0' }}>{parseFloat(actCh) > 0 ? '▲' : '▼'} {Math.abs(parseFloat(actCh))}% vs prev</p>}
+            <div style={{ display: 'flex', gap: 'clamp(12px, 2vw, 20px)', marginTop: '16px', flexWrap: 'wrap' }}>
+              {(data.top3Products || []).map((prod, i) => {
+                const prevProd = prev?.top3Products?.[i]
+                const ch = prevProd && prevProd.actives > 0 ? ((prod.actives - prevProd.actives) / prevProd.actives * 100).toFixed(1) : null
+                return (
+                  <div key={i} style={{ minWidth: '70px' }}>
+                    <p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 3px 0', textTransform: 'uppercase', fontWeight: 600 }}>{prod.name}</p>
+                    <p style={{ color: C.chart[i], fontSize: '20px', fontWeight: 800, margin: 0 }}>{fmtNum(prod.actives)}</p>
+                    {ch && <p style={{ color: parseFloat(ch) >= 0 ? C.success : C.danger, fontSize: '10px', fontWeight: 700, margin: '2px 0 0 0' }}>{parseFloat(ch) > 0 ? '▲' : '▼'} {Math.abs(parseFloat(ch))}%</p>}
+                  </div>
+                )
+              })}
+            </div>
           </div>
-          <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-            {(data.top3Products || []).map((prod, i) => <div key={i} style={{ textAlign: 'center', minWidth: '80px' }}><p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', textTransform: 'uppercase', fontWeight: 600 }}>{prod.name}</p><p style={{ color: C.chart[i], fontSize: '24px', fontWeight: 800, margin: 0 }}>{fmtNum(prod.actives)}</p></div>)}
+
+          {/* CENTER — Weekly Note */}
+          <div style={{ background: C.bg, borderRadius: '10px', padding: 'clamp(14px, 2vw, 20px)', border: `1px solid ${C.border}`, minHeight: '100px', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', margin: 0, letterSpacing: '0.5px' }}>📋 Week Note</p>
+              {isAdmin && !editingNote && (
+                <button onClick={() => { setEditingNote(true); setNoteText(data.weekNote || '') }} style={{ background: 'transparent', border: `1px solid ${C.border}`, borderRadius: '4px', padding: '3px 8px', fontSize: '10px', color: C.textMuted, cursor: 'pointer', fontWeight: 600 }}>✏️ Edit</button>
+              )}
+            </div>
+            {editingNote && isAdmin ? (
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <textarea
+                  value={noteText}
+                  onChange={e => setNoteText(e.target.value)}
+                  placeholder="Es: Turno infrasettimanale Serie A, Champions League MD5, Torneo Casino..."
+                  style={{ flex: 1, background: C.card, color: C.text, border: `1px solid ${C.primary}`, borderRadius: '6px', padding: '10px', fontSize: '12px', resize: 'vertical', minHeight: '50px', fontFamily: 'inherit', outline: 'none' }}
+                  maxLength={300}
+                />
+                <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                  <button onClick={() => setEditingNote(false)} style={{ background: 'transparent', border: `1px solid ${C.border}`, borderRadius: '5px', padding: '5px 12px', fontSize: '11px', color: C.textMuted, cursor: 'pointer', fontWeight: 600 }}>Cancel</button>
+                  <button onClick={() => { onSaveNote?.(data.weekNumber, noteText); setEditingNote(false) }} style={{ background: C.primary, color: C.primaryText, border: 'none', borderRadius: '5px', padding: '5px 12px', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>Save</button>
+                </div>
+              </div>
+            ) : (
+              <p style={{ color: data.weekNote ? C.text : C.textMuted, fontSize: '13px', fontWeight: data.weekNote ? 600 : 400, margin: 0, lineHeight: 1.5, fontStyle: data.weekNote ? 'normal' : 'italic', flex: 1, display: 'flex', alignItems: 'center' }}>
+                {data.weekNote || 'No notes for this week'}
+              </p>
+            )}
           </div>
-          <div style={{ display: 'flex', gap: '20px' }}>
+
+          {/* RIGHT — Logins & Bonus */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', alignItems: mob ? 'flex-start' : 'center' }}>
             <div style={{ textAlign: 'center' }}><p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', textTransform: 'uppercase' }}>Logins</p><p style={{ color: C.text, fontSize: '20px', fontWeight: 800, margin: 0 }}>{fmtNum(data.totalLogins)}</p></div>
             <div style={{ textAlign: 'center' }}><p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', textTransform: 'uppercase' }}>Bonus</p><p style={{ color: C.orange, fontSize: '20px', fontWeight: 800, margin: 0 }}>{fmtCurrency(data.totalBonus)}</p></div>
           </div>
@@ -3322,6 +3369,7 @@ export default function Dashboard() {
   const [db, setDb] = useState({ connected: false })
   const [isDark, setIsDark] = useState(true)
   const [isAuth, setIsAuth] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(false)
   const [showTop, setShowTop] = useState(false)
   const ww = useWindowWidth()
   const mob = ww < 768
@@ -3330,6 +3378,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (localStorage.getItem('dazn_dashboard_auth') === 'true') setIsAuth(true)
+    if (localStorage.getItem('dazn_upload_auth') === 'true') setIsAdmin(true)
   }, [])
 
   useEffect(() => {
@@ -3361,7 +3410,13 @@ export default function Dashboard() {
     })()
   }, [isAuth])
 
-  const handleLogout = () => { localStorage.removeItem('dazn_dashboard_auth'); localStorage.removeItem('dazn_upload_auth'); setIsAuth(false) }
+  const handleLogout = () => { localStorage.removeItem('dazn_dashboard_auth'); localStorage.removeItem('dazn_upload_auth'); setIsAuth(false); setIsAdmin(false) }
+  const handleSaveNote = async (weekNum, note) => {
+    const updated = { ...weeks[weekNum], weekNote: note }
+    const u = { ...weeks, [weekNum]: updated }
+    setWeeks(u)
+    await saveWeekData(updated)
+  }
   const handleUpload = async d => { const u = { ...weeks, [d.weekNumber]: d }; setWeeks(u); setSelected(d.weekNumber); await saveWeekData(d); setTab('weekly') }
   const handleDelete = async n => { if (!confirm(`Delete Week ${n}?`)) return; const { [n]: _, ...rest } = weeks; setWeeks(rest); await deleteWeekData(n); setSelected(Object.keys(rest).length ? Math.max(...Object.keys(rest).map(Number)) : null) }
   const handleCasinoUpload = async d => { const u = { ...casinoWeeks, [d.weekNumber]: d }; setCasinoWeeks(u); await saveWeekData({ ...d, weekNumber: d.weekNumber + 1000 }); setTab('casino') }
@@ -3434,11 +3489,11 @@ export default function Dashboard() {
         </div>
       </header>
       <main>
-        {tab === 'weekly' && <Weekly data={current} prev={prev} theme={C} />}
+        {tab === 'weekly' && <Weekly data={current} prev={prev} theme={C} isAdmin={isAdmin} onSaveNote={handleSaveNote} />}
         {tab === 'monthly' && <Monthly weeksData={weeks} theme={C} />}
         {tab === 'casino' && <CasinoSection weeksData={casinoWeeks} theme={C} />}
         {tab === 'sport' && <SportSection weeksData={sportWeeks} theme={C} />}
-        {tab === 'upload' && <UploadPage weeksData={weeks} casinoWeeksData={casinoWeeks} sportWeeksData={sportWeeks} onUpload={handleUpload} onCasinoUpload={handleCasinoUpload} onSportUpload={handleSportUpload} onDelete={handleDelete} onCasinoDelete={handleCasinoDelete} onSportDelete={handleSportDelete} onLogout={handleLogout} theme={C} />}
+        {tab === 'upload' && <UploadPage weeksData={weeks} casinoWeeksData={casinoWeeks} sportWeeksData={sportWeeks} onUpload={handleUpload} onCasinoUpload={handleCasinoUpload} onSportUpload={handleSportUpload} onDelete={handleDelete} onCasinoDelete={handleCasinoDelete} onSportDelete={handleSportDelete} onLogout={handleLogout} onAdminAuth={() => setIsAdmin(true)} theme={C} />}
       </main>
       {showTop && <button onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} style={{ position: 'fixed', bottom: '24px', right: '24px', width: '44px', height: '44px', borderRadius: '50%', background: C.primary, color: C.primaryText, border: 'none', fontSize: '20px', fontWeight: 800, cursor: 'pointer', boxShadow: '0 4px 12px rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999, transition: 'opacity 0.3s', opacity: 0.85 }} title="Back to top">↑</button>}
     </div>
