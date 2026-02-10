@@ -363,7 +363,7 @@ const processData = (files, weekNum, dateRange) => {
 
   const srcCount = {}
   ana.forEach(r => { const s = r["Cod Punto"]; if (s) srcCount[s] = (srcCount[s] || 0) + 1 })
-  const sources = Object.entries(srcCount).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, count]) => ({ name: String(name).substring(0, 20), count }))
+  const sources = Object.entries(srcCount).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([name, count]) => ({ name: String(name).substring(0, 20), count }))
 
   return {
     weekNumber: weekNum, dateRange, registrations: reg, ftds, conversionRate: reg > 0 ? parseFloat((ftds / reg * 100).toFixed(1)) : 0,
@@ -1739,12 +1739,15 @@ const Monthly = ({ weeksData, theme }) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // WEEKLY REPORT
 // ═══════════════════════════════════════════════════════════════════════════════
-const Weekly = ({ data, prev, theme, isAdmin = false, onSaveNote }) => {
+const Weekly = ({ data, prev, allWeeks = {}, theme, isAdmin = false, onSaveNote }) => {
   const C = theme
   const ww = useWindowWidth()
   const mob = ww < 768
   const [qaMetric, setQaMetric] = useState('conv')
   const [dailyMetric, setDailyMetric] = useState('regftd')
+  const [timeRange, setTimeRange] = useState('daily')
+  const [customFrom, setCustomFrom] = useState('')
+  const [customTo, setCustomTo] = useState('')
   const [editingNote, setEditingNote] = useState(false)
   const [noteText, setNoteText] = useState('')
 
@@ -1887,25 +1890,85 @@ const Weekly = ({ data, prev, theme, isAdmin = false, onSaveNote }) => {
         <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : 'repeat(auto-fit, minmax(380px, 1fr))', gap: 'clamp(16px, 2vw, 24px)', marginBottom: 'clamp(20px, 2.5vw, 28px)' }}>
           <div style={{ background: C.card, borderRadius: '12px', padding: 'clamp(16px, 2vw, 24px)', border: `1px solid ${C.border}` }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
-              <h4 style={{ color: C.textSec, margin: 0, fontSize: 'clamp(11px, 1.2vw, 13px)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Daily Breakdown</h4>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                {['daily', 'weekly', 'custom'].map(tr => (
+                  <button key={tr} onClick={() => setTimeRange(tr)} style={{ background: timeRange === tr ? C.primary : 'transparent', color: timeRange === tr ? C.primaryText : C.textSec, border: `1px solid ${timeRange === tr ? C.primary : C.border}`, borderRadius: '5px', padding: '4px 10px', fontSize: '10px', fontWeight: 700, cursor: 'pointer', textTransform: 'uppercase' }}>{tr}</button>
+                ))}
+              </div>
               <select value={dailyMetric} onChange={e => setDailyMetric(e.target.value)} style={{ background: C.bg, color: C.text, border: `1px solid ${C.primary}`, borderRadius: '6px', padding: '5px 10px', fontSize: '11px', fontWeight: 700, cursor: 'pointer', outline: 'none' }}>
                 {[{ k: 'regftd', l: 'REG & FTDs' }, { k: 'depwit', l: 'Deposits & Withdrawals' }, { k: 'logins', l: 'Logins' }, { k: 'bonus', l: 'Bonus' }].map(o => <option key={o.k} value={o.k}>{o.l}</option>)}
               </select>
             </div>
-            <ResponsiveContainer width="100%" height={220}>
-              {dailyMetric === 'regftd' ? (
-                <AreaChart data={data.dailyStats || []}><defs><linearGradient id="dR" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.primary} stopOpacity={0.4} /><stop offset="95%" stopColor={C.primary} stopOpacity={0} /></linearGradient><linearGradient id="dF" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.success} stopOpacity={0.4} /><stop offset="95%" stopColor={C.success} stopOpacity={0} /></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="date" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><YAxis tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><Tooltip content={<Tip theme={C} />} /><Legend /><Area type="monotone" dataKey="registrations" name="REG" stroke={C.primary} fill="url(#dR)" strokeWidth={2} /><Area type="monotone" dataKey="ftds" name="FTDs" stroke={C.success} fill="url(#dF)" strokeWidth={2} /></AreaChart>
-              ) : dailyMetric === 'depwit' ? (
-                <BarChart data={data.dailyStats || []}><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="date" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><YAxis tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} /><Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} /><Legend /><Bar dataKey="deposits" name="Deposits" fill={C.success} radius={[3, 3, 0, 0]} /><Bar dataKey="withdrawals" name="Withdrawals" fill={C.danger} radius={[3, 3, 0, 0]} /></BarChart>
-              ) : dailyMetric === 'logins' ? (
-                <AreaChart data={data.dailyStats || []}><defs><linearGradient id="dL" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.blue} stopOpacity={0.4} /><stop offset="95%" stopColor={C.blue} stopOpacity={0} /></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="date" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><YAxis tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><Tooltip content={<Tip theme={C} />} /><Legend /><Area type="monotone" dataKey="logins" name="Logins" stroke={C.blue} fill="url(#dL)" strokeWidth={2} /></AreaChart>
-              ) : (
-                <AreaChart data={data.dailyStats || []}><defs><linearGradient id="dB" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.orange} stopOpacity={0.4} /><stop offset="95%" stopColor={C.orange} stopOpacity={0} /></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="date" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><YAxis tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} /><Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} /><Legend /><Area type="monotone" dataKey="bonus" name="Bonus" stroke={C.orange} fill="url(#dB)" strokeWidth={2} /></AreaChart>
-              )}
-            </ResponsiveContainer>
+            {timeRange === 'custom' && (() => {
+              const availWeeks = Object.keys(allWeeks).map(Number).sort((a, b) => a - b)
+              return (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
+                  <span style={{ color: C.textMuted, fontSize: '11px', fontWeight: 600 }}>From W</span>
+                  <select value={customFrom} onChange={e => setCustomFrom(e.target.value)} style={{ background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: '5px', padding: '4px 8px', fontSize: '11px', fontWeight: 700, cursor: 'pointer', outline: 'none' }}>
+                    <option value="">--</option>
+                    {availWeeks.map(w => <option key={w} value={w}>{w}</option>)}
+                  </select>
+                  <span style={{ color: C.textMuted, fontSize: '11px', fontWeight: 600 }}>to W</span>
+                  <select value={customTo} onChange={e => setCustomTo(e.target.value)} style={{ background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: '5px', padding: '4px 8px', fontSize: '11px', fontWeight: 700, cursor: 'pointer', outline: 'none' }}>
+                    <option value="">--</option>
+                    {availWeeks.map(w => <option key={w} value={w}>{w}</option>)}
+                  </select>
+                </div>
+              )
+            })()}
+            {(() => {
+              // Build chart data based on timeRange
+              if (timeRange === 'daily') {
+                // === DAILY VIEW (existing behavior) ===
+                return (
+                  <ResponsiveContainer width="100%" height={220}>
+                    {dailyMetric === 'regftd' ? (
+                      <AreaChart data={data.dailyStats || []}><defs><linearGradient id="dR" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.primary} stopOpacity={0.4} /><stop offset="95%" stopColor={C.primary} stopOpacity={0} /></linearGradient><linearGradient id="dF" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.success} stopOpacity={0.4} /><stop offset="95%" stopColor={C.success} stopOpacity={0} /></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="date" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><YAxis tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><Tooltip content={<Tip theme={C} />} /><Legend /><Area type="monotone" dataKey="registrations" name="REG" stroke={C.primary} fill="url(#dR)" strokeWidth={2} /><Area type="monotone" dataKey="ftds" name="FTDs" stroke={C.success} fill="url(#dF)" strokeWidth={2} /></AreaChart>
+                    ) : dailyMetric === 'depwit' ? (
+                      <BarChart data={data.dailyStats || []}><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="date" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><YAxis tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} /><Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} /><Legend /><Bar dataKey="deposits" name="Deposits" fill={C.success} radius={[3, 3, 0, 0]} /><Bar dataKey="withdrawals" name="Withdrawals" fill={C.danger} radius={[3, 3, 0, 0]} /></BarChart>
+                    ) : dailyMetric === 'logins' ? (
+                      <AreaChart data={data.dailyStats || []}><defs><linearGradient id="dL" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.blue} stopOpacity={0.4} /><stop offset="95%" stopColor={C.blue} stopOpacity={0} /></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="date" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><YAxis tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><Tooltip content={<Tip theme={C} />} /><Legend /><Area type="monotone" dataKey="logins" name="Logins" stroke={C.blue} fill="url(#dL)" strokeWidth={2} /></AreaChart>
+                    ) : (
+                      <AreaChart data={data.dailyStats || []}><defs><linearGradient id="dB" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.orange} stopOpacity={0.4} /><stop offset="95%" stopColor={C.orange} stopOpacity={0} /></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="date" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><YAxis tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} /><Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} /><Legend /><Area type="monotone" dataKey="bonus" name="Bonus" stroke={C.orange} fill="url(#dB)" strokeWidth={2} /></AreaChart>
+                    )}
+                  </ResponsiveContainer>
+                )
+              } else {
+                // === WEEKLY / CUSTOM VIEW ===
+                const sortedWeeks = Object.values(allWeeks).sort((a, b) => a.weekNumber - b.weekNumber)
+                let filtered = sortedWeeks
+                if (timeRange === 'custom' && customFrom && customTo) {
+                  const f = parseInt(customFrom), t = parseInt(customTo)
+                  filtered = sortedWeeks.filter(w => w.weekNumber >= f && w.weekNumber <= t)
+                }
+                const weeklyData = filtered.map(w => ({
+                  week: `W${w.weekNumber}`,
+                  registrations: w.registrations || 0,
+                  ftds: w.ftds || 0,
+                  deposits: w.totalDeposits || 0,
+                  withdrawals: w.totalWithdrawals || 0,
+                  logins: w.totalLogins || 0,
+                  bonus: w.totalBonus || 0,
+                  _isCurrent: w.weekNumber === data.weekNumber
+                }))
+                return (
+                  <ResponsiveContainer width="100%" height={220}>
+                    {dailyMetric === 'regftd' ? (
+                      <ComposedChart data={weeklyData}><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><YAxis tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><Tooltip content={<Tip theme={C} />} /><Legend /><Bar dataKey="registrations" name="REG" fill={C.primary} radius={[3, 3, 0, 0]} opacity={0.8} /><Bar dataKey="ftds" name="FTDs" fill={C.success} radius={[3, 3, 0, 0]} opacity={0.8} /><Line type="monotone" dataKey="registrations" stroke={C.primary} strokeWidth={2} dot={{ fill: C.primary, r: 3 }} legendType="none" /><Line type="monotone" dataKey="ftds" stroke={C.success} strokeWidth={2} dot={{ fill: C.success, r: 3 }} legendType="none" /></ComposedChart>
+                    ) : dailyMetric === 'depwit' ? (
+                      <ComposedChart data={weeklyData}><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><YAxis tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} /><Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} /><Legend /><Bar dataKey="deposits" name="Deposits" fill={C.success} radius={[3, 3, 0, 0]} opacity={0.8} /><Bar dataKey="withdrawals" name="Withdrawals" fill={C.danger} radius={[3, 3, 0, 0]} opacity={0.8} /><Line type="monotone" dataKey="deposits" stroke={C.success} strokeWidth={2} dot={{ fill: C.success, r: 3 }} legendType="none" /><Line type="monotone" dataKey="withdrawals" stroke={C.danger} strokeWidth={2} dot={{ fill: C.danger, r: 3 }} legendType="none" /></ComposedChart>
+                    ) : dailyMetric === 'logins' ? (
+                      <ComposedChart data={weeklyData}><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><YAxis tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><Tooltip content={<Tip theme={C} />} /><Legend /><Bar dataKey="logins" name="Logins" fill={C.blue} radius={[3, 3, 0, 0]} opacity={0.8} /><Line type="monotone" dataKey="logins" stroke={C.blue} strokeWidth={2} dot={{ fill: C.blue, r: 3 }} legendType="none" /></ComposedChart>
+                    ) : (
+                      <ComposedChart data={weeklyData}><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="week" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><YAxis tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} /><Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} /><Legend /><Bar dataKey="bonus" name="Bonus" fill={C.orange} radius={[3, 3, 0, 0]} opacity={0.8} /><Line type="monotone" dataKey="bonus" stroke={C.orange} strokeWidth={2} dot={{ fill: C.orange, r: 3 }} legendType="none" /></ComposedChart>
+                    )}
+                  </ResponsiveContainer>
+                )
+              }
+            })()}
           </div>
-          <ChartCard title="Top Sources (Cod Punto)" theme={C}>
-            <BarChart data={data.topSources || []} layout="vertical"><XAxis type="number" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><YAxis dataKey="name" type="category" width={mob ? 70 : 100} tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><Tooltip content={<Tip theme={C} />} /><Bar dataKey="count" fill={C.success} radius={[0, 4, 4, 0]} /></BarChart>
+          <ChartCard title="Top 10 Sources (Cod Punto)" height={320} theme={C}>
+            <BarChart data={data.topSources || []} layout="vertical"><XAxis type="number" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><YAxis dataKey="name" type="category" width={mob ? 70 : 100} tick={{ fill: C.textMuted, fontSize: 9, fontWeight: 700 }} /><Tooltip content={<Tip theme={C} />} /><Bar dataKey="count" fill={C.success} radius={[0, 4, 4, 0]}>{(data.topSources || []).map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}</Bar></BarChart>
           </ChartCard>
         </div>
 
@@ -3489,7 +3552,7 @@ export default function Dashboard() {
         </div>
       </header>
       <main>
-        {tab === 'weekly' && <Weekly data={current} prev={prev} theme={C} isAdmin={isAdmin} onSaveNote={handleSaveNote} />}
+        {tab === 'weekly' && <Weekly data={current} prev={prev} allWeeks={weeks} theme={C} isAdmin={isAdmin} onSaveNote={handleSaveNote} />}
         {tab === 'monthly' && <Monthly weeksData={weeks} theme={C} />}
         {tab === 'casino' && <CasinoSection weeksData={casinoWeeks} theme={C} />}
         {tab === 'sport' && <SportSection weeksData={sportWeeks} theme={C} />}
