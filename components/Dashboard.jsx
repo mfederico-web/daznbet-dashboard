@@ -992,8 +992,15 @@ const processDailyMonthData = (files, monthKey, monthLabel) => {
   const mesePadre = files.meseTotalPadre || []
   const mese2 = files.mese2 || []
 
+  // cellDates:true converts Excel serial numbers to Date objects
+  // So we check for both number AND Date, and use normalizeDate as validator
+  const isDataRow = r => {
+    const d = r["Data"]
+    return d != null && (typeof d === 'number' || d instanceof Date || (typeof d === 'string' && normalizeDate(d) !== null))
+  }
+
   // ── Parse Mese_Total: daily rows (turnover, ggr, tickets, conti attivi) ──
-  const dailyRows = meseTotal.filter(r => typeof r["Data"] === 'number')
+  const dailyRows = meseTotal.filter(isDataRow)
 
   const totalDailyMap = {}
   dailyRows.forEach(r => {
@@ -1011,7 +1018,7 @@ const processDailyMonthData = (files, monthKey, monthLabel) => {
   })
 
   // ── Parse Mese_2: daily rows (REG, FTDs, Deposits, Withdrawals, Logins, Bonus) ──
-  const mese2Rows = mese2.filter(r => typeof r["Data"] === 'number')
+  const mese2Rows = mese2.filter(isDataRow)
   const mese2DailyMap = {}
   mese2Rows.forEach(r => {
     const dateKey = normalizeDate(r["Data"])
@@ -1071,7 +1078,7 @@ const processDailyMonthData = (files, monthKey, monthLabel) => {
   const avgActives = dailyStats.length > 0 ? Math.round(sumDailyActives / dailyStats.length) : 0
 
   // ── Parse Mese_Total_Padre: channel breakdown ──
-  const padreDaily = mesePadre.filter(r => typeof r["Data"] === 'number')
+  const padreDaily = mesePadre.filter(isDataRow)
 
   // Aggregate by channel (full month)
   const channelAgg = {}
