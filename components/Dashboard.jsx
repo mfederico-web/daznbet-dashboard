@@ -1752,6 +1752,32 @@ const Weekly = ({ data, prev, theme }) => {
   const turnCh = prev ? calcChange(data.turnover, prev.turnover) : null
   const ggrCh = prev ? calcChange(data.ggr, prev.ggr) : null
   const actCh = prev ? calcChange(data.activeUsers, prev.activeUsers) : null
+  const netDepCh = prev ? calcChange(data.netDeposit, prev.netDeposit) : null
+  const gwmCh = prev ? calcChange(data.gwm, prev.gwm) : null
+
+  // GWM Sport & Casino from productPerformance
+  const SPORT_CATS = ['SCOMMESSE', 'IPPICA', 'VIRTUALI']
+  const CASINO_CATS = ['CASINO', 'CASINO LIVE', 'BINGO']
+  const prods = data.productPerformance || []
+  const sportProds = prods.filter(p => SPORT_CATS.includes(String(p.product).toUpperCase()))
+  const casinoProds = prods.filter(p => CASINO_CATS.includes(String(p.product).toUpperCase()))
+  const sportTurn = sportProds.reduce((s, p) => s + (p.turnover || 0), 0)
+  const sportGgr = sportProds.reduce((s, p) => s + (p.ggr || 0), 0)
+  const casinoTurn = casinoProds.reduce((s, p) => s + (p.turnover || 0), 0)
+  const casinoGgr = casinoProds.reduce((s, p) => s + (p.ggr || 0), 0)
+  const gwmSport = sportTurn > 0 ? parseFloat((sportGgr / sportTurn * 100).toFixed(1)) : 0
+  const gwmCasino = casinoTurn > 0 ? parseFloat((casinoGgr / casinoTurn * 100).toFixed(1)) : 0
+
+  // Previous week Sport/Casino GWM for comparison
+  const prevProds = prev?.productPerformance || []
+  const prevSportProds = prevProds.filter(p => SPORT_CATS.includes(String(p.product).toUpperCase()))
+  const prevCasinoProds = prevProds.filter(p => CASINO_CATS.includes(String(p.product).toUpperCase()))
+  const prevSportTurn = prevSportProds.reduce((s, p) => s + (p.turnover || 0), 0)
+  const prevSportGgr = prevSportProds.reduce((s, p) => s + (p.ggr || 0), 0)
+  const prevCasinoTurn = prevCasinoProds.reduce((s, p) => s + (p.turnover || 0), 0)
+  const prevCasinoGgr = prevCasinoProds.reduce((s, p) => s + (p.ggr || 0), 0)
+  const prevGwmSport = prevSportTurn > 0 ? parseFloat((prevSportGgr / prevSportTurn * 100).toFixed(1)) : 0
+  const prevGwmCasino = prevCasinoTurn > 0 ? parseFloat((prevCasinoGgr / prevCasinoTurn * 100).toFixed(1)) : 0
 
   return (
     <div id="weekly-report" style={{ padding: 'clamp(20px, 3vw, 48px)' }}>
@@ -1759,10 +1785,30 @@ const Weekly = ({ data, prev, theme }) => {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 'clamp(12px, 1.5vw, 16px)', marginBottom: 'clamp(20px, 2.5vw, 28px)' }}>
           <KPI label="Registrations" value={data.registrations} change={regCh} icon="user" delay={0} theme={C} />
           <KPI label="FTDs" value={data.ftds} sub={`Conv: ${data.conversionRate}% • Avg: €${data.avgFirstDeposit}`} change={ftdCh} icon="card" delay={50} theme={C} />
-          <KPI label="Net Deposit" value={data.netDeposit} sub={`Dep ${fmtCurrency(data.totalDeposits)} - Wit ${fmtCurrency(data.totalWithdrawals)}`} cur icon="wallet" delay={100} theme={C} />
+          <KPI label="Net Deposit" value={data.netDeposit} sub={`Dep ${fmtCurrency(data.totalDeposits)} - Wit ${fmtCurrency(data.totalWithdrawals)}`} change={netDepCh} cur icon="wallet" delay={100} theme={C} />
           <KPI label="Turnover" value={data.turnover} change={turnCh} cur icon="activity" delay={150} theme={C} />
           <KPI label="GGR" value={data.ggr} change={ggrCh} cur icon="trending" delay={200} theme={C} />
-          <KPI label="GWM" value={data.gwm} sub={prev ? `${(data.gwm - prev.gwm) >= 0 ? '+' : ''}${(data.gwm - prev.gwm).toFixed(1)}pp` : null} pct icon="chart" delay={250} theme={C} />
+        </div>
+
+        {/* GWM Card — General / Sport / Casino */}
+        <div style={{ background: C.card, borderRadius: '12px', padding: 'clamp(16px, 2vw, 24px)', border: `1px solid ${C.border}`, marginBottom: 'clamp(20px, 2.5vw, 28px)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+            <span style={{ color: C.textMuted, fontSize: 'clamp(10px, 1.1vw, 12px)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Gross Win Margin</span>
+            <Icon name="chart" size={16} color={C.textMuted} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'clamp(12px, 2vw, 24px)' }}>
+            {[
+              { label: 'General', value: data.gwm, prev: prev?.gwm, color: C.accent },
+              { label: 'Sport', value: gwmSport, prev: prev ? prevGwmSport : null, color: C.success },
+              { label: 'Casino', value: gwmCasino, prev: prev ? prevGwmCasino : null, color: C.purple }
+            ].map((g, i) => (
+              <div key={i} style={{ textAlign: 'center', padding: '12px 0', borderRight: i < 2 ? `1px solid ${C.border}` : 'none' }}>
+                <p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', margin: '0 0 8px 0' }}>{g.label}</p>
+                <p style={{ color: g.color, fontSize: mob ? '28px' : 'clamp(28px, 3.5vw, 40px)', fontWeight: 900, margin: '0 0 4px 0', fontFamily: 'Oscine, system-ui' }}>{g.value}%</p>
+                {g.prev != null && <p style={{ color: (g.value - g.prev) >= 0 ? C.success : C.danger, fontSize: '12px', fontWeight: 700, margin: 0 }}>{(g.value - g.prev) >= 0 ? '▲' : '▼'} {Math.abs(g.value - g.prev).toFixed(1)}pp</p>}
+              </div>
+            ))}
+          </div>
         </div>
 
         <div style={{ background: `linear-gradient(135deg, ${C.card} 0%, ${C.bg} 100%)`, borderRadius: '12px', padding: 'clamp(20px, 3vw, 32px)', border: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '24px' }}>
@@ -1778,6 +1824,15 @@ const Weekly = ({ data, prev, theme }) => {
             <div style={{ textAlign: 'center' }}><p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', textTransform: 'uppercase' }}>Logins</p><p style={{ color: C.text, fontSize: '20px', fontWeight: 800, margin: 0 }}>{fmtNum(data.totalLogins)}</p></div>
             <div style={{ textAlign: 'center' }}><p style={{ color: C.textMuted, fontSize: '10px', margin: '0 0 4px 0', textTransform: 'uppercase' }}>Bonus</p><p style={{ color: C.orange, fontSize: '20px', fontWeight: 800, margin: 0 }}>{fmtCurrency(data.totalBonus)}</p></div>
           </div>
+        </div>
+      </Section>
+
+      <Section title="Financial Health" theme={C}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'clamp(12px, 1.5vw, 16px)' }}>
+          <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}` }}><p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', margin: '0 0 8px 0' }}>Withdrawal Ratio</p><p style={{ color: C.text, fontSize: '28px', fontWeight: 900, margin: '0 0 8px 0' }}>{data.financialHealth?.withdrawalRatio || 0}%</p><p style={{ color: C.textMuted, fontSize: '10px', margin: 0 }}>{fmtCurrency(data.totalWithdrawals)} / {fmtCurrency(data.totalDeposits)}</p></div>
+          <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}` }}><p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', margin: '0 0 8px 0' }}>Bonus ROI</p><p style={{ color: C.text, fontSize: '28px', fontWeight: 900, margin: '0 0 8px 0' }}>{data.financialHealth?.bonusROI || 0}x</p><p style={{ color: C.textMuted, fontSize: '10px', margin: 0 }}>{fmtCurrency(data.financialHealth?._ggr)} / {fmtCurrency(data.financialHealth?._bonus)}</p></div>
+          <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}` }}><p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', margin: '0 0 8px 0' }}>Customer Value</p><p style={{ color: C.text, fontSize: '28px', fontWeight: 900, margin: '0 0 8px 0' }}>{fmtCurrency(data.financialHealth?.customerValue || 0)}</p><p style={{ color: C.textMuted, fontSize: '10px', margin: 0 }}>GGR / Actives</p></div>
+          <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}` }}><p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', margin: '0 0 8px 0' }}>Login / User</p><p style={{ color: C.text, fontSize: '28px', fontWeight: 900, margin: '0 0 8px 0' }}>{data.financialHealth?.loginPerUser || 0}</p><p style={{ color: C.textMuted, fontSize: '10px', margin: 0 }}>{fmtNum(data.financialHealth?._logins)} / {fmtNum(data.financialHealth?._actives)}</p></div>
         </div>
       </Section>
 
@@ -1895,24 +1950,6 @@ const Weekly = ({ data, prev, theme }) => {
           ]} data={data.productPerformance || []} compact theme={C} />
           <ChartCard title="GGR by Product" height={220} theme={C}>
             <BarChart data={(data.productPerformance || []).slice(0, 6)} layout="vertical"><XAxis type="number" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} /><YAxis dataKey="product" type="category" width={mob ? 55 : 80} tick={{ fill: C.textMuted, fontSize: 9, fontWeight: 700 }} /><Tooltip content={<Tip theme={C} />} formatter={v => fmtCurrency(v)} /><Bar dataKey="ggr" fill={C.primary} radius={[0, 4, 4, 0]}>{(data.productPerformance || []).map((_, i) => <Cell key={i} fill={C.chart[i % C.chart.length]} />)}</Bar></BarChart>
-          </ChartCard>
-        </div>
-      </Section>
-
-      <Section title="Financial Health" theme={C}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'clamp(12px, 1.5vw, 16px)', marginBottom: 'clamp(20px, 2.5vw, 28px)' }}>
-          <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}` }}><p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', margin: '0 0 8px 0' }}>Withdrawal Ratio</p><p style={{ color: C.text, fontSize: '28px', fontWeight: 900, margin: '0 0 8px 0' }}>{data.financialHealth?.withdrawalRatio || 0}%</p><p style={{ color: C.textMuted, fontSize: '10px', margin: 0 }}>{fmtCurrency(data.totalWithdrawals)} / {fmtCurrency(data.totalDeposits)}</p></div>
-          <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}` }}><p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', margin: '0 0 8px 0' }}>Bonus ROI</p><p style={{ color: C.text, fontSize: '28px', fontWeight: 900, margin: '0 0 8px 0' }}>{data.financialHealth?.bonusROI || 0}x</p><p style={{ color: C.textMuted, fontSize: '10px', margin: 0 }}>{fmtCurrency(data.financialHealth?._ggr)} / {fmtCurrency(data.financialHealth?._bonus)}</p></div>
-          <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}` }}><p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', margin: '0 0 8px 0' }}>Customer Value</p><p style={{ color: C.text, fontSize: '28px', fontWeight: 900, margin: '0 0 8px 0' }}>{fmtCurrency(data.financialHealth?.customerValue || 0)}</p><p style={{ color: C.textMuted, fontSize: '10px', margin: 0 }}>GGR / Actives</p></div>
-          <div style={{ background: C.card, borderRadius: '12px', padding: '20px', border: `1px solid ${C.border}` }}><p style={{ color: C.textMuted, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', margin: '0 0 8px 0' }}>Login / User</p><p style={{ color: C.text, fontSize: '28px', fontWeight: 900, margin: '0 0 8px 0' }}>{data.financialHealth?.loginPerUser || 0}</p><p style={{ color: C.textMuted, fontSize: '10px', margin: 0 }}>{fmtNum(data.financialHealth?._logins)} / {fmtNum(data.financialHealth?._actives)}</p></div>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : 'repeat(auto-fit, minmax(380px, 1fr))', gap: 'clamp(16px, 2vw, 24px)' }}>
-          <ChartCard title="Daily Cash Flow" theme={C}>
-            <BarChart data={data.dailyStats || []}><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="date" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><YAxis tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} /><Tooltip content={<Tip theme={C} />} /><Legend /><Bar dataKey="deposits" name="Deposits" fill={C.success} radius={[3, 3, 0, 0]} /><Bar dataKey="withdrawals" name="Withdrawals" fill={C.danger} radius={[3, 3, 0, 0]} /></BarChart>
-          </ChartCard>
-          <ChartCard title="Daily Bonus" theme={C}>
-            <AreaChart data={data.dailyStats || []}><defs><linearGradient id="bG" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={C.orange} stopOpacity={0.4} /><stop offset="95%" stopColor={C.orange} stopOpacity={0} /></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke={C.border} /><XAxis dataKey="date" tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} /><YAxis tick={{ fill: C.textMuted, fontSize: 10, fontWeight: 700 }} tickFormatter={v => `€${(v / 1000).toFixed(0)}K`} /><Tooltip content={<Tip theme={C} />} /><Area type="monotone" dataKey="bonus" name="Bonus" stroke={C.orange} fill="url(#bG)" strokeWidth={2} /></AreaChart>
           </ChartCard>
         </div>
       </Section>
